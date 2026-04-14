@@ -9,10 +9,10 @@
 #include "scene.h"
 
 int main() {
-    int width = 500;
-    int height = 500;
+    int width = 1000;
+    int height = 1000;
     int depth = 1;
-    int samples = 16;
+    int samples = 25;
     int wavelengthSamples = 9;
     double lambdaMin = 380;
     double lambdaMax = 780;
@@ -126,10 +126,10 @@ int main() {
 
     std::ofstream outputFile;
 
-    for (int i = 77; i <= 119; i++) {
+    for (int i = 0; i <= 0; i++) {
         outputFile.open(std::to_string(i) + ".ppm");
 
-        Vector position(-50 + 0.5 * i, 0, 1);
+        Vector position(-25 + 0.5 * i, 0, 2);
         Vector corner(-2, -2, 0);
         Vector horizontal(4, 0, 0);
         Vector vertical(0, 4, 0);
