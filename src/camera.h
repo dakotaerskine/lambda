@@ -1,22 +1,19 @@
-#ifndef CAMERA_H
-#define CAMERA_H
+#pragma once
 
+#include "platform.h"
 #include "ray.h"
 #include "vector.h"
 
 class Camera {
     public:
-        Camera() {}
-        Camera(const Vector & p, const Vector & c, const Vector & h, const Vector & v) : position(p), corner(c), horizontal(h), vertical(v) {}
+        HOST_DEVICE Camera() {}
+        HOST_DEVICE Camera(const Vector & p, const Vector & c, const Vector & h, const Vector & v) : position(p), corner(c), horizontal(h), vertical(v) {}
 
-        Ray getRay(double u, double v, double lambda, int lambdaIndex) const {
-            Vector direction = corner + horizontal * u + vertical * v - position;
-            direction.normalize();
+        HOST_DEVICE Ray getRay(Float u, Float v, Float lambda, int lambdaIndex) const {
+            Vector direction = (corner + horizontal * u + vertical * v - position).normalize();
             return Ray(position, direction, lambda, lambdaIndex);
         }
 
     private:
         Vector position, corner, horizontal, vertical;
 };
-
-#endif

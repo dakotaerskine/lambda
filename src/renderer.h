@@ -1,106 +1,70 @@
-#ifndef RENDERER_H
-#define RENDERER_H
-
-#include <algorithm>
-#include <atomic>
-#include <iostream>
-#include <vector>
-
-#ifdef USE_OPENMP
-#include <omp.h>
-#endif
+#pragma once
 
 #include "camera.h"
+#include "config.h"
+#include "constants.h"
+#include "intersection.h"
+#include "platform.h"
+#include "random.h"
+#include "ray.h"
 #include "scene.h"
+#include "spectrum.h"
+#include "vector.h"
 
 class Renderer {
     public:
-        Renderer() {}
-        Renderer(int w, int h, int d, int s, int ws, double min, double max, Camera * c, Scene * sc) : width(w), height(h), depth(d), samples(s), wavelengthSamples(ws), lambdaMin(min), lambdaMax(max), lambdaStep((max - min) / (ws - 1)), camera(c), scene(sc) {}
+        HOST_DEVICE static void renderPixel(int px, int py, Float * outputBuffer, const Config & config, const Camera & camera, const Scene & scene, Random & state) {
+            int index = py * config.width + px;
 
-        Camera * getCamera() const { return camera; }
-        Scene * getScene() const { return scene; }
+            Spectrum spectrum(config.wavelengthSamples);
 
-        void render(std::ostream & out) {
-            int totalPixels = width * height;
-            int sqrtSamples = sqrt(samples);
+            for (int k = 0; k < config.sqrtSamples; k++)
+                for (int l = 0; l < config.sqrtSamples; l++)
+                    for (int m = 0; m < config.wavelengthSamples; m++) {
+                        Float u = Float(px + (k + randomDouble(state)) / config.sqrtSamples) / config.width;
+                        Float v = Float(py + (l + randomDouble(state)) / config.sqrtSamples) / config.height;
+                        Float lambda = config.lambdaMin + m * config.lambdaStep;
+                        Ray ray = camera.getRay(u, v, lambda, m);
+                        spectrum[m] += trace(ray, scene, config.depth, state);
+                    }
 
-            std::vector<Vector> pixels(totalPixels);
-            std::atomic<int> completed(0);
+            spectrum /= config.sqrtSamples * config.sqrtSamples;
 
-            std::cerr << "\rRendering: 0\% complete" << std::flush;
+            Vector color = spectrumToRGB(spectrum, config.lambdaMin, config.lambdaMax);
+            color = Vector(sRGB(fmin(fmax(color[0], 0.0), 1.0)), sRGB(fmin(fmax(color[1], 0.0), 1.0)), sRGB(fmin(fmax(color[2], 0.0), 1.0)));
 
-            #ifdef USE_OPENMP
-            #pragma omp parallel for schedule(guided)
-            #endif
-            for (int j = 0; j < height; j++) {
-                for (int i = 0; i < width; i++) {
-                    Spectrum spectrum(wavelengthSamples);
-
-                    for (int k = 0; k < sqrtSamples; k++)
-                        for (int l = 0; l < sqrtSamples; l++)
-                            for (int m = 0; m < wavelengthSamples; m++) {
-                                double u = double(i + (k + randomDouble()) / sqrtSamples) / width;
-                                double v = double(j + (l + randomDouble()) / sqrtSamples) / height;
-                                double lambda = lambdaMin + m * lambdaStep;
-                                Ray ray = camera->getRay(u, v, lambda, m);
-                                spectrum[m] += trace(ray, scene, depth);
-                            }
-
-                    spectrum /= samples;
-
-                    Vector color = spectrumToRGB(spectrum, wavelengthSamples, lambdaMin, lambdaMax);
-                    color = Vector(sRGB(std::clamp(color[0], 0.0, 1.0)), sRGB(std::clamp(color[1], 0.0, 1.0)), sRGB(std::clamp(color[2], 0.0, 1.0)));
-                    color = sRGBToHSV(color);
-                    color[1] *= 2;
-                    color[1] = std::clamp(color[1], 0.0, 1.0);
-                    color = HSVTosRGB(color);
-
-                    pixels[j * width + i] = color;
-                }
-
-                completed += width;
-                
-                #ifdef USE_OPENMP
-                #pragma omp critical
-                #endif
-                {
-                    std::cerr << "\rRendering: " << int(100.0 * completed / totalPixels) << "\% complete" << std::flush;
-                }
-            }
-            
-            std::cerr << "\rRendering: 100\% complete" << std::flush << std::endl;
-
-            out << "P3\n" << width << " " << height << "\n255\n";
-
-            for (const Vector & pixel : pixels) {
-                int ir = int(255.999 * pixel[0]);
-                int ig = int(255.999 * pixel[1]);
-                int ib = int(255.999 * pixel[2]);
-                
-                out << ir << " " << ig << " " << ib << "\n";
-            }
+            outputBuffer[index * 3 + 0] = color[0];
+            outputBuffer[index * 3 + 1] = color[1];
+            outputBuffer[index * 3 + 2] = color[2];
         }
 
     private:
-        double trace(const Ray & r, Scene * s, int d) {
-            Intersection intersection;
+        HOST_DEVICE static Float trace(Ray r, const Scene & s, int d, Random & state) {
+            Float throughput = 1;
 
-            if (s->hit(r, intersection)) {
+            for (int i = 0; i <= d; i++) {
+                Intersection intersection;
+
+                if (!s.hit(r, intersection)) return throughput * s.getBackground()[r.getLambdaIndex()];
+
                 Ray scattered;
-                double attenuation;
+                Float attenuation = 1;
 
-                if (intersection.material->scatter(r, intersection, scattered, attenuation) && d > 0) return attenuation * trace(scattered, s, d - 1);
-                else return attenuation;
+                if (!s.getObject(intersection.i).getMaterial().scatter(r, intersection, scattered, attenuation, state)) return throughput * attenuation;
+
+                throughput *= attenuation;
+
+                if (i >= RR_START_DEPTH) {
+                    Float q = 1 - fmin(fmax(throughput, 0.05), 0.95);
+
+                    if (randomDouble(state) < q) return 0;
+
+                    throughput /= 1 - q;
+                }
+
+                r = scattered;
             }
 
-            return s->getBackground()[r.getLambdaIndex()];
+            return 0;
         }
-
-        int width, height, depth, samples, wavelengthSamples;
-        double lambdaMin, lambdaMax, lambdaStep;
-        Camera * camera;
-        Scene * scene;
 };
-
-#endif

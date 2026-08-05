@@ -1,55 +1,62 @@
-#ifndef MATRIX_H
-#define MATRIX_H
+#pragma once
 
 #include <cassert>
-#include <complex>
 
-#include "vector.h"
+#include "platform.h"
 
 class Matrix {
     public:
-        Matrix() {}
-        Matrix(const Matrix & m) {
+        HOST_DEVICE Matrix() {
+            for (int i = 0; i < 4; i++)
+                data[i] = Complex(0, 0);
+        }
+
+        HOST_DEVICE Matrix(const Matrix & m) {
             for (int i = 0; i < 4; i++)
                 data[i] = m.data[i];
         }
-        Matrix(const std::complex<double> d[4]) {
+
+        HOST_DEVICE Matrix(const Complex d[4]) {
             for (int i = 0; i < 4; i++)
                 data[i] = d[i];
         }
-        Matrix & operator=(const Matrix & m) {
+
+        HOST_DEVICE Matrix & operator=(const Matrix & m) {
             for (int i = 0; i < 4; i++)
                 data[i] = m.data[i];
 
             return (*this);
         }
 
-        std::complex<double> & get(int i, int j) {
-            assert (i >= 0 && i < 2 && j >= 0 && j < 2);
-            return data[i * 2 + j];
-        }
-        const std::complex<double> & get(int i, int j) const {
-            assert (i >= 0 && i < 2 && j >= 0 && j < 2);
+        HOST_DEVICE Complex & get(int i, int j) {
+            assert(i >= 0 && i < 2 && j >= 0 && j < 2);
             return data[i * 2 + j];
         }
 
-        friend Matrix operator+(const Matrix & m1, const Matrix & m2) {
+        HOST_DEVICE const Complex & get(int i, int j) const {
+            assert(i >= 0 && i < 2 && j >= 0 && j < 2);
+            return data[i * 2 + j];
+        }
+
+        HOST_DEVICE friend Matrix operator+(const Matrix & m1, const Matrix & m2) {
             Matrix m3;
 
             for (int i = 0; i < 4; i++)
                 m3.data[i] = m1.data[i] + m2.data[i];
 
-            return m3; 
+            return m3;
         }
-        friend Matrix operator-(const Matrix & m1, const Matrix & m2) {
+
+        HOST_DEVICE friend Matrix operator-(const Matrix & m1, const Matrix & m2) {
             Matrix m3;
-            
+
             for (int i = 0; i < 4; i++)
                 m3.data[i] = m1.data[i] - m2.data[i];
 
-            return m3; 
+            return m3;
         }
-        friend Matrix operator*(const Matrix & m1, const Matrix & m2) {
+
+        HOST_DEVICE friend Matrix operator*(const Matrix & m1, const Matrix & m2) {
             Matrix m3;
 
             m3.data[0] = m1.data[0] * m2.data[0] + m1.data[1] * m2.data[2];
@@ -59,38 +66,45 @@ class Matrix {
 
             return m3;
         }
-        friend Matrix operator*(const Matrix & m1, const std::complex<double> & d) {
+
+        HOST_DEVICE friend Matrix operator*(const Matrix & m1, const Complex & d) {
             Matrix m2;
-            
+
             for (int i = 0; i < 4; i++)
                 m2.data[i] = m1.data[i] * d;
 
-            return m2; 
+            return m2;
         }
-        friend Matrix operator*(const std::complex<double> & d, const Matrix & m) { return m * d; }
-        Matrix & operator+=(const Matrix & m) {
+
+        HOST_DEVICE friend Matrix operator*(const Complex & d, const Matrix & m) { return m * d; }
+        
+        HOST_DEVICE Matrix & operator+=(const Matrix & m) {
             for (int i = 0; i < 4; i++)
                 data[i] += m.data[i];
 
             return *this;
         }
-        Matrix & operator-=(const Matrix & m) {
+
+        HOST_DEVICE Matrix & operator-=(const Matrix & m) {
             for (int i = 0; i < 4; i++)
                 data[i] -= m.data[i];
 
             return *this;
         }
-        Matrix & operator*=(const std::complex<double> & d) {
+
+        HOST_DEVICE Matrix & operator*=(const Complex & d) {
             for (int i = 0; i < 4; i++)
                 data[i] *= d;
 
             return *this;
         }
-        Matrix & operator*=(const Matrix & m) {
+
+        HOST_DEVICE Matrix & operator*=(const Matrix & m) {
             *this = *this * m;
             return *this;
         }
-        Matrix & operator/=(const std::complex<double> & d) {
+
+        HOST_DEVICE Matrix & operator/=(const Complex & d) {
             for (int i = 0; i < 4; i++)
                 data[i] /= d;
 
@@ -98,7 +112,5 @@ class Matrix {
         }
 
     private:
-        std::complex<double> data[4];
+        Complex data[4];
 };
-
-#endif

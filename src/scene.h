@@ -1,33 +1,30 @@
-#ifndef SCENE_H
-#define SCENE_H
-
-#include <vector>
+#pragma once
 
 #include "intersection.h"
 #include "object.h"
+#include "platform.h"
 #include "ray.h"
 #include "spectrum.h"
 
 class Scene {
     public:
-        Scene(Spectrum b = Spectrum()) : background(b) {}
+        HOST_DEVICE Scene(Spectrum b, Object * o, int n) : background(b), objects(o), numObjects(n) {}
 
-        Spectrum getBackground() const { return background; }
+        HOST_DEVICE const Spectrum & getBackground() const { return background; }
 
-        void addObject(Object * o) { objects.push_back(o); }
+        HOST_DEVICE const Object & getObject(int i) const { return objects[i]; }
 
-        bool hit(const Ray & r, Intersection & intersection) const {
+        HOST_DEVICE bool hit(const Ray & r, Intersection & intersection) const {
             bool hitObject = false;
 
-            for (Object * object : objects)
-                if (object->intersect(r, intersection)) hitObject = true;
-                
+            for (int i = 0; i < numObjects; i++)
+                if (objects[i].intersect(i, r, intersection)) hitObject = true;
+
             return hitObject;
         }
 
     private:
-        std::vector<Object *> objects;
         Spectrum background;
+        Object * objects;
+        int numObjects;
 };
-
-#endif

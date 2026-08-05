@@ -1,21 +1,17 @@
-#ifndef INTERSECTION_H
-#define INTERSECTION_H
+#pragma once
 
-#include <cmath>
-
+#include "constants.h"
+#include "platform.h"
 #include "ray.h"
 #include "vector.h"
 
-class Material;
-
 class Intersection {
     public:
-        Intersection() : t(INFINITY) {}
+        HOST_DEVICE Intersection() : i(-1), t(T_MAX), frontFacing(false) {}
 
-        double t;
+        int i;
+        Float t;
         Vector point, normal;
+        Float u, v;
         bool frontFacing;
-        Material * material;
 };
-
-#endif

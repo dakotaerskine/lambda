@@ -1,28 +1,44 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 
-# Project name
-project(pathtracer)
+project(pathtracer LANGUAGES CXX)
 
-# Use C++20 (or higher)
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find OpenMP
-find_package(OpenMP)
-
-# Add your executable
-add_executable(pathtracer
-    main.cpp
-)
-
-# Link OpenMP and define USE_OPENMP if found
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(pathtracer PUBLIC OpenMP::OpenMP_CXX)
-    target_compile_definitions(pathtracer PRIVATE USE_OPENMP)
-    message(STATUS "OpenMP found - parallelization enabled")
-else()
-    message(STATUS "OpenMP not found - running in serial mode")
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# If you later add .cpp files for implementations instead of all headers,
-# list them here as well, e.g. sphere.cpp, vector.cpp, etc.
+add_executable(pathtracer_cpu main.cpp)
+
+target_compile_options(pathtracer_cpu PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:
+        -Wall
+        -Wextra
+        -Wpedantic
+    >
+)
+
+find_package(OpenMP REQUIRED)
+target_link_libraries(pathtracer_cpu PRIVATE OpenMP::OpenMP_CXX)
+target_compile_definitions(pathtracer_cpu PRIVATE USE_OPENMP)
+
+include(CheckLanguage)
+check_language(CUDA)
+
+if(CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+
+    set(CMAKE_CUDA_STANDARD 17)
+    set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
+    set(CMAKE_CUDA_ARCHITECTURES all-major)
+
+    add_executable(pathtracer_gpu main.cu)
+
+    target_compile_options(pathtracer_gpu PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:
+            -lineinfo
+            -Xcompiler=-Wall
+            -Xcompiler=-Wextra
+        >
+    )
+endif()
