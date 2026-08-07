@@ -6,13 +6,30 @@
 #include "ray.h"
 #include "spectrum.h"
 
+class Background;
+class Material;
+class ScalarTexture;
+class SpectrumTexture;
+
 class Scene {
     public:
-        HOST_DEVICE Scene(Spectrum b, Object * o, int n) : background(b), objects(o), numObjects(n) {}
+        HOST_DEVICE Scene(DenseSpectrum<Float> * _spectra, DenseSpectrum<Complex> * _complexSpectra, Background * _background, Object * _objects, int _numObjects, Material * _materials, int * _materialProperties, ScalarTexture * _scalarTextures, SpectrumTexture * _spectrumTextures) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), numObjects(_numObjects), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures) {}
 
-        HOST_DEVICE const Spectrum & getBackground() const { return background; }
+        HOST_DEVICE DenseSpectrum<Float> * getSpectra() const { return spectra; }
 
-        HOST_DEVICE const Object & getObject(int i) const { return objects[i]; }
+        HOST_DEVICE DenseSpectrum<Complex> * getComplexSpectra() const { return complexSpectra; }
+
+        HOST_DEVICE Background * getBackground() const { return background; }
+
+        HOST_DEVICE Object * getObjects() const { return objects; }
+
+        HOST_DEVICE Material * getMaterials() const { return materials; }
+
+        HOST_DEVICE int * getMaterialProperties() const { return materialProperties; }
+
+        HOST_DEVICE ScalarTexture * getScalarTextures() const { return scalarTextures; }
+
+        HOST_DEVICE SpectrumTexture * getSpectrumTextures() const { return spectrumTextures; }
 
         HOST_DEVICE bool hit(const Ray & r, Intersection & intersection) const {
             bool hitObject = false;
@@ -24,7 +41,13 @@ class Scene {
         }
 
     private:
-        Spectrum background;
+        DenseSpectrum<Float> * spectra;
+        DenseSpectrum<Complex> * complexSpectra;
+        Background * background;
         Object * objects;
         int numObjects;
+        Material * materials;
+        int * materialProperties;
+        ScalarTexture * scalarTextures;
+        SpectrumTexture * spectrumTextures;
 };

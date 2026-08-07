@@ -5,28 +5,28 @@
 #include "constants.h"
 #include "platform.h"
 
-class Spectrum {
+class SampledSpectrum {
     public:
-        HOST_DEVICE Spectrum() : size(0) {}
+        HOST_DEVICE SampledSpectrum() : size(0) {}
 
-        HOST_DEVICE Spectrum(int n) : size(n <= MAX_WAVELENGTH_SAMPLES ? n : MAX_WAVELENGTH_SAMPLES) {
+        HOST_DEVICE SampledSpectrum(int n) : size(n <= MAX_WAVELENGTH_SAMPLES ? n : MAX_WAVELENGTH_SAMPLES) {
             for (int i = 0; i < size; i++)
                 data[i] = 0;
         }
 
-        HOST_DEVICE Spectrum(int n, Float d) : size(n <= MAX_WAVELENGTH_SAMPLES ? n : MAX_WAVELENGTH_SAMPLES) {
+        HOST_DEVICE SampledSpectrum(int n, Float d) : size(n <= MAX_WAVELENGTH_SAMPLES ? n : MAX_WAVELENGTH_SAMPLES) {
             for (int i = 0; i < size; i++)
                 data[i] = d;
         }
 
-        HOST_DEVICE Spectrum(const Spectrum & s) {
+        HOST_DEVICE SampledSpectrum(const SampledSpectrum & s) {
             size = s.size;
 
             for (int i = 0; i < size; i++)
                 data[i] = s.data[i];
         }
 
-        HOST_DEVICE Spectrum & operator=(const Spectrum & s) {
+        HOST_DEVICE SampledSpectrum & operator=(const SampledSpectrum & s) {
             size = s.size;
 
             for (int i = 0; i < size; i++)
@@ -47,7 +47,7 @@ class Spectrum {
 
         HOST_DEVICE int getSize() const { return size; }
 
-        HOST_DEVICE bool operator==(const Spectrum & s) const {
+        HOST_DEVICE bool operator==(const SampledSpectrum & s) const {
             if (size != s.size) return false;
 
             for (int i = 0; i < size; i++)
@@ -56,7 +56,7 @@ class Spectrum {
             return true;
         }
 
-        HOST_DEVICE bool operator!=(const Spectrum & s) const {
+        HOST_DEVICE bool operator!=(const SampledSpectrum & s) const {
             if (size != s.size) return true;
 
             for (int i = 0; i < size; i++)
@@ -65,7 +65,7 @@ class Spectrum {
             return false;
         }
 
-        HOST_DEVICE Spectrum & operator+=(const Spectrum & s) {
+        HOST_DEVICE SampledSpectrum & operator+=(const SampledSpectrum & s) {
             assert(size == s.size);
 
             for (int i = 0; i < size; i++)
@@ -74,7 +74,7 @@ class Spectrum {
             return *this;
         }
 
-        HOST_DEVICE Spectrum & operator-=(const Spectrum & s) {
+        HOST_DEVICE SampledSpectrum & operator-=(const SampledSpectrum & s) {
             assert(size == s.size);
 
             for (int i = 0; i < size; i++)
@@ -83,14 +83,14 @@ class Spectrum {
             return *this;
         }
 
-        HOST_DEVICE Spectrum & operator*=(Float d) {
+        HOST_DEVICE SampledSpectrum & operator*=(Float d) {
             for (int i = 0; i < size; i++)
                 data[i] *= d;
 
             return *this;
         }
 
-        HOST_DEVICE Spectrum & operator/=(Float d) {
+        HOST_DEVICE SampledSpectrum & operator/=(Float d) {
             assert(d != 0);
 
             for (int i = 0; i < size; i++)
@@ -99,10 +99,10 @@ class Spectrum {
             return *this;
         }
 
-        HOST_DEVICE friend Spectrum operator+(const Spectrum & s1, const Spectrum & s2) {
+        HOST_DEVICE friend SampledSpectrum operator+(const SampledSpectrum & s1, const SampledSpectrum & s2) {
             assert(s1.size == s2.size);
 
-            Spectrum s3(s1.size);
+            SampledSpectrum s3(s1.size);
 
             for (int i = 0; i < s1.size; i++)
                 s3.data[i] = s1.data[i] + s2.data[i];
@@ -110,8 +110,8 @@ class Spectrum {
             return s3;
         }
 
-        HOST_DEVICE friend Spectrum operator-(const Spectrum & s1) {
-            Spectrum s2(s1.size);
+        HOST_DEVICE friend SampledSpectrum operator-(const SampledSpectrum & s1) {
+            SampledSpectrum s2(s1.size);
 
             for (int i = 0; i < s1.size; i++)
                 s2.data[i] = -s1.data[i];
@@ -119,10 +119,10 @@ class Spectrum {
             return s2;
         }
 
-        HOST_DEVICE friend Spectrum operator-(const Spectrum & s1, const Spectrum & s2) {
+        HOST_DEVICE friend SampledSpectrum operator-(const SampledSpectrum & s1, const SampledSpectrum & s2) {
             assert(s1.size == s2.size);
 
-            Spectrum s3(s1.size);
+            SampledSpectrum s3(s1.size);
 
             for (int i = 0; i < s1.size; i++)
                 s3.data[i] = s1.data[i] - s2.data[i];
@@ -130,8 +130,8 @@ class Spectrum {
             return s3;
         }
 
-        HOST_DEVICE friend Spectrum operator*(const Spectrum & s1, Float d) {
-            Spectrum s2(s1.size);
+        HOST_DEVICE friend SampledSpectrum operator*(const SampledSpectrum & s1, Float d) {
+            SampledSpectrum s2(s1.size);
 
             for (int i = 0; i < s1.size; i++)
                 s2.data[i] = s1.data[i] * d;
@@ -139,12 +139,12 @@ class Spectrum {
             return s2;
         }
 
-        HOST_DEVICE friend Spectrum operator*(Float d, const Spectrum & s1) { return s1 * d; }
+        HOST_DEVICE friend SampledSpectrum operator*(Float d, const SampledSpectrum & s1) { return s1 * d; }
 
-        HOST_DEVICE friend Spectrum operator*(const Spectrum & s1, const Spectrum & s2) {
+        HOST_DEVICE friend SampledSpectrum operator*(const SampledSpectrum & s1, const SampledSpectrum & s2) {
             assert(s1.size == s2.size);
 
-            Spectrum s3(s1.size);
+            SampledSpectrum s3(s1.size);
 
             for (int i = 0; i < s1.size; i++)
                 s3.data[i] = s1.data[i] * s2.data[i];
@@ -152,10 +152,10 @@ class Spectrum {
             return s3;
         }
         
-        HOST_DEVICE friend Spectrum operator/(const Spectrum & s1, Float d) {
+        HOST_DEVICE friend SampledSpectrum operator/(const SampledSpectrum & s1, Float d) {
             assert(d != 0);
 
-            Spectrum s2(s1.size);
+            SampledSpectrum s2(s1.size);
 
             for (int i = 0; i < s1.size; i++)
                 s2.data[i] = s1.data[i] / d;
@@ -166,4 +166,52 @@ class Spectrum {
     private:
         int size;
         Float data[MAX_WAVELENGTH_SAMPLES];
+};
+
+template <typename T>
+class DenseSpectrum {
+    public:
+        HOST_DEVICE DenseSpectrum() {
+            for (int i = 0; i < CIE_LAMBDA_BINS; i++)
+                data[i] = 0;
+        }
+
+        HOST_DEVICE DenseSpectrum(const T & d) {
+            for (int i = 0; i < CIE_LAMBDA_BINS; i++)
+                data[i] = d;
+        }   
+
+        HOST_DEVICE DenseSpectrum(const DenseSpectrum & s) {
+            for (int i = 0; i < CIE_LAMBDA_BINS; i++)
+                data[i] = s.data[i];
+        }
+
+        HOST_DEVICE DenseSpectrum & operator=(const DenseSpectrum & s) {
+            for (int i = 0; i < CIE_LAMBDA_BINS; i++)
+                data[i] = s.data[i];
+
+            return *this;
+        }
+
+        HOST_DEVICE T & operator[](int i) {
+            assert(i >= 0 && i < CIE_LAMBDA_BINS);
+            return data[i];
+        }
+
+        HOST_DEVICE T operator()(Float lambda) const {
+            assert(lambda >= CIE_LAMBDA_MIN && lambda < CIE_LAMBDA_MAX);
+
+            Float index = lambda - CIE_LAMBDA_MIN;
+
+            int min = index;
+
+            if (min == CIE_LAMBDA_BINS - 1) return data[min];
+
+            int max = min + 1;
+
+            return (max - index) * data[min] + (index - min) * data[max];
+        }
+
+    private:
+        T data[CIE_LAMBDA_BINS];
 };

@@ -12,14 +12,17 @@
     #include <omp.h>
 #endif
 
+#include "background.h"
 #include "camera.h"
 #include "config.h"
+#include "material.h"
 #include "object.h"
 #include "parser.h"
 #include "random.h"
 #include "renderer.h"
 #include "scene.h"
 #include "spectrum.h"
+#include "texture.h"
 
 void renderCPU(const std::string & arg, Float * outputBuffer, const Config & config, const Camera & camera, const Scene & scene, uint64_t seed) {
     std::atomic<int> completed(0);
@@ -59,12 +62,18 @@ int main(int argc, char * argv[]) {
     std::string input(argv[1]);
 
     Config config;
+    std::vector<DenseSpectrum<Float>> spectra;
+    std::vector<DenseSpectrum<Complex>> complexSpectra;
+    Background background;
     Camera camera;
-    Spectrum background;
     std::vector<Object> objects;
+    std::vector<Material> materials;
+    std::vector<int> materialProperties;
+    std::vector<ScalarTexture> scalarTextures;
+    std::vector<SpectrumTexture> spectrumTextures;
 
     try {
-        Parser::parseFile(input, config, camera, background, objects);
+        Parser::parseFile(input, config, spectra, complexSpectra, background, camera, objects, materials, materialProperties, scalarTextures, spectrumTextures);
     }
     catch (const std::exception & e) {
         std::cerr << input << e.what() << std::endl;
@@ -73,7 +82,7 @@ int main(int argc, char * argv[]) {
 
     std::vector<Float> h_output(config.totalPixels * 3);
 
-    renderCPU(argv[0], h_output.data(), config, camera, Scene(background, objects.data(), objects.size()), 42ULL);
+    renderCPU(argv[0], h_output.data(), config, camera, Scene(spectra.data(), complexSpectra.data(), &background, objects.data(), objects.size(), materials.data(), materialProperties.data(), scalarTextures.data(), spectrumTextures.data()), 42ULL);
 
     std::string output = input;
 

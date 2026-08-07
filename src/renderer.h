@@ -1,5 +1,6 @@
 #pragma once
 
+#include "background.h"
 #include "camera.h"
 #include "config.h"
 #include "constants.h"
@@ -16,7 +17,7 @@ class Renderer {
         HOST_DEVICE static void renderPixel(int px, int py, Float * outputBuffer, const Config & config, const Camera & camera, const Scene & scene, Random & state) {
             int index = py * config.width + px;
 
-            Spectrum spectrum(config.wavelengthSamples);
+            SampledSpectrum spectrum(config.wavelengthSamples);
 
             for (int k = 0; k < config.sqrtSamples; k++)
                 for (int l = 0; l < config.sqrtSamples; l++)
@@ -24,7 +25,7 @@ class Renderer {
                         Float u = Float(px + (k + randomDouble(state)) / config.sqrtSamples) / config.width;
                         Float v = Float(py + (l + randomDouble(state)) / config.sqrtSamples) / config.height;
                         Float lambda = config.lambdaMin + m * config.lambdaStep;
-                        Ray ray = camera.getRay(u, v, lambda, m);
+                        Ray ray = camera.getRay(u, v, lambda);
                         spectrum[m] += trace(ray, scene, config.depth, state);
                     }
 
@@ -45,12 +46,15 @@ class Renderer {
             for (int i = 0; i <= d; i++) {
                 Intersection intersection;
 
-                if (!s.hit(r, intersection)) return throughput * s.getBackground()[r.getLambdaIndex()];
+                if (!s.hit(r, intersection)) return throughput * s.getBackground()->evaluate(s, r.getDirection(), r.getLambda());
 
                 Ray scattered;
                 Float attenuation = 1;
 
-                if (!s.getObject(intersection.i).getMaterial().scatter(r, intersection, scattered, attenuation, state)) return throughput * attenuation;
+                const Object & object = s.getObjects()[intersection.i];
+                const Material & material = s.getMaterials()[object.getMaterial()];
+
+                if (!material.scatter(s, r, intersection, scattered, attenuation, state)) return throughput * attenuation;
 
                 throughput *= attenuation;
 

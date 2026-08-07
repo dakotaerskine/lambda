@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include "intersection.h"
-#include "material.h"
 #include "matrix.h"
 #include "platform.h"
 #include "random.h"
@@ -51,7 +50,7 @@ class Object {
             return *this;
         }
 
-        HOST_DEVICE static Object makeSphere(const Material & m, const Vector & c, Float r) {
+        HOST_DEVICE static Object makeSphere(int m, const Vector & c, Float r) {
             Object object;
 
             object.type = ObjectType::SPHERE;
@@ -62,7 +61,7 @@ class Object {
             return object;
         }
 
-        HOST_DEVICE static Object makePlane(const Material & m, const Vector & p, const Vector & n) {
+        HOST_DEVICE static Object makePlane(int m, const Vector & p, const Vector & n) {
             Object object;
 
             object.type = ObjectType::PLANE;
@@ -73,7 +72,7 @@ class Object {
             return object;
         }
 
-        HOST_DEVICE const Material & getMaterial() const { return material; }
+        HOST_DEVICE int getMaterial() const { return material; }
 
         HOST_DEVICE bool intersect(int i, const Ray & r, Intersection & intersection) const {
             switch (type) {
@@ -86,7 +85,7 @@ class Object {
 
     private:
         ObjectType type;
-        Material material;
+        int material;
 
         union {
             struct { Vector center; Float radius; } sphere;
@@ -118,8 +117,8 @@ class Object {
             intersection.t = t;
             intersection.point = r.at(t);
             intersection.normal = (intersection.point - sphere.center).normalize();
-            intersection.u = (atan2(-intersection.point[2], intersection.point[0]) + PI) / (2 * PI);
-            intersection.v = acos(-intersection.point[1]) / PI;
+            intersection.u = (atan2(-intersection.normal[2], intersection.normal[0]) + PI) / (2 * PI);
+            intersection.v = acos(-intersection.normal[1]) / PI;
             intersection.frontFacing = r.getDirection().dot(intersection.normal) < 0;
             if (!intersection.frontFacing) intersection.normal *= -1;
 
@@ -147,7 +146,7 @@ class Object {
             Vector vAxis = plane.normal.cross(uAxis).normalize();
 
             intersection.u = uAxis.dot(intersection.point - plane.point);
-            intersection.v = vAxis.dot(intersection.point);
+            intersection.v = vAxis.dot(intersection.point - plane.point);
 
             intersection.frontFacing = r.getDirection().dot(intersection.normal) < 0;
             if (!intersection.frontFacing) intersection.normal *= -1;

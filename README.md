@@ -22,7 +22,7 @@ Lambda takes in a single `.lrd` scene file and writes a `.ppm` image next to it 
 The Lambda Render Description is a plain text file format with one command per line. `#` starts a line comment. The first command must be `Render`.
  
 ### `Render`
-`depth` is the maximum bounce count, `samples` must be a perfect square, `wavelengthSamples` ranges from 2 to 64, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 829], the range covered by the built-in CIE 1931 tables.
+`depth` is the maximum bounce count, `samples` must be a perfect square, `wavelengthSamples` ranges from 2 to 64, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
  
 ```
 Render <width> <height> <depth> <samples> <wavelengthSamples> <lambdaMin> <lambdaMax>
@@ -48,11 +48,13 @@ Camera (position) (corner) (horizontal) (vertical)
 ```
 Texture <name> scalar constant <value>
 Texture <name> scalar perlin <min> <max> <frequency>
+Texture <name> scalar worley <min> <max> <frequency>
 Texture <name> spectrum constant (value)
+Texture <name> spectrum checker (value1) (value2) <scale>
 ```
  
 ### `Material`
-Most material properties are described by the names of previously defined textures, with the notable exception of refractive indices. `name` is a unique identifier used to map materials to objects.
+Most material properties are described by the names of previously defined textures, with the notable exception of refractive indices. Alternatively, a constant value can be used. `name` is a unique identifier used to map materials to objects.
  
 ```
 Material <name> lambertian <albedo>

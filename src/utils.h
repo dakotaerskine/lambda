@@ -209,6 +209,9 @@ HOST_DEVICE inline Float xyz31(int lambda, int i) {
 
 HOST_DEVICE inline Float x31(Float lambda) {
     int min = lambda;
+
+    if (min == CIE_LAMBDA_MAX) return xyz31(min, 0);
+
     int max = min + 1;
 
     return (max - lambda) * xyz31(min, 0) + (lambda - min) * xyz31(max, 0);
@@ -216,6 +219,9 @@ HOST_DEVICE inline Float x31(Float lambda) {
 
 HOST_DEVICE inline Float y31(Float lambda) {
     int min = lambda;
+
+    if (min == CIE_LAMBDA_MAX) return xyz31(min, 1);
+
     int max = min + 1;
 
     return (max - lambda) * xyz31(min, 1) + (lambda - min) * xyz31(max, 1);
@@ -223,6 +229,9 @@ HOST_DEVICE inline Float y31(Float lambda) {
 
 HOST_DEVICE inline Float z31(Float lambda) {
     int min = lambda;
+
+    if (min == CIE_LAMBDA_MAX) return xyz31(min, 2);
+
     int max = min + 1;
 
     return (max - lambda) * xyz31(min, 2) + (lambda - min) * xyz31(max, 2);
@@ -245,7 +254,7 @@ HOST_DEVICE inline Float d65(Float lambda) {
     return (max - lambda) * d65Min + (lambda - min) * d65Max;
 }
 
-HOST_DEVICE inline Vector spectrumToRGB(const Spectrum & s, Float min, Float max) {
+HOST_DEVICE inline Vector spectrumToRGB(const SampledSpectrum & s, Float min, Float max) {
     Float x = 0, y = 0, z = 0, w = 0;
 
     int size = s.getSize();

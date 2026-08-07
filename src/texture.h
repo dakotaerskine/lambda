@@ -2,6 +2,7 @@
 
 #include "intersection.h"
 #include "platform.h"
+#include "scene.h"
 #include "spectrum.h"
 #include "utils.h"
 
@@ -156,7 +157,7 @@ class SpectrumTexture {
             return *this;
         }
 
-        HOST_DEVICE static SpectrumTexture makeConstant(const Spectrum & v) {
+        HOST_DEVICE static SpectrumTexture makeConstant(int v) {
             SpectrumTexture texture;
 
             texture.type = SpectrumTextureType::CONSTANT;
@@ -165,7 +166,7 @@ class SpectrumTexture {
             return texture;
         }
 
-        HOST_DEVICE static SpectrumTexture makeChecker(const Spectrum & v1, const Spectrum & v2, Float scale) {
+        HOST_DEVICE static SpectrumTexture makeChecker(int v1, int v2, Float scale) {
             SpectrumTexture texture;
 
             texture.type = SpectrumTextureType::CHECKER;
@@ -176,12 +177,12 @@ class SpectrumTexture {
             return texture;
         }
 
-        HOST_DEVICE const Spectrum & evaluate(const Intersection & i) const {
+        HOST_DEVICE Float evaluate(const Scene & s, const Intersection & i, Float lambda) const {
             switch (type) {
                 case SpectrumTextureType::CONSTANT:
-                    return evaluateConstant();
+                    return evaluateConstant(s, lambda);
                 case SpectrumTextureType::CHECKER:
-                    return evaluateChecker(i);
+                    return evaluateChecker(s, i, lambda);
             }
 
             return constant.value;
@@ -191,18 +192,16 @@ class SpectrumTexture {
         SpectrumTextureType type;
 
         union {
-            struct { Spectrum value; } constant;
-            struct { Spectrum value1, value2; Float scale; } checker;
+            struct { int value; } constant;
+            struct { int value1, value2; Float scale; } checker;
         };
 
-        HOST_DEVICE const Spectrum & evaluateConstant() const {
-            return constant.value;
-        }
+        HOST_DEVICE Float evaluateConstant(const Scene & s, Float lambda) const { return s.getSpectra()[constant.value](lambda); }
 
-        HOST_DEVICE const Spectrum & evaluateChecker(const Intersection & i) const {
-            int x = int(floor(i.u * checker.scale));
-            int y = int(floor(i.v * checker.scale));
+        HOST_DEVICE Float evaluateChecker(const Scene & s, const Intersection & i, Float lambda) const {
+            int x = int(floor(i.u / checker.scale));
+            int y = int(floor(i.v / checker.scale));
 
-            return (x + y) % 2 == 0 ? checker.value1 : checker.value2;
+            return (x + y) % 2 == 0 ? s.getSpectra()[checker.value1](lambda) : s.getSpectra()[checker.value2](lambda);
         }
 };

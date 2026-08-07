@@ -30,7 +30,7 @@ if(CMAKE_CUDA_COMPILER)
 
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-    set(CMAKE_CUDA_ARCHITECTURES all-major)
+    set(CMAKE_CUDA_ARCHITECTURES native)
 
     add_executable(pathtracer_gpu main.cu)
 
@@ -40,5 +40,9 @@ if(CMAKE_CUDA_COMPILER)
             -Xcompiler=-Wall
             -Xcompiler=-Wextra
         >
+    )
+
+    target_link_options(pathtracer_gpu PRIVATE
+        "$<DEVICE_LINK:SHELL:-Xnvlink -w>"
     )
 endif()
