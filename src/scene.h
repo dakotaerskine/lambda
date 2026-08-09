@@ -13,13 +13,15 @@ class SpectrumTexture;
 
 class Scene {
     public:
-        HOST_DEVICE Scene(DenseSpectrum<Float> * _spectra, DenseSpectrum<Complex> * _complexSpectra, Background * _background, Object * _objects, int _numObjects, Material * _materials, int * _materialProperties, ScalarTexture * _scalarTextures, SpectrumTexture * _spectrumTextures) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), numObjects(_numObjects), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures) {}
+        HOST_DEVICE Scene() : spectra(nullptr), complexSpectra(nullptr), background(), objects(nullptr), numObjects(0), materials(nullptr), materialProperties(nullptr), scalarTextures(nullptr), spectrumTextures(nullptr) {}
+
+        HOST_DEVICE Scene(DenseSpectrum<Float> * const _spectra, DenseSpectrum<Complex> * const _complexSpectra, const Background & _background, Object * const _objects, int _numObjects, Material * const _materials, int * const _materialProperties, ScalarTexture * const _scalarTextures, SpectrumTexture * const _spectrumTextures) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), numObjects(_numObjects), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures) {}
 
         HOST_DEVICE DenseSpectrum<Float> * getSpectra() const { return spectra; }
 
         HOST_DEVICE DenseSpectrum<Complex> * getComplexSpectra() const { return complexSpectra; }
 
-        HOST_DEVICE Background * getBackground() const { return background; }
+        HOST_DEVICE const Background & getBackground() const { return background; }
 
         HOST_DEVICE Object * getObjects() const { return objects; }
 
@@ -43,7 +45,7 @@ class Scene {
     private:
         DenseSpectrum<Float> * spectra;
         DenseSpectrum<Complex> * complexSpectra;
-        Background * background;
+        Background background;
         Object * objects;
         int numObjects;
         Material * materials;

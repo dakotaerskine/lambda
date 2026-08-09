@@ -11,21 +11,9 @@ class Matrix {
                 data[i] = Complex(0, 0);
         }
 
-        HOST_DEVICE Matrix(const Matrix & m) {
-            for (int i = 0; i < 4; i++)
-                data[i] = m.data[i];
-        }
-
         HOST_DEVICE Matrix(const Complex d[4]) {
             for (int i = 0; i < 4; i++)
                 data[i] = d[i];
-        }
-
-        HOST_DEVICE Matrix & operator=(const Matrix & m) {
-            for (int i = 0; i < 4; i++)
-                data[i] = m.data[i];
-
-            return (*this);
         }
 
         HOST_DEVICE Complex & get(int i, int j) {
@@ -77,7 +65,7 @@ class Matrix {
         }
 
         HOST_DEVICE friend Matrix operator*(const Complex & d, const Matrix & m) { return m * d; }
-        
+
         HOST_DEVICE Matrix & operator+=(const Matrix & m) {
             for (int i = 0; i < 4; i++)
                 data[i] += m.data[i];

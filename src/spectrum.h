@@ -19,22 +19,6 @@ class SampledSpectrum {
                 data[i] = d;
         }
 
-        HOST_DEVICE SampledSpectrum(const SampledSpectrum & s) {
-            size = s.size;
-
-            for (int i = 0; i < size; i++)
-                data[i] = s.data[i];
-        }
-
-        HOST_DEVICE SampledSpectrum & operator=(const SampledSpectrum & s) {
-            size = s.size;
-
-            for (int i = 0; i < size; i++)
-                data[i] = s.data[i];
-
-            return *this;
-        }
-
         HOST_DEVICE Float & operator[](int i) {
             assert(i >= 0 && i < size);
             return data[i];
@@ -151,7 +135,7 @@ class SampledSpectrum {
 
             return s3;
         }
-        
+
         HOST_DEVICE friend SampledSpectrum operator/(const SampledSpectrum & s1, Float d) {
             assert(d != 0);
 
@@ -179,18 +163,6 @@ class DenseSpectrum {
         HOST_DEVICE DenseSpectrum(const T & d) {
             for (int i = 0; i < CIE_LAMBDA_BINS; i++)
                 data[i] = d;
-        }   
-
-        HOST_DEVICE DenseSpectrum(const DenseSpectrum & s) {
-            for (int i = 0; i < CIE_LAMBDA_BINS; i++)
-                data[i] = s.data[i];
-        }
-
-        HOST_DEVICE DenseSpectrum & operator=(const DenseSpectrum & s) {
-            for (int i = 0; i < CIE_LAMBDA_BINS; i++)
-                data[i] = s.data[i];
-
-            return *this;
         }
 
         HOST_DEVICE T & operator[](int i) {

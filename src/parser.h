@@ -11,19 +11,18 @@
 #include <string>
 #include <vector>
 
-#include "camera.h"
-#include "config.h"
 #include "constants.h"
 #include "material.h"
 #include "object.h"
 #include "platform.h"
+#include "renderer.h"
 #include "spectrum.h"
 #include "texture.h"
 #include "vector.h"
 
 class Parser {
     public:
-        static void parseFile(const std::string & input, Config & config, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, Background & background, Camera & camera, std::vector<Object> & objects, std::vector<Material> & materials, std::vector<int> & materialProperties, std::vector<ScalarTexture> & scalarTextures, std::vector<SpectrumTexture> & spectrumTextures) {
+        static void parseFile(const std::string & input, Renderer & renderer, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, Background & background, std::vector<Object> & objects, std::vector<Material> & materials, std::vector<int> & materialProperties, std::vector<ScalarTexture> & scalarTextures, std::vector<SpectrumTexture> & spectrumTextures) {
             std::ifstream inputFile(input);
 
             if (!inputFile.is_open()) {
@@ -58,38 +57,36 @@ class Parser {
                 if (command == "Render") {
                     renderCommandFound = true;
 
-                    config.width = parseValue<int>(ss, lineNumber, "width");
-                    if (config.width <= 0) throw error(lineNumber, "'width' must be positive, got " + std::to_string(config.width));
+                    int width = parseValue<int>(ss, lineNumber, "width");
+                    if (width <= 0) throw error(lineNumber, "'width' must be positive, got " + std::to_string(width));
 
-                    config.height = parseValue<int>(ss, lineNumber, "height");
-                    if (config.height <= 0) throw error(lineNumber, "'height' must be positive, got " + std::to_string(config.height));
+                    int height = parseValue<int>(ss, lineNumber, "height");
+                    if (height <= 0) throw error(lineNumber, "'height' must be positive, got " + std::to_string(height));
 
-                    config.depth = parseValue<int>(ss, lineNumber, "depth");
-                    if (config.depth < 0) throw error(lineNumber, "'depth' must be non-negative, got " + std::to_string(config.depth));
+                    int depth = parseValue<int>(ss, lineNumber, "depth");
+                    if (depth < 0) throw error(lineNumber, "'depth' must be non-negative, got " + std::to_string(depth));
 
-                    config.samples = parseValue<int>(ss, lineNumber, "samples");
-                    if (config.samples < 1) throw error(lineNumber, "'samples' must be at least 1, got " + std::to_string(config.samples));
+                    int samples = parseValue<int>(ss, lineNumber, "samples");
+                    if (samples < 1) throw error(lineNumber, "'samples' must be at least 1, got " + std::to_string(samples));
 
-                    config.sqrtSamples = int(std::sqrt(config.samples));
-                    if (config.sqrtSamples * config.sqrtSamples != config.samples) throw error(lineNumber, "'samples' must be a perfect square, got " + std::to_string(config.samples));
+                    int sqrtSamples = int(std::sqrt(samples));
+                    if (sqrtSamples * sqrtSamples != samples) throw error(lineNumber, "'samples' must be a perfect square, got " + std::to_string(samples));
 
-                    config.wavelengthSamples = parseValue<int>(ss, lineNumber, "wavelengthSamples");
-                    if (config.wavelengthSamples < 2) throw error(lineNumber, "'wavelengthSamples' must be at least 2, got " + std::to_string(config.wavelengthSamples));
-                    if (config.wavelengthSamples > MAX_WAVELENGTH_SAMPLES) throw error(lineNumber, "'wavelengthSamples' must be at most " + std::to_string(MAX_WAVELENGTH_SAMPLES) + ", got " + std::to_string(config.wavelengthSamples));
+                    int wavelengthSamples = parseValue<int>(ss, lineNumber, "wavelengthSamples");
+                    if (wavelengthSamples < 2) throw error(lineNumber, "'wavelengthSamples' must be at least 2, got " + std::to_string(wavelengthSamples));
+                    if (wavelengthSamples > MAX_WAVELENGTH_SAMPLES) throw error(lineNumber, "'wavelengthSamples' must be at most " + std::to_string(MAX_WAVELENGTH_SAMPLES) + ", got " + std::to_string(wavelengthSamples));
 
-                    config.lambdaMin = parseValue<Float>(ss, lineNumber, "lambdaMin");
-                    if (config.lambdaMin < 0) throw error(lineNumber, "'lambdaMin' must be non-negative, got " + std::to_string(config.lambdaMin));
-                    if (config.lambdaMin < CIE_LAMBDA_MIN) throw error(lineNumber, "'lambdaMin' must be at least " + std::to_string(CIE_LAMBDA_MIN) + ", got " + std::to_string(config.lambdaMin));
+                    Float lambdaMin = parseValue<Float>(ss, lineNumber, "lambdaMin");
+                    if (lambdaMin < 0) throw error(lineNumber, "'lambdaMin' must be non-negative, got " + std::to_string(lambdaMin));
+                    if (lambdaMin < CIE_LAMBDA_MIN) throw error(lineNumber, "'lambdaMin' must be at least " + std::to_string(CIE_LAMBDA_MIN) + ", got " + std::to_string(lambdaMin));
 
-                    config.lambdaMax = parseValue<Float>(ss, lineNumber, "lambdaMax");
-                    if (config.lambdaMax < 0) throw error(lineNumber, "'lambdaMax' must be non-negative, got " + std::to_string(config.lambdaMax));
-                    if (config.lambdaMax > CIE_LAMBDA_MAX) throw error(lineNumber, "'lambdaMax' must be at most " + std::to_string(CIE_LAMBDA_MAX) + ", got " + std::to_string(config.lambdaMax));
+                    Float lambdaMax = parseValue<Float>(ss, lineNumber, "lambdaMax");
+                    if (lambdaMax < 0) throw error(lineNumber, "'lambdaMax' must be non-negative, got " + std::to_string(lambdaMax));
+                    if (lambdaMax > CIE_LAMBDA_MAX) throw error(lineNumber, "'lambdaMax' must be at most " + std::to_string(CIE_LAMBDA_MAX) + ", got " + std::to_string(lambdaMax));
 
-                    if (config.lambdaMin >= config.lambdaMax) throw error(lineNumber, "'lambdaMin' must be at most 'lambdaMax', got " + std::to_string(config.lambdaMin) + " and " + std::to_string(config.lambdaMax));
+                    if (lambdaMin >= lambdaMax) throw error(lineNumber, "'lambdaMin' must be at most 'lambdaMax', got " + std::to_string(lambdaMin) + " and " + std::to_string(lambdaMax));
 
-                    config.totalPixels = config.width * config.height;
-
-                    config.lambdaStep = (config.lambdaMax - config.lambdaMin) / (config.wavelengthSamples - 1);
+                    renderer = Renderer(width, height, depth, samples, sqrtSamples, wavelengthSamples, lambdaMin, lambdaMax);
                 }
                 else if (command == "Background") {
                     backgroundCommandFound = true;
@@ -104,7 +101,7 @@ class Parser {
                     Vector horizontal = parseVector(ss, lineNumber, "horizontal");
                     Vector vertical = parseVector(ss, lineNumber, "vertical");
 
-                    camera = Camera(position, corner, horizontal, vertical);
+                    renderer.setCamera(position, corner, horizontal, vertical);
                 }
                 else if (command == "Texture") {
                     std::string name = parseValue<std::string>(ss, lineNumber, "name");
@@ -332,7 +329,7 @@ class Parser {
         template <typename T>
         static int parseSpectrum(std::stringstream & ss, int lineNumber, const std::string & parameter, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra) {
             std::string message = "'" + parameter + "' is missing or invalid";
-            
+
             std::string token;
 
             if (!(ss >> token)) throw error(lineNumber, message);

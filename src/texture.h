@@ -2,63 +2,20 @@
 
 #include "intersection.h"
 #include "platform.h"
-#include "scene.h"
 #include "spectrum.h"
 #include "utils.h"
 
-enum class ScalarTextureType { CONSTANT, PERLIN, WORLEY };
-enum class SpectrumTextureType { CONSTANT, CHECKER };
+enum class ScalarTextureType { SCALAR_CONSTANT, PERLIN, WORLEY };
+enum class SpectrumTextureType { SPECTRUM_CONSTANT, CHECKER };
 
 class ScalarTexture {
     public:
-        HOST_DEVICE ScalarTexture() : type(ScalarTextureType::CONSTANT) {}
-
-        HOST_DEVICE ScalarTexture(const ScalarTexture & t) {
-            type = t.type;
-
-            switch (type) {
-                case ScalarTextureType::CONSTANT:
-                    constant.value = t.constant.value;
-                    break;
-                case ScalarTextureType::PERLIN:
-                    perlin.min = t.perlin.min;
-                    perlin.max = t.perlin.max;
-                    perlin.frequency = t.perlin.frequency;
-                    break;
-                case ScalarTextureType::WORLEY:
-                    worley.min = t.worley.min;
-                    worley.max = t.worley.max;
-                    worley.frequency = t.worley.frequency;
-                    break;
-            }
-        }
-
-        HOST_DEVICE ScalarTexture & operator=(const ScalarTexture & t) {
-            type = t.type;
-
-            switch (type) {
-                case ScalarTextureType::CONSTANT:
-                    constant.value = t.constant.value;
-                    break;
-                case ScalarTextureType::PERLIN:
-                    perlin.min = t.perlin.min;
-                    perlin.max = t.perlin.max;
-                    perlin.frequency = t.perlin.frequency;
-                    break;
-                case ScalarTextureType::WORLEY:
-                    worley.min = t.worley.min;
-                    worley.max = t.worley.max;
-                    worley.frequency = t.worley.frequency;
-                    break;
-            }
-
-            return *this;
-        }
+        HOST_DEVICE ScalarTexture() : type(ScalarTextureType::SCALAR_CONSTANT) {}
 
         HOST_DEVICE static ScalarTexture makeConstant(Float v) {
             ScalarTexture texture;
 
-            texture.type = ScalarTextureType::CONSTANT;
+            texture.type = ScalarTextureType::SCALAR_CONSTANT;
             texture.constant.value = v;
 
             return texture;
@@ -88,7 +45,7 @@ class ScalarTexture {
 
         HOST_DEVICE Float evaluate(const Intersection & i) const {
             switch (type) {
-                case ScalarTextureType::CONSTANT:
+                case ScalarTextureType::SCALAR_CONSTANT:
                     return evaluateConstant();
                 case ScalarTextureType::PERLIN:
                     return evaluatePerlin(i);
@@ -123,13 +80,13 @@ class ScalarTexture {
 
 class SpectrumTexture {
     public:
-        HOST_DEVICE SpectrumTexture() : type(SpectrumTextureType::CONSTANT) {}
+        HOST_DEVICE SpectrumTexture() : type(SpectrumTextureType::SPECTRUM_CONSTANT) {}
 
         HOST_DEVICE SpectrumTexture(const SpectrumTexture & s) {
             type = s.type;
 
             switch (type) {
-                case SpectrumTextureType::CONSTANT:
+                case SpectrumTextureType::SPECTRUM_CONSTANT:
                     constant.value = s.constant.value;
                     break;
                 case SpectrumTextureType::CHECKER:
@@ -144,7 +101,7 @@ class SpectrumTexture {
             type = s.type;
 
             switch (type) {
-                case SpectrumTextureType::CONSTANT:
+                case SpectrumTextureType::SPECTRUM_CONSTANT:
                     constant.value = s.constant.value;
                     break;
                 case SpectrumTextureType::CHECKER:
@@ -160,7 +117,7 @@ class SpectrumTexture {
         HOST_DEVICE static SpectrumTexture makeConstant(int v) {
             SpectrumTexture texture;
 
-            texture.type = SpectrumTextureType::CONSTANT;
+            texture.type = SpectrumTextureType::SPECTRUM_CONSTANT;
             texture.constant.value = v;
 
             return texture;
@@ -177,12 +134,12 @@ class SpectrumTexture {
             return texture;
         }
 
-        HOST_DEVICE Float evaluate(const Scene & s, const Intersection & i, Float lambda) const {
+        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, const Intersection & i, Float lambda) const {
             switch (type) {
-                case SpectrumTextureType::CONSTANT:
-                    return evaluateConstant(s, lambda);
+                case SpectrumTextureType::SPECTRUM_CONSTANT:
+                    return evaluateConstant(spectra, lambda);
                 case SpectrumTextureType::CHECKER:
-                    return evaluateChecker(s, i, lambda);
+                    return evaluateChecker(spectra, i, lambda);
             }
 
             return constant.value;
@@ -196,12 +153,12 @@ class SpectrumTexture {
             struct { int value1, value2; Float scale; } checker;
         };
 
-        HOST_DEVICE Float evaluateConstant(const Scene & s, Float lambda) const { return s.getSpectra()[constant.value](lambda); }
+        HOST_DEVICE Float evaluateConstant(DenseSpectrum<Float> * const spectra, Float lambda) const { return spectra[constant.value](lambda); }
 
-        HOST_DEVICE Float evaluateChecker(const Scene & s, const Intersection & i, Float lambda) const {
+        HOST_DEVICE Float evaluateChecker(DenseSpectrum<Float> * const spectra, const Intersection & i, Float lambda) const {
             int x = int(floor(i.u / checker.scale));
             int y = int(floor(i.v / checker.scale));
 
-            return (x + y) % 2 == 0 ? s.getSpectra()[checker.value1](lambda) : s.getSpectra()[checker.value2](lambda);
+            return (x + y) % 2 == 0 ? spectra[checker.value1](lambda) : spectra[checker.value2](lambda);
         }
 };

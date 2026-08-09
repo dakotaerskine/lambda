@@ -3,7 +3,7 @@
 #include "constants.h"
 #include "intersection.h"
 #include "platform.h"
-#include "scene.h"
+#include "spectrum.h"
 #include "texture.h"
 #include "vector.h"
 
@@ -11,7 +11,7 @@ enum class BackgroundType { EQUIRECTANGULAR };
 
 class Background {
     public:
-        HOST_DEVICE Background() : type(BackgroundType::EQUIRECTANGULAR) {}
+        HOST_DEVICE Background() : type(BackgroundType::EQUIRECTANGULAR) { equirectangular.texture = -1; }
 
         HOST_DEVICE Background(const Background & b) {
             type = b.type;
@@ -44,14 +44,14 @@ class Background {
             return background;
         }
 
-        HOST_DEVICE Float evaluate(const Scene & s, const Vector & direction, Float lambda) const {
+        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Vector & direction, Float lambda) const {
             switch (type) {
-                case BackgroundType::EQUIRECTANGULAR: return evaluateEquirectangular(s, direction, lambda);
+                case BackgroundType::EQUIRECTANGULAR: return evaluateEquirectangular(spectra, spectrumTextures, direction, lambda);
             }
 
             return 0;
         }
-    
+
     private:
         BackgroundType type;
 
@@ -59,7 +59,7 @@ class Background {
             struct { int texture; } equirectangular;
         };
 
-        HOST_DEVICE Float evaluateEquirectangular(const Scene & s, const Vector & direction, Float lambda) const {
+        HOST_DEVICE Float evaluateEquirectangular(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Vector & direction, Float lambda) const {
             Intersection intersection;
 
             intersection.point = direction;
@@ -67,6 +67,6 @@ class Background {
             intersection.u = (atan2(direction[2], direction[0]) + PI) / (2 * PI);
             intersection.v = acos(direction[1]) / PI;
 
-            return s.getSpectrumTextures()[equirectangular.texture].evaluate(s, intersection, lambda);
+            return spectrumTextures[equirectangular.texture].evaluate(spectra, intersection, lambda);
         }
 };

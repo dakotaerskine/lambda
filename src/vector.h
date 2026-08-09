@@ -9,30 +9,17 @@ class Vector {
     public:
         HOST_DEVICE Vector() { data[0] = data[1] = data[2] = 0; }
 
-        HOST_DEVICE Vector(const Vector & v) {
-            data[0] = v.data[0];
-            data[1] = v.data[1];
-            data[2] = v.data[2];
-        }
-
         HOST_DEVICE Vector(Float d0, Float d1, Float d2) {
             data[0] = d0;
             data[1] = d1;
             data[2] = d2;
         }
 
-        HOST_DEVICE Vector & operator=(const Vector & v) {
-            data[0] = v.data[0];
-            data[1] = v.data[1];
-            data[2] = v.data[2];
-            return *this;
-        }
-
         HOST_DEVICE Float & operator[](int i) {
             assert(i >= 0 && i < 3);
             return data[i];
         }
-        
+
         HOST_DEVICE const Float & operator[](int i) const {
             assert(i >= 0 && i < 3);
             return data[i];

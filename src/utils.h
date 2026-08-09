@@ -40,30 +40,6 @@ HOST_DEVICE inline Vector randomInHemisphere(const Vector & n, Random & state) {
     return x * u + y * v + z * w;
 }
 
-HOST_DEVICE inline Complex squareRoot(const Complex & c) {
-    #ifdef __CUDA_ARCH__
-        return thrust::sqrt((thrust::complex<double>)c);
-    #else
-        return std::sqrt((std::complex<double>)c);
-    #endif
-}
-
-HOST_DEVICE inline Float absoluteValue(const Complex & c) {
-    #ifdef __CUDA_ARCH__
-        return thrust::abs((thrust::complex<double>)c);
-    #else
-        return std::abs((std::complex<double>)c);
-    #endif
-}
-
-HOST_DEVICE inline Complex exponential(const Complex & c) {
-    #ifdef __CUDA_ARCH__
-        return thrust::exp((thrust::complex<double>)c);
-    #else
-        return std::exp((std::complex<double>)c);
-    #endif
-}
-
 HOST_DEVICE inline Vector reflected(const Vector & v, const Vector & n) {
     return v - 2 * v.dot(n) * n;
 }
@@ -84,11 +60,7 @@ HOST_DEVICE inline Float fade(Float t) {
 }
 
 HOST_DEVICE inline int permutation(int i) {
-    #ifdef __CUDA_ARCH__
-        return d_PERMUTATION[i & 255];
-    #else
-        return PERMUTATION[i & 255];
-    #endif
+    return PERMUTATION[i & 255];
 }
 
 HOST_DEVICE inline Float gradient(int hash, Float x, Float y, Float z)
@@ -199,59 +171,21 @@ HOST_DEVICE inline Matrix propagationMatrix(const Complex & phi) {
   return propMatrix;
 }
 
-HOST_DEVICE inline Float xyz31(int lambda, int i) {
-    #ifdef __CUDA_ARCH__
-        return d_CIE_XYZ_1931[lambda - CIE_LAMBDA_MIN][i];
-    #else
-        return CIE_XYZ_1931[lambda - CIE_LAMBDA_MIN][i];
-    #endif
-}
-
-HOST_DEVICE inline Float x31(Float lambda) {
+HOST_DEVICE inline Float xyz31(Float lambda, int i) {
     int min = lambda;
 
-    if (min == CIE_LAMBDA_MAX) return xyz31(min, 0);
+    if (min == CIE_LAMBDA_MAX) return CIE_XYZ_1931[(min - CIE_LAMBDA_MIN) * 3 + i];
 
     int max = min + 1;
 
-    return (max - lambda) * xyz31(min, 0) + (lambda - min) * xyz31(max, 0);
-}
-
-HOST_DEVICE inline Float y31(Float lambda) {
-    int min = lambda;
-
-    if (min == CIE_LAMBDA_MAX) return xyz31(min, 1);
-
-    int max = min + 1;
-
-    return (max - lambda) * xyz31(min, 1) + (lambda - min) * xyz31(max, 1);
-}
-
-HOST_DEVICE inline Float z31(Float lambda) {
-    int min = lambda;
-
-    if (min == CIE_LAMBDA_MAX) return xyz31(min, 2);
-
-    int max = min + 1;
-
-    return (max - lambda) * xyz31(min, 2) + (lambda - min) * xyz31(max, 2);
+    return (max - lambda) * CIE_XYZ_1931[(min - CIE_LAMBDA_MIN) * 3 + i] + (lambda - min) * CIE_XYZ_1931[(max - CIE_LAMBDA_MIN) * 3 + i];
 }
 
 HOST_DEVICE inline Float d65(Float lambda) {
     int min = lambda;
     int max = min + 1;
 
-    Float d65Min, d65Max;
-
-    #ifdef __CUDA_ARCH__
-        d65Min = d_CIE_D65[min - 300];
-        d65Max = d_CIE_D65[max - 300];
-    #else
-        d65Min = CIE_D65[min - 300];
-        d65Max = CIE_D65[max - 300];
-    #endif
-
-    return (max - lambda) * d65Min + (lambda - min) * d65Max;
+    return (max - lambda) * CIE_D65[min - CIE_D65_LAMBDA_MIN] + (lambda - min) * CIE_D65[max - CIE_D65_LAMBDA_MIN];
 }
 
 HOST_DEVICE inline Vector spectrumToRGB(const SampledSpectrum & s, Float min, Float max) {
@@ -262,10 +196,11 @@ HOST_DEVICE inline Vector spectrumToRGB(const SampledSpectrum & s, Float min, Fl
     for (int i = 0; i < size; i++) {
         Float lambda = min + i * (max - min) / (size - 1);
         Float radiance = s[i];
-        x += x31(lambda) * radiance;
-        y += y31(lambda) * radiance;
-        z += z31(lambda) * radiance;
-        w += y31(lambda);
+        Float y31 = xyz31(lambda, 1);
+        x += xyz31(lambda, 0) * radiance;
+        y += y31 * radiance;
+        z += xyz31(lambda, 2) * radiance;
+        w += y31;
     }
 
     x /= w;

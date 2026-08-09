@@ -16,40 +16,6 @@ class Object {
     public:
         HOST_DEVICE Object() : type(ObjectType::SPHERE) {}
 
-        HOST_DEVICE Object(const Object & o) {
-            type = o.type;
-            material = o.material;
-
-            switch (type) {
-                case ObjectType::SPHERE:
-                    sphere.center = o.sphere.center;
-                    sphere.radius = o.sphere.radius;
-                    break;
-                case ObjectType::PLANE:
-                    plane.point = o.plane.point;
-                    plane.normal = o.plane.normal;
-                    break;
-            }
-        }
-
-        HOST_DEVICE Object & operator=(const Object & o) {
-            type = o.type;
-            material = o.material;
-
-            switch (type) {
-                case ObjectType::SPHERE:
-                    sphere.center = o.sphere.center;
-                    sphere.radius = o.sphere.radius;
-                    break;
-                case ObjectType::PLANE:
-                    plane.point = o.plane.point;
-                    plane.normal = o.plane.normal;
-                    break;
-            }
-
-            return *this;
-        }
-
         HOST_DEVICE static Object makeSphere(int m, const Vector & c, Float r) {
             Object object;
 
