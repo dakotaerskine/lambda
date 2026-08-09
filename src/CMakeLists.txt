@@ -9,6 +9,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+option(CPU "Force CPU build" OFF)
+
 include(CheckLanguage)
 check_language(CUDA)
 
@@ -36,11 +38,11 @@ if(CMAKE_CUDA_COMPILER AND NOT CPU)
         "$<DEVICE_LINK:SHELL:-Xnvlink -w>"
     )
 else()
+    add_executable(pathtracer main.cpp)
+
     find_package(OpenMP REQUIRED)
     target_link_libraries(pathtracer PRIVATE OpenMP::OpenMP_CXX)
     target_compile_definitions(pathtracer PRIVATE USE_OPENMP)
-
-    add_executable(pathtracer main.cpp)
 
     target_compile_options(pathtracer PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:
@@ -50,3 +52,5 @@ else()
         >
     )
 endif()
+
+target_include_directories(pathtracer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

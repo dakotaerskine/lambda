@@ -1,9 +1,9 @@
 #pragma once
 
-#include "intersection.h"
-#include "platform.h"
-#include "spectrum.h"
-#include "utils.h"
+#include "core/platform.h"
+#include "core/utils.h"
+#include "math/intersection.h"
+#include "math/spectrum.h"
 
 enum class ScalarTextureType { SCALAR_CONSTANT, PERLIN, WORLEY };
 enum class SpectrumTextureType { SPECTRUM_CONSTANT, CHECKER };

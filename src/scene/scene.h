@@ -1,10 +1,10 @@
 #pragma once
 
-#include "intersection.h"
-#include "object.h"
-#include "platform.h"
-#include "ray.h"
-#include "spectrum.h"
+#include "core/platform.h"
+#include "math/intersection.h"
+#include "math/ray.h"
+#include "math/spectrum.h"
+#include "scene/object.h"
 
 class Background;
 class Material;

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "platform.h"
-#include "vector.h"
+#include "core/platform.h"
+#include "math/vector.h"
 
 class Ray {
     public:

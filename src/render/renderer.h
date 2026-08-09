@@ -6,16 +6,18 @@
     #include <omp.h>
 #endif
 
-#include "background.h"
-#include "camera.h"
-#include "constants.h"
-#include "intersection.h"
-#include "platform.h"
-#include "random.h"
-#include "ray.h"
-#include "scene.h"
-#include "spectrum.h"
-#include "vector.h"
+#include "core/constants.h"
+#include "core/platform.h"
+#include "math/intersection.h"
+#include "math/random.h"
+#include "math/ray.h"
+#include "math/spectrum.h"
+#include "math/vector.h"
+#include "render/camera.h"
+#include "scene/background.h"
+#include "scene/material.h"
+#include "scene/object.h"
+#include "scene/scene.h"
 
 class Renderer {
     public:

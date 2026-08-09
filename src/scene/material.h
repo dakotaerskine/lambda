@@ -2,15 +2,15 @@
 
 #include <cmath>
 
-#include "intersection.h"
-#include "matrix.h"
-#include "platform.h"
-#include "random.h"
-#include "ray.h"
-#include "spectrum.h"
-#include "texture.h"
-#include "utils.h"
-#include "vector.h"
+#include "core/platform.h"
+#include "core/utils.h"
+#include "math/intersection.h"
+#include "math/matrix.h"
+#include "math/random.h"
+#include "math/ray.h"
+#include "math/spectrum.h"
+#include "math/vector.h"
+#include "scene/texture.h"
 
 enum class MaterialType { LAMBERTIAN, METAL, DIELECTRIC, EMISSIVE, THINFILM };
 

@@ -11,14 +11,14 @@
 #include <string>
 #include <vector>
 
-#include "constants.h"
-#include "material.h"
-#include "object.h"
-#include "platform.h"
-#include "renderer.h"
-#include "spectrum.h"
-#include "texture.h"
-#include "vector.h"
+#include "core/constants.h"
+#include "core/platform.h"
+#include "math/spectrum.h"
+#include "math/vector.h"
+#include "render/renderer.h"
+#include "scene/material.h"
+#include "scene/object.h"
+#include "scene/texture.h"
 
 class Parser {
     public:

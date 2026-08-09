@@ -2,7 +2,7 @@
 
 #include <cassert>
 
-#include "platform.h"
+#include "core/platform.h"
 
 class Matrix {
     public:

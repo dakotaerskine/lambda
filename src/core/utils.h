@@ -2,12 +2,12 @@
 
 #include <cmath>
 
-#include "constants.h"
-#include "matrix.h"
-#include "platform.h"
-#include "random.h"
-#include "spectrum.h"
-#include "vector.h"
+#include "core/constants.h"
+#include "core/platform.h"
+#include "math/matrix.h"
+#include "math/random.h"
+#include "math/spectrum.h"
+#include "math/vector.h"
 
 HOST_DEVICE inline Float randomDouble(Random & state) {
     return state.next();

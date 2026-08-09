@@ -3,7 +3,7 @@
 #include <cassert>
 #include <cmath>
 
-#include "platform.h"
+#include "core/platform.h"
 
 class Vector {
     public:

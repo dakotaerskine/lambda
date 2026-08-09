@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform.h"
+#include "core/platform.h"
 
 constexpr Float EPSILON = 1e-4;
 constexpr Float PI = 3.14159265358979323846;

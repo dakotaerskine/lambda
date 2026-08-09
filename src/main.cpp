@@ -13,19 +13,19 @@
     #include <omp.h>
 #endif
 
-#include "background.h"
-#include "buffer.h"
-#include "constants.h"
-#include "material.h"
-#include "object.h"
-#include "parser.h"
-#include "platform.h"
-#include "random.h"
-#include "renderer.h"
-#include "scene.h"
-#include "spectrum.h"
-#include "texture.h"
-#include "utils.h"
+#include "core/buffer.h"
+#include "core/constants.h"
+#include "core/parser.h"
+#include "core/platform.h"
+#include "core/utils.h"
+#include "math/random.h"
+#include "math/spectrum.h"
+#include "render/renderer.h"
+#include "scene/background.h"
+#include "scene/material.h"
+#include "scene/object.h"
+#include "scene/scene.h"
+#include "scene/texture.h"
 
 int main(int argc, char * argv[]) {
     if (argc != 2) {

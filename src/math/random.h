@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "platform.h"
+#include "core/platform.h"
 
 class Random {
     public:

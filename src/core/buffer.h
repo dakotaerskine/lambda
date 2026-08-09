@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "utils.h"
+#include "core/utils.h"
 
 #ifdef __CUDACC__
     template <typename T>

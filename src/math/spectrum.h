@@ -2,8 +2,8 @@
 
 #include <cassert>
 
-#include "constants.h"
-#include "platform.h"
+#include "core/constants.h"
+#include "core/platform.h"
 
 class SampledSpectrum {
     public:

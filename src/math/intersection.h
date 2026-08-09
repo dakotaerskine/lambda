@@ -1,9 +1,9 @@
 #pragma once
 
-#include "constants.h"
-#include "platform.h"
-#include "ray.h"
-#include "vector.h"
+#include "core/constants.h"
+#include "core/platform.h"
+#include "math/ray.h"
+#include "math/vector.h"
 
 class Intersection {
     public:

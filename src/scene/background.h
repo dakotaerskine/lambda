@@ -1,11 +1,11 @@
 #pragma once
 
-#include "constants.h"
-#include "intersection.h"
-#include "platform.h"
-#include "spectrum.h"
-#include "texture.h"
-#include "vector.h"
+#include "core/constants.h"
+#include "core/platform.h"
+#include "math/intersection.h"
+#include "math/spectrum.h"
+#include "math/vector.h"
+#include "scene/texture.h"
 
 enum class BackgroundType { EQUIRECTANGULAR };
 
