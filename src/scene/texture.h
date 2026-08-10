@@ -136,13 +136,20 @@ class SpectrumTexture {
 
         HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, const Intersection & i, Float lambda) const {
             switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT:
-                    return evaluateConstant(spectra, lambda);
-                case SpectrumTextureType::CHECKER:
-                    return evaluateChecker(spectra, i, lambda);
+                case SpectrumTextureType::SPECTRUM_CONSTANT: return evaluateConstant(spectra, lambda);
+                case SpectrumTextureType::CHECKER: return evaluateChecker(spectra, i, lambda);
             }
 
-            return constant.value;
+            return 0;
+        }
+
+        HOST_DEVICE Float average(DenseSpectrum<Float> * const spectra) const {
+            switch (type) {
+                case SpectrumTextureType::SPECTRUM_CONSTANT: return averageConstant(spectra);
+                case SpectrumTextureType::CHECKER: return averageChecker(spectra);
+            }
+
+            return 0;
         }
 
     private:
@@ -161,4 +168,7 @@ class SpectrumTexture {
 
             return (x + y) % 2 == 0 ? spectra[checker.value1](lambda) : spectra[checker.value2](lambda);
         }
+
+        HOST_DEVICE Float averageConstant(DenseSpectrum<Float> * const spectra) const { return spectra[constant.value].average(); }
+        HOST_DEVICE Float averageChecker(DenseSpectrum<Float> * const spectra) const { return 0.5 * (spectra[checker.value1].average() + spectra[checker.value2].average()); }
 };

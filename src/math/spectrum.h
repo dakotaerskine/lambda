@@ -175,13 +175,22 @@ class DenseSpectrum {
 
             Float index = lambda - CIE_LAMBDA_MIN;
 
-            int min = index;
+            int min = int(index);
 
             if (min == CIE_LAMBDA_BINS - 1) return data[min];
 
             int max = min + 1;
 
             return (max - index) * data[min] + (index - min) * data[max];
+        }
+
+        HOST_DEVICE T average() const {
+            T sum = 0;
+
+            for (int i = 0; i < CIE_LAMBDA_BINS; i++)
+                sum += data[i];
+
+            return sum / CIE_LAMBDA_BINS;
         }
 
     private:

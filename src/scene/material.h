@@ -66,16 +66,66 @@ class Material {
             return material;
         }
 
-        HOST_DEVICE bool scatter(DenseSpectrum<Float> * const spectra, DenseSpectrum<Complex> * const complexSpectra, int * const materialProperties, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures, const Ray & r, const Intersection & i, Ray & scattered, Float & attenuation, Random & state) const {
+        HOST_DEVICE bool isSpecular() const {
             switch (type) {
-                case MaterialType::LAMBERTIAN: return scatterLambertian(spectra, spectrumTextures, r, i, scattered, attenuation, state);
-                case MaterialType::METAL: return scatterMetal(spectra, spectrumTextures, r, i, scattered, attenuation);
-                case MaterialType::DIELECTRIC: return scatterDielectric(spectra, r, i, scattered, attenuation, state);
-                case MaterialType::EMISSIVE: return scatterEmissive(spectra, spectrumTextures, r, i, attenuation);
-                case MaterialType::THINFILM: return scatterThinFilm(complexSpectra, materialProperties, scalarTextures, r, i, scattered, attenuation, state);
+                case MaterialType::LAMBERTIAN: return false;
+                default: return true;
+            }
+        }
+
+        HOST_DEVICE bool isEmissive() const {
+            switch (type) {
+                case MaterialType::EMISSIVE: return true;
+                default: return false;
+            }
+        }
+
+        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const Ray & r) const {
+            switch (type) {
+                case MaterialType::LAMBERTIAN: return evaluateLambertian(spectra, spectrumTextures, i, r);
+                case MaterialType::METAL: return evaluateMetal(spectra, spectrumTextures, i, r);
+                case MaterialType::DIELECTRIC: return 1;
+                case MaterialType::EMISSIVE: return evaluateEmissive(spectra, spectrumTextures, i, r);
+                case MaterialType::THINFILM: return 1;
             }
 
-            return false;
+            return 0;
+        }
+
+        HOST_DEVICE Float pdf(const Intersection & i, const Ray & r) const {
+            switch (type) {
+                case MaterialType::LAMBERTIAN: return pdfLambertian(i, r);
+                case MaterialType::METAL: return 1;
+                case MaterialType::DIELECTRIC: return 1;
+                case MaterialType::EMISSIVE: return 0;
+                case MaterialType::THINFILM: return 1;
+            }
+
+            return 0;
+        }
+
+        HOST_DEVICE Float average(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures) const {
+            switch (type) {
+                case MaterialType::LAMBERTIAN: return averageLambertian(spectra, spectrumTextures);
+                case MaterialType::METAL: return averageMetal(spectra, spectrumTextures);
+                case MaterialType::DIELECTRIC: return 1;
+                case MaterialType::EMISSIVE: return averageEmissive(spectra, spectrumTextures);
+                case MaterialType::THINFILM: return 1;
+            }
+
+            return 0;
+        }
+
+        HOST_DEVICE Ray scatter(DenseSpectrum<Float> * const spectra, DenseSpectrum<Complex> * const complexSpectra, int * const materialProperties, ScalarTexture * const scalarTextures, const Ray & r, const Intersection & i, Random & state) const {
+            switch (type) {
+                case MaterialType::LAMBERTIAN: return scatterLambertian(r, i, state);
+                case MaterialType::METAL: return scatterMetal(r, i);
+                case MaterialType::DIELECTRIC: return scatterDielectric(spectra, r, i, state);
+                case MaterialType::EMISSIVE: return Ray();
+                case MaterialType::THINFILM: return scatterThinFilm(complexSpectra, materialProperties, scalarTextures, r, i, state);
+            }
+
+            return Ray();
         }
 
     private:
@@ -89,54 +139,51 @@ class Material {
             struct { int numLayers; int n; int d; } thinFilm;
         };
 
-        HOST_DEVICE bool scatterLambertian(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Ray & r, const Intersection & i, Ray & scattered, Float & attenuation, Random & state) const {
-            scattered = Ray(i.point, randomInHemisphere(i.normal, state), r.getLambda());
-            attenuation = spectrumTextures[lambertian.albedo].evaluate(spectra, i, r.getLambda());
+        HOST_DEVICE Float evaluateLambertian(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const Ray & r) const {
+            Float cosTheta = dot(i.normal, r.getDirection());
 
-            return true;
+            if (cosTheta <= 0) return 0;
+
+            return spectrumTextures[lambertian.albedo].evaluate(spectra, i, r.getLambda()) / PI * cosTheta;
+        }
+        HOST_DEVICE Float evaluateMetal(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const Ray & r) const { return spectrumTextures[metal.albedo].evaluate(spectra, i, r.getLambda()); }
+        HOST_DEVICE Float evaluateEmissive(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const Ray & r) const { return spectrumTextures[emissive.emission].evaluate(spectra, i, r.getLambda()); }
+
+        HOST_DEVICE Float pdfLambertian(const Intersection & i, const Ray & r) const {
+            Float cosTheta = dot(i.normal, r.getDirection());
+
+            return cosTheta > 0 ? cosTheta / PI : 0;
         }
 
-        HOST_DEVICE bool scatterMetal(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Ray & r, const Intersection & i, Ray & scattered, Float & attenuation) const {
-            scattered = Ray(i.point, reflected(r.getDirection(), i.normal), r.getLambda());
-            attenuation = spectrumTextures[metal.albedo].evaluate(spectra, i, r.getLambda());
+        HOST_DEVICE Float averageLambertian(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures) const { return spectrumTextures[lambertian.albedo].average(spectra); }
+        HOST_DEVICE Float averageMetal(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures) const { return spectrumTextures[metal.albedo].average(spectra); }
+        HOST_DEVICE Float averageEmissive(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures) const { return spectrumTextures[emissive.emission].average(spectra); }
 
-            return true;
-        }
+        HOST_DEVICE Ray scatterLambertian(const Ray & r, const Intersection & i, Random & state) const { return Ray(i.point, randomInHemisphere(i.normal, state), r.getLambda()); }
+        HOST_DEVICE Ray scatterMetal(const Ray & r, const Intersection & i) const { return Ray(i.point, reflected(r.getDirection(), i.normal), r.getLambda()); }
 
-        HOST_DEVICE bool scatterDielectric(DenseSpectrum<Float> * const spectra, const Ray & r, const Intersection & i, Ray & scattered, Float & attenuation, Random & state) const {
+        HOST_DEVICE Ray scatterDielectric(DenseSpectrum<Float> * const spectra, const Ray & r, const Intersection & i, Random & state) const {
             Float lambda = r.getLambda();
             Float ratio = spectra[dielectric.n0](lambda) / spectra[dielectric.n1](lambda);
             if (!i.frontFacing) ratio = 1 / ratio;
             Float r0 = (spectra[dielectric.n0](lambda) - spectra[dielectric.n1](lambda)) / (spectra[dielectric.n0](lambda) + spectra[dielectric.n1](lambda));
             r0 *= r0;
-            Float reflectance = r0 + (1 - r0) * pow(1 + r.getDirection().dot(i.normal), 5);
+            Float reflectance = r0 + (1 - r0) * pow(1 + dot(r.getDirection(), i.normal), 5);
             Vector direction = (randomDouble(state) > reflectance) ? refracted(r.getDirection(), i.normal, ratio) : reflected(r.getDirection(), i.normal);
 
-            scattered = Ray(i.point, direction, r.getLambda());
-            attenuation = 1;
-
-            return true;
+            return Ray(i.point, direction, r.getLambda());
         }
 
-        HOST_DEVICE bool scatterEmissive(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Ray & r, const Intersection & i, Float & attenuation) const {
-            attenuation = spectrumTextures[emissive.emission].evaluate(spectra, i, r.getLambda());
-
-            return false;
-        }
-
-        HOST_DEVICE bool scatterThinFilm(DenseSpectrum<Complex> * const complexSpectra, int * const materialProperties, ScalarTexture * const scalarTextures, const Ray & r, const Intersection & i, Ray & scattered, Float & attenuation, Random & state) const {
+        HOST_DEVICE Ray scatterThinFilm(DenseSpectrum<Complex> * const complexSpectra, int * const materialProperties, ScalarTexture * const scalarTextures, const Ray & r, const Intersection & i, Random & state) const {
             Float lambda = r.getLambda();
             Float ratio = (complexSpectra[materialProperties[thinFilm.n]](lambda) / complexSpectra[materialProperties[thinFilm.n + thinFilm.numLayers + 1]](lambda)).real();
             if (!i.frontFacing) ratio = 1 / ratio;
             Float reflectance = thinFilmReflectance(complexSpectra, materialProperties, scalarTextures, r, i);
             Vector direction = reflected(r.getDirection(), i.normal);
-            attenuation = 1;
 
             if (randomDouble(state) > reflectance) direction = refracted(r.getDirection(), i.normal, ratio);
 
-            scattered = Ray(i.point, direction, r.getLambda());
-
-            return true;
+            return Ray(i.point, direction, r.getLambda());
         }
 
         HOST_DEVICE Float thinFilmReflectance(DenseSpectrum<Complex> * const complexSpectra, int * const materialProperties, ScalarTexture * const scalarTextures, const Ray & r, const Intersection & i) const {
@@ -147,7 +194,7 @@ class Material {
             Complex n0 = complexSpectra[materialProperties[thinFilm.n + jOffset]](lambda);
             Complex n1 = complexSpectra[materialProperties[thinFilm.n + jOffset + jSign]](lambda);
 
-            Complex cosCurrent = i.normal.dot(-r.getDirection());
+            Complex cosCurrent = dot(i.normal, -r.getDirection());
             Complex sinCurrent;
             Complex sinNext = n0 / n1;
             sinNext *= sinNext * (Complex(1) - cosCurrent * cosCurrent);

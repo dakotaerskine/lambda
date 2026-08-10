@@ -72,14 +72,14 @@ class Vector {
         HOST_DEVICE Float length() const { return sqrt(data[0] * data[0] + data[1] * data[1] + data[2] * data[2]); }
         HOST_DEVICE Float lengthSquared() const { return data[0] * data[0] + data[1] * data[1] + data[2] * data[2]; }
 
-        HOST_DEVICE Vector normalize() const {
-            Float len = length();
+        HOST_DEVICE friend Vector normalize(const Vector & v) {
+            Float len = v.length();
             assert(len != 0);
-            return Vector(data[0] / len, data[1] / len, data[2] / len);
+            return Vector(v.data[0] / len, v.data[1] / len, v.data[2] / len);
         }
 
-        HOST_DEVICE Float dot(const Vector & v) const { return data[0] * v.data[0] + data[1] * v.data[1] + data[2] * v.data[2]; }
-        HOST_DEVICE Vector cross(const Vector & v) const { return Vector(data[1] * v.data[2] - data[2] * v.data[1], data[2] * v.data[0] - data[0] * v.data[2], data[0] * v.data[1] - data[1] * v.data[0]); }
+        HOST_DEVICE friend Float dot(const Vector & v1, const Vector & v2) { return v1.data[0] * v2.data[0] + v1.data[1] * v2.data[1] + v1.data[2] * v2.data[2]; }
+        HOST_DEVICE friend Vector cross(const Vector & v1, const Vector & v2) { return Vector(v1.data[1] * v2.data[2] - v1.data[2] * v2.data[1], v1.data[2] * v2.data[0] - v1.data[0] * v2.data[2], v1.data[0] * v2.data[1] - v1.data[1] * v2.data[0]); }
 
     private:
         Float data[3];

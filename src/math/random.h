@@ -16,7 +16,7 @@ class Random {
 
         HOST_DEVICE Float next() {
             uint32_t x = step();
-            return Float(x) / Float(4294967296.0);   // [0, 1)
+            return Float(x) / Float(4294967296.0);
         }
 
     private:

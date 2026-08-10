@@ -14,8 +14,7 @@ make
 Lambda takes in a single `.lrd` scene file and writes a `.ppm` image next to it (`render.lrd` → `render.ppm`).
 
 ```sh
-./pathtracer_cpu render.lrd
-./pathtracer_gpu render.lrd
+./pathtracer render.lrd
 ```
 
 ## Lambda Render Description (`.lrd`)
@@ -69,5 +68,5 @@ Material <name> thinfilm [n] [d]
 
 ```
 Object sphere <material> (center) <radius>
-Object plane <material> (point) (normal)
+Object quad <material> (corner) (horizontal) (vertical)
 ```

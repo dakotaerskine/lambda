@@ -31,6 +31,7 @@ if(CMAKE_CUDA_COMPILER AND NOT CPU)
             -lineinfo
             -Xcompiler=-Wall
             -Xcompiler=-Wextra
+            -Xcompiler=-Wfloat-conversion
         >
     )
 
@@ -49,6 +50,7 @@ else()
             -Wall
             -Wextra
             -Wpedantic
+            -Wfloat-conversion
         >
     )
 endif()

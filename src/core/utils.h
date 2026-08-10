@@ -14,7 +14,7 @@ HOST_DEVICE inline Float randomDouble(Random & state) {
 }
 
 HOST_DEVICE inline Vector randomUnitVector(Random & state) {
-    Vector unitVector = Vector(randomDouble(state) * 2 - 1, randomDouble(state) * 2 - 1, randomDouble(state) * 2 - 1).normalize();
+    Vector unitVector = normalize(Vector(randomDouble(state) * 2 - 1, randomDouble(state) * 2 - 1, randomDouble(state) * 2 - 1));
 
     return unitVector;
 }
@@ -31,22 +31,49 @@ HOST_DEVICE inline Vector randomInHemisphere(const Vector & n, Random & state) {
     Float y = r * sin(phi);
     Float z = sqrt(1 - r2);
 
-    Vector w = n.normalize();
+    Vector w = normalize(n);
 
     Vector u = fabs(w[0]) > fabs(w[1]) ? Vector(0, 0, 1) : Vector(1, 0, 0);
-    u = u.cross(w);
-    Vector v = w.cross(u);
+    u = cross(u, w);
+    Vector v = cross(w, u);
 
     return x * u + y * v + z * w;
 }
 
+HOST_DEVICE inline Vector randomInCone(const Vector & n, Float cosThetaMax, Random & state) {
+    Float r1 = randomDouble(state);
+    Float r2 = randomDouble(state);
+
+    Float cosTheta = 1 + r1 * (cosThetaMax - 1);
+    Float sinTheta = sqrt(1 - cosTheta * cosTheta);
+    Float phi = 2 * PI * r2;
+
+    Float x = sinTheta * cos(phi);
+    Float y = sinTheta * sin(phi);
+    Float z = cosTheta;
+
+    Vector w = normalize(n);
+    Vector u = fabs(w[0]) > fabs(w[1]) ? Vector(0, 0, 1) : Vector(1, 0, 0);
+    u = normalize(cross(u, w));
+    Vector v = cross(w, u);
+
+    return x * u + y * v + z * w;
+}
+
+HOST_DEVICE inline Float powerHeuristic(Float pdfA, Float pdfB) {
+    pdfA *= pdfA;
+    pdfB *= pdfB;
+
+    return pdfA / (pdfA + pdfB);
+}
+
 HOST_DEVICE inline Vector reflected(const Vector & v, const Vector & n) {
-    return v - 2 * v.dot(n) * n;
+    return v - 2 * dot(v, n) * n;
 }
 
 HOST_DEVICE inline Vector refracted(const Vector & v, const Vector & n, Float ratio) {
     Vector direction;
-    Float vn = v.dot(n);
+    Float vn = dot(v, n);
     Float root = 1 - ratio * ratio * (1 - vn * vn);
 
     if (root < 0) direction = v - 2 * vn * n;
@@ -128,7 +155,7 @@ HOST_DEVICE inline Float worleyNoise(const Vector & point) {
         for (int yo = -1; yo <= 1; yo++) {
             for (int zo = -1; zo <= 1; zo++) {
                 Vector cell(xi + xo, yi + yo, zi + zo);
-                Vector feature(fract(sin(cell.dot(Vector(127.1, 311.7, 74.7))) * 43758.5453), fract(sin(cell.dot(Vector(269.5, 183.3, 246.1))) * 43758.5453), fract(sin(cell.dot(Vector(113.5, 271.9, 124.6))) * 43758.5453));
+                Vector feature(fract(sin(dot(cell, Vector(127.1, 311.7, 74.7))) * 43758.5453), fract(sin(dot(cell, Vector(269.5, 183.3, 246.1))) * 43758.5453), fract(sin(dot(cell, Vector(113.5, 271.9, 124.6))) * 43758.5453));
                 feature += cell;
                 distance = fmin(distance, (point - feature).length());
             }
@@ -172,7 +199,7 @@ HOST_DEVICE inline Matrix propagationMatrix(const Complex & phi) {
 }
 
 HOST_DEVICE inline Float xyz31(Float lambda, int i) {
-    int min = lambda;
+    int min = int(lambda);
 
     if (min == CIE_LAMBDA_MAX) return CIE_XYZ_1931[(min - CIE_LAMBDA_MIN) * 3 + i];
 
@@ -182,7 +209,7 @@ HOST_DEVICE inline Float xyz31(Float lambda, int i) {
 }
 
 HOST_DEVICE inline Float d65(Float lambda) {
-    int min = lambda;
+    int min = int(lambda);
     int max = min + 1;
 
     return (max - lambda) * CIE_D65[min - CIE_D65_LAMBDA_MIN] + (lambda - min) * CIE_D65[max - CIE_D65_LAMBDA_MIN];

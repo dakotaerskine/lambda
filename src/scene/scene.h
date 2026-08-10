@@ -13,9 +13,9 @@ class SpectrumTexture;
 
 class Scene {
     public:
-        HOST_DEVICE Scene() : spectra(nullptr), complexSpectra(nullptr), background(), objects(nullptr), numObjects(0), materials(nullptr), materialProperties(nullptr), scalarTextures(nullptr), spectrumTextures(nullptr) {}
+        HOST_DEVICE Scene() : spectra(nullptr), complexSpectra(nullptr), background(), objects(nullptr), numObjects(0), lights(nullptr), numLights(0), lightPowers(nullptr), totalLightPower(0), materials(nullptr), materialProperties(nullptr), scalarTextures(nullptr), spectrumTextures(nullptr) {}
 
-        HOST_DEVICE Scene(DenseSpectrum<Float> * const _spectra, DenseSpectrum<Complex> * const _complexSpectra, const Background & _background, Object * const _objects, int _numObjects, Material * const _materials, int * const _materialProperties, ScalarTexture * const _scalarTextures, SpectrumTexture * const _spectrumTextures) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), numObjects(_numObjects), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures) {}
+        HOST_DEVICE Scene(DenseSpectrum<Float> * const _spectra, DenseSpectrum<Complex> * const _complexSpectra, const Background & _background, Object * const _objects, int _numObjects, int * const _lights, int _numLights, Float * const _lightPowers, Float _totalLightPower, Material * const _materials, int * const _materialProperties, ScalarTexture * const _scalarTextures, SpectrumTexture * const _spectrumTextures) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), numObjects(_numObjects), lights(_lights), numLights(_numLights), lightPowers(_lightPowers), totalLightPower(_totalLightPower), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures) {}
 
         HOST_DEVICE DenseSpectrum<Float> * getSpectra() const { return spectra; }
 
@@ -24,6 +24,14 @@ class Scene {
         HOST_DEVICE const Background & getBackground() const { return background; }
 
         HOST_DEVICE Object * getObjects() const { return objects; }
+
+        HOST_DEVICE int * getLights() const { return lights; }
+
+        HOST_DEVICE int getNumLights() const { return numLights; }
+
+        HOST_DEVICE Float * getLightPowers() const { return lightPowers; }
+
+        HOST_DEVICE Float getTotalLightPower() const { return totalLightPower; }
 
         HOST_DEVICE Material * getMaterials() const { return materials; }
 
@@ -48,6 +56,10 @@ class Scene {
         Background background;
         Object * objects;
         int numObjects;
+        int * lights;
+        int numLights;
+        Float * lightPowers;
+        Float totalLightPower;
         Material * materials;
         int * materialProperties;
         ScalarTexture * scalarTextures;

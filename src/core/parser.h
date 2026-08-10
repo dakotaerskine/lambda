@@ -22,7 +22,7 @@
 
 class Parser {
     public:
-        static void parseFile(const std::string & input, Renderer & renderer, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, Background & background, std::vector<Object> & objects, std::vector<Material> & materials, std::vector<int> & materialProperties, std::vector<ScalarTexture> & scalarTextures, std::vector<SpectrumTexture> & spectrumTextures) {
+        static void parseFile(const std::string & input, Renderer & renderer, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, Background & background, std::vector<Object> & objects, std::vector<int> & lights, std::vector<Float> & lightPowers, Float & totalLightPower, std::vector<Material> & materials, std::vector<int> & materialProperties, std::vector<ScalarTexture> & scalarTextures, std::vector<SpectrumTexture> & spectrumTextures) {
             std::ifstream inputFile(input);
 
             if (!inputFile.is_open()) {
@@ -100,6 +100,10 @@ class Parser {
                     Vector corner = parseVector(ss, lineNumber, "corner");
                     Vector horizontal = parseVector(ss, lineNumber, "horizontal");
                     Vector vertical = parseVector(ss, lineNumber, "vertical");
+
+                    if (horizontal.length() < EPSILON) throw error(lineNumber, "'horizontal' must be non-zero, got " + std::to_string(horizontal.length()));
+                    if (vertical.length() < EPSILON) throw error(lineNumber, "'vertical' must be non-zero, got " + std::to_string(vertical.length()));
+                    if (cross(horizontal, vertical).length() < EPSILON) throw error(lineNumber, "'horizontal' and 'vertical' must be non-parallel");
 
                     renderer.setCamera(position, corner, horizontal, vertical);
                 }
@@ -219,15 +223,27 @@ class Parser {
 
                         objects.push_back(Object::makeSphere(material, center, radius));
                     }
-                    else if (type == "plane") {
-                        Vector point = parseVector(ss, lineNumber, "point");
-                        Vector normal = parseVector(ss, lineNumber, "normal");
+                    else if (type == "quad") {
+                        Vector corner = parseVector(ss, lineNumber, "corner");
+                        Vector horizontal = parseVector(ss, lineNumber, "horizontal");
+                        Vector vertical = parseVector(ss, lineNumber, "vertical");
 
-                        if (normal.length() < EPSILON) throw error(lineNumber, "'normal' must be non-zero, got " + std::to_string(normal.length()));
+                        if (horizontal.length() < EPSILON) throw error(lineNumber, "'horizontal' must be non-zero, got " + std::to_string(horizontal.length()));
+                        if (vertical.length() < EPSILON) throw error(lineNumber, "'vertical' must be non-zero, got " + std::to_string(vertical.length()));
+                        if (cross(horizontal, vertical).length() < EPSILON) throw error(lineNumber, "'horizontal' and 'vertical' must be non-parallel");
 
-                        objects.push_back(Object::makePlane(material, point, normal));
+                        objects.push_back(Object::makeQuad(material, corner, horizontal, vertical));
                     }
-                    else throw error(lineNumber, "'type' must be \"plane\" or \"sphere\"");
+                    else throw error(lineNumber, "'type' must be \"quad\" or \"sphere\"");
+
+                    if (materials[material].isEmissive()) {
+                        lights.push_back(objects.size() - 1);
+
+                        Float lightPower = objects[objects.size() - 1].area() * materials[material].average(spectra.data(), spectrumTextures.data());
+
+                        lightPowers.push_back(lightPower);
+                        totalLightPower += lightPower;
+                    }
                 }
                 else throw error(lineNumber, "expected \"Background\", \"Camera\", \"Material\", \"Render\", \"Object\", or \"Texture\", got \"" + command + "\"");
             }

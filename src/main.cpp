@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -5,6 +6,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -45,13 +47,16 @@ int main(int argc, char * argv[]) {
     std::vector<DenseSpectrum<Complex>> complexSpectra;
     Background background;
     std::vector<Object> objects;
+    std::vector<int> lights;
+    std::vector<Float> lightPowers;
+    Float totalLightPower = 0;
     std::vector<Material> materials;
     std::vector<int> materialProperties;
     std::vector<ScalarTexture> scalarTextures;
     std::vector<SpectrumTexture> spectrumTextures;
 
     try {
-        Parser::parseFile(input, renderer, spectra, complexSpectra, background, objects, materials, materialProperties, scalarTextures, spectrumTextures);
+        Parser::parseFile(input, renderer, spectra, complexSpectra, background, objects, lights, lightPowers, totalLightPower, materials, materialProperties, scalarTextures, spectrumTextures);
     }
     catch (const std::exception & e) {
         std::cerr << input << e.what() << std::endl;
@@ -72,12 +77,14 @@ int main(int argc, char * argv[]) {
         Buffer<DenseSpectrum<Float>> d_spectra(spectra);
         Buffer<DenseSpectrum<Complex>> d_complexSpectra(complexSpectra);
         Buffer<Object> d_objects(objects);
+        Buffer<int> d_lights(lights);
+        Buffer<Float> d_lightPowers(lightPowers);
         Buffer<Material> d_materials(materials);
         Buffer<int> d_materialProperties(materialProperties);
         Buffer<ScalarTexture> d_scalarTextures(scalarTextures);
         Buffer<SpectrumTexture> d_spectrumTextures(spectrumTextures);
 
-        renderer.setScene(d_spectra.data(), d_complexSpectra.data(), background, d_objects.data(), objects.size(), d_materials.data(), d_materialProperties.data(), d_scalarTextures.data(), d_spectrumTextures.data());
+        renderer.setScene(d_spectra.data(), d_complexSpectra.data(), background, d_objects.data(), objects.size(), d_lights.data(), lights.size(), d_lightPowers.data(), totalLightPower, d_materials.data(), d_materialProperties.data(), d_scalarTextures.data(), d_spectrumTextures.data());
 
         Buffer<Float> d_output(h_output.size());
 
@@ -154,8 +161,16 @@ int main(int argc, char * argv[]) {
 
     outputFile << "P3\n" << renderer.getWidth() << " " << renderer.getHeight() << "\n255\n";
 
-    for (int i = 0; i < renderer.getTotalPixels(); i++)
-        outputFile << (int)(255.999 * h_output[i * 3 + 0]) << " " << (int)(255.999 * h_output[i * 3 + 1]) << " " << (int)(255.999 * h_output[i * 3 + 2]) << "\n";
+    std::mt19937 generator(0);
+    std::uniform_real_distribution<Float> distribution(-0.5, 0.5);
+
+    for (int i = 0; i < renderer.getTotalPixels(); i++) {
+        int r = std::clamp((int)std::round(255.0 * h_output[i * 3 + 0] + distribution(generator)), 0, 255);
+        int g = std::clamp((int)std::round(255.0 * h_output[i * 3 + 1] + distribution(generator)), 0, 255);
+        int b = std::clamp((int)std::round(255.0 * h_output[i * 3 + 2] + distribution(generator)), 0, 255);
+
+        outputFile << r << " " << g << " " << b << "\n";
+    }
 
     outputFile.close();
 
