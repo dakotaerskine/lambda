@@ -1,12 +1,5 @@
-#include <algorithm>
-#include <cctype>
-#include <cerrno>
 #include <chrono>
-#include <cstdint>
-#include <cstring>
-#include <fstream>
 #include <iostream>
-#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -20,6 +13,7 @@
 #include "core/parser.h"
 #include "core/platform.h"
 #include "core/utils.h"
+#include "core/writer.h"
 #include "math/random.h"
 #include "math/spectrum.h"
 #include "render/renderer.h"
@@ -30,16 +24,33 @@
 #include "scene/texture.h"
 
 int main(int argc, char * argv[]) {
-    if (argc != 2) {
+    if (argc != 2 && argc != 3) {
         std::cerr << argv[0] << ": invalid number of arguments" << std::endl;
         return 1;
     }
 
     std::string input(argv[1]);
 
-    if (input.length() < 4 || input.rfind(".lrd") != input.length() - 4) {
+    if (!Parser::hasValidExtension(input)) {
         std::cerr << input << ": invalid file extension" << std::endl;
         return 1;
+    }
+
+    std::string output;
+
+    if (argc == 3) {
+        output = argv[2];
+
+        if (!Writer::hasValidExtension(output)) {
+            std::cerr << output << ": invalid file extension" << std::endl;
+            return 1;
+        }
+    } else {
+        output = input;
+
+        output.erase(output.size() - 4);
+
+        output += ".ppm";
     }
 
     Renderer renderer;
@@ -84,11 +95,11 @@ int main(int argc, char * argv[]) {
         Buffer<ScalarTexture> d_scalarTextures(scalarTextures);
         Buffer<SpectrumTexture> d_spectrumTextures(spectrumTextures);
 
-        renderer.setScene(d_spectra.data(), d_complexSpectra.data(), background, d_objects.data(), objects.size(), d_lights.data(), lights.size(), d_lightPowers.data(), totalLightPower, d_materials.data(), d_materialProperties.data(), d_scalarTextures.data(), d_spectrumTextures.data());
+        renderer.setScene(d_spectra.data(), d_complexSpectra.data(), background, d_objects.data(), int(objects.size()), d_lights.data(), int(lights.size()), d_lightPowers.data(), totalLightPower, d_materials.data(), d_materialProperties.data(), d_scalarTextures.data(), d_spectrumTextures.data());
 
         Buffer<Float> d_output(h_output.size());
 
-        renderer.setOutputBuffer(d_output.data());
+        renderer.setBuffer(d_output.data());
 
         Buffer<int> d_completed(1);
 
@@ -144,35 +155,13 @@ int main(int argc, char * argv[]) {
         return 1;
     }
 
-    std::string output = input;
-
-    output.erase(output.size() - 4);
-
-    output += ".ppm";
-
-    std::ofstream outputFile(output);
-
-    if (!outputFile.is_open()) {
-        std::string error = std::strerror(errno);
-        error[0] = std::tolower(error[0]);
-        std::cerr << output + ": failed to open file (" + error + ")" << std::endl;
+    try {
+        Writer::write(output, renderer.getWidth(), renderer.getHeight(), h_output.data());
+    }
+    catch (const std::exception & e) {
+        std::cerr << output << e.what() << std::endl;
         return 1;
     }
-
-    outputFile << "P3\n" << renderer.getWidth() << " " << renderer.getHeight() << "\n255\n";
-
-    std::mt19937 generator(0);
-    std::uniform_real_distribution<Float> distribution(-0.5, 0.5);
-
-    for (int i = 0; i < renderer.getTotalPixels(); i++) {
-        int r = std::clamp((int)std::round(255.0 * h_output[i * 3 + 0] + distribution(generator)), 0, 255);
-        int g = std::clamp((int)std::round(255.0 * h_output[i * 3 + 1] + distribution(generator)), 0, 255);
-        int b = std::clamp((int)std::round(255.0 * h_output[i * 3 + 2] + distribution(generator)), 0, 255);
-
-        outputFile << r << " " << g << " " << b << "\n";
-    }
-
-    outputFile.close();
 
     return 0;
 }

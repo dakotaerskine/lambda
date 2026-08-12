@@ -42,22 +42,13 @@ class Object {
 
         HOST_DEVICE int getMaterial() const { return material; }
 
-        HOST_DEVICE bool intersect(int i, const Ray & r, Intersection & intersection) const {
+        HOST_DEVICE Float area() const {
             switch (type) {
-                case ObjectType::SPHERE: return intersectSphere(i, r, intersection);
-                case ObjectType::QUAD: return intersectQuad(i, r, intersection);
+                case ObjectType::SPHERE: return areaSphere();
+                case ObjectType::QUAD: return areaQuad();
             }
 
-            return false;
-        }
-
-        HOST_DEVICE Vector sample(const Vector & point, Random & state) const {
-            switch (type) {
-                case ObjectType::SPHERE: return sampleSphere(point, state);
-                case ObjectType::QUAD: return sampleQuad(point, state);
-            }
-
-            return Vector();
+            return 0;
         }
 
         HOST_DEVICE Float pdf(const Vector & point, const Vector & direction) const {
@@ -69,13 +60,22 @@ class Object {
             return 0;
         }
 
-        HOST_DEVICE Float area() const {
+        HOST_DEVICE Vector sample(const Vector & point, Random & state) const {
             switch (type) {
-                case ObjectType::SPHERE: return areaSphere();
-                case ObjectType::QUAD: return areaQuad();
+                case ObjectType::SPHERE: return sampleSphere(point, state);
+                case ObjectType::QUAD: return sampleQuad(point, state);
             }
 
-            return 0;
+            return Vector();
+        }
+
+        HOST_DEVICE bool intersect(int i, const Ray & r, Intersection & intersection) const {
+            switch (type) {
+                case ObjectType::SPHERE: return intersectSphere(i, r, intersection);
+                case ObjectType::QUAD: return intersectQuad(i, r, intersection);
+            }
+
+            return false;
         }
 
     private:
@@ -87,6 +87,64 @@ class Object {
             struct { Vector corner, horizontal, vertical, normal; } quad;
         };
 
+        HOST_DEVICE Float areaSphere() const { return 4 * PI * sphere.radius * sphere.radius; }
+        HOST_DEVICE Float areaQuad() const { return quad.normal.length(); }
+
+        HOST_DEVICE Float pdfSphere(const Vector & point, const Vector & direction) const {
+            Vector oc = sphere.center - point;
+            Float distanceSquared = oc.lengthSquared();
+            Float radiusSquared = sphere.radius * sphere.radius;
+
+            if (distanceSquared <= radiusSquared) return 1 / (4 * PI);
+
+            Float cosThetaMax = sqrtF(1 - radiusSquared / distanceSquared);
+            Float cosTheta = dot(normalize(oc), direction);
+
+            if (cosTheta < cosThetaMax) return 0;
+
+            return 1 / (2 * PI * (1 - cosThetaMax));
+        }
+
+        HOST_DEVICE Float pdfQuad(const Vector & point, const Vector & direction) const {
+            Float cosTheta = dot(normalize(quad.normal), direction);
+
+            if (fabs(cosTheta) < EPSILON) return 0;
+
+            Float t = dot(quad.corner - point, normalize(quad.normal)) / cosTheta;
+
+            if (t < EPSILON) return 0;
+
+            Vector local = (point + direction * t) - quad.corner;
+
+            Float u = dot(local, quad.horizontal) / quad.horizontal.lengthSquared();
+            Float v = dot(local, quad.vertical) / quad.vertical.lengthSquared();
+
+            if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
+
+            return t * t / (fabsF(cosTheta) * quad.normal.length());
+        }
+
+        HOST_DEVICE Vector sampleSphere(const Vector & point, Random & state) const {
+            Vector oc = sphere.center - point;
+            Float distanceSquared = oc.lengthSquared();
+            Float radiusSquared = sphere.radius * sphere.radius;
+
+            if (distanceSquared <= radiusSquared) return randomUnitVector(state);
+
+            Float cosThetaMax = sqrtF(1 - radiusSquared / distanceSquared);
+
+            return randomInCone(oc, cosThetaMax, state);
+        }
+
+        HOST_DEVICE Vector sampleQuad(const Vector & point, Random & state) const {
+            Float u = randomFloat(state);
+            Float v = randomFloat(state);
+
+            Vector sample = quad.corner + quad.horizontal * u + quad.vertical * v;
+
+            return normalize(sample - point);
+        }
+
         HOST_DEVICE bool intersectSphere(int i, const Ray & r, Intersection & intersection) const {
             Vector oc = r.getOrigin() - sphere.center;
 
@@ -97,7 +155,7 @@ class Object {
 
             if (d < 0) return false;
 
-            d = sqrt(d);
+            d = sqrtF(d);
 
             Float t1 = (-b - d) / (2 * a);
             Float t2 = (-b + d) / (2 * a);
@@ -112,8 +170,8 @@ class Object {
             intersection.t = t;
             intersection.point = r.at(t);
             intersection.normal = normalize(intersection.point - sphere.center);
-            intersection.u = (atan2(-intersection.normal[2], intersection.normal[0]) + PI) / (2 * PI);
-            intersection.v = acos(-intersection.normal[1]) / PI;
+            intersection.u = (atan2F(-intersection.normal[2], intersection.normal[0]) + PI) / (2 * PI);
+            intersection.v = acosF(-intersection.normal[1]) / PI;
             intersection.frontFacing = dot(r.getDirection(), intersection.normal) < 0;
             if (!intersection.frontFacing) intersection.normal *= -1;
 
@@ -150,62 +208,4 @@ class Object {
 
             return true;
         }
-
-        HOST_DEVICE Vector sampleSphere(const Vector & point, Random & state) const {
-            Vector oc = sphere.center - point;
-            Float distanceSquared = oc.lengthSquared();
-            Float radiusSquared = sphere.radius * sphere.radius;
-
-            if (distanceSquared <= radiusSquared) return randomUnitVector(state);
-
-            Float cosThetaMax = sqrt(1 - radiusSquared / distanceSquared);
-
-            return randomInCone(oc, cosThetaMax, state);
-        }
-
-        HOST_DEVICE Vector sampleQuad(const Vector & point, Random & state) const {
-            Float u = randomDouble(state);
-            Float v = randomDouble(state);
-
-            Vector sample = quad.corner + quad.horizontal * u + quad.vertical * v;
-
-            return normalize(sample - point);
-        }
-
-        HOST_DEVICE Float pdfSphere(const Vector & point, const Vector & direction) const {
-            Vector oc = sphere.center - point;
-            Float distanceSquared = oc.lengthSquared();
-            Float radiusSquared = sphere.radius * sphere.radius;
-
-            if (distanceSquared <= radiusSquared) return 1 / (4 * PI);
-
-            Float cosThetaMax = sqrt(1 - radiusSquared / distanceSquared);
-            Float cosTheta = dot(normalize(oc), direction);
-
-            if (cosTheta < cosThetaMax) return 0;
-
-            return 1 / (2 * PI * (1 - cosThetaMax));
-        }
-
-        HOST_DEVICE Float pdfQuad(const Vector & point, const Vector & direction) const {
-            Float cosTheta = dot(normalize(quad.normal), direction);
-
-            if (fabs(cosTheta) < EPSILON) return 0;
-
-            Float t = dot(quad.corner - point, normalize(quad.normal)) / cosTheta;
-
-            if (t < EPSILON) return 0;
-
-            Vector local = (point + direction * t) - quad.corner;
-
-            Float u = dot(local, quad.horizontal) / quad.horizontal.lengthSquared();
-            Float v = dot(local, quad.vertical) / quad.vertical.lengthSquared();
-
-            if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
-
-            return t * t / (fabs(cosTheta) * quad.normal.length());
-        }
-
-        HOST_DEVICE Float areaSphere() const { return 4 * PI * sphere.radius * sphere.radius; }
-        HOST_DEVICE Float areaQuad() const { return quad.normal.length(); }
 };

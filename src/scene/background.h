@@ -3,6 +3,7 @@
 #include "core/constants.h"
 #include "core/platform.h"
 #include "math/intersection.h"
+#include "math/ray.h"
 #include "math/spectrum.h"
 #include "math/vector.h"
 #include "scene/texture.h"
@@ -44,9 +45,9 @@ class Background {
             return background;
         }
 
-        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Vector & direction, Float lambda) const {
+        HOST_DEVICE SampledSpectrum evaluate(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Ray & r) const {
             switch (type) {
-                case BackgroundType::EQUIRECTANGULAR: return evaluateEquirectangular(spectra, spectrumTextures, direction, lambda);
+                case BackgroundType::EQUIRECTANGULAR: return evaluateEquirectangular(spectra, spectrumTextures, r);
             }
 
             return 0;
@@ -59,14 +60,20 @@ class Background {
             struct { int texture; } equirectangular;
         };
 
-        HOST_DEVICE Float evaluateEquirectangular(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Vector & direction, Float lambda) const {
+        HOST_DEVICE SampledSpectrum evaluateEquirectangular(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Ray & r) const {
             Intersection intersection;
 
-            intersection.point = direction;
+            intersection.point = r.getDirection();
 
-            intersection.u = (atan2(direction[2], direction[0]) + PI) / (2 * PI);
-            intersection.v = acos(direction[1]) / PI;
 
-            return spectrumTextures[equirectangular.texture].evaluate(spectra, intersection, lambda);
+            intersection.u = (atan2F(r.getDirection()[2], r.getDirection()[0]) + PI) / (2 * PI);
+            intersection.v = acosF(r.getDirection()[1]) / PI;
+
+            SampledSpectrum attenuation;
+
+            for (int i = 0; i < HERO_COUNT; i++)
+                attenuation[i] = spectrumTextures[equirectangular.texture].evaluate(spectra, intersection, r.getLambda(i));
+
+            return attenuation;
         }
 };

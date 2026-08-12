@@ -25,8 +25,8 @@ class Random {
         HOST_DEVICE uint32_t step() {
             uint64_t old = state;
             state = old * 6364136223846793005ULL + inc;
-            uint32_t xorshifted = ((old >> 18u) ^ old) >> 27u;
-            uint32_t rot = old >> 59u;
+            uint32_t xorshifted = uint32_t(((old >> 18u) ^ old) >> 27u);
+            uint32_t rot = uint32_t(old >> 59u);
             return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
         }
 };

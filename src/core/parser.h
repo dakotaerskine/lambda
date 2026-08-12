@@ -22,12 +22,14 @@
 
 class Parser {
     public:
+        static bool hasValidExtension(const std::string & output) { return hasExtension(output, ".lrd"); }
+
         static void parseFile(const std::string & input, Renderer & renderer, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, Background & background, std::vector<Object> & objects, std::vector<int> & lights, std::vector<Float> & lightPowers, Float & totalLightPower, std::vector<Material> & materials, std::vector<int> & materialProperties, std::vector<ScalarTexture> & scalarTextures, std::vector<SpectrumTexture> & spectrumTextures) {
             std::ifstream inputFile(input);
 
             if (!inputFile.is_open()) {
                 std::string error = std::strerror(errno);
-                error[0] = std::tolower(error[0]);
+                error[0] = char(std::tolower(error[0]));
                 throw std::runtime_error(": failed to open file (" + error + ")");
             }
 
@@ -72,10 +74,6 @@ class Parser {
                     int sqrtSamples = int(std::sqrt(samples));
                     if (sqrtSamples * sqrtSamples != samples) throw error(lineNumber, "'samples' must be a perfect square, got " + std::to_string(samples));
 
-                    int wavelengthSamples = parseValue<int>(ss, lineNumber, "wavelengthSamples");
-                    if (wavelengthSamples < 2) throw error(lineNumber, "'wavelengthSamples' must be at least 2, got " + std::to_string(wavelengthSamples));
-                    if (wavelengthSamples > MAX_WAVELENGTH_SAMPLES) throw error(lineNumber, "'wavelengthSamples' must be at most " + std::to_string(MAX_WAVELENGTH_SAMPLES) + ", got " + std::to_string(wavelengthSamples));
-
                     Float lambdaMin = parseValue<Float>(ss, lineNumber, "lambdaMin");
                     if (lambdaMin < 0) throw error(lineNumber, "'lambdaMin' must be non-negative, got " + std::to_string(lambdaMin));
                     if (lambdaMin < CIE_LAMBDA_MIN) throw error(lineNumber, "'lambdaMin' must be at least " + std::to_string(CIE_LAMBDA_MIN) + ", got " + std::to_string(lambdaMin));
@@ -86,7 +84,7 @@ class Parser {
 
                     if (lambdaMin >= lambdaMax) throw error(lineNumber, "'lambdaMin' must be at most 'lambdaMax', got " + std::to_string(lambdaMin) + " and " + std::to_string(lambdaMax));
 
-                    renderer = Renderer(width, height, depth, samples, sqrtSamples, wavelengthSamples, lambdaMin, lambdaMax);
+                    renderer = Renderer(width, height, depth, samples, sqrtSamples, lambdaMin, lambdaMax);
                 }
                 else if (command == "Background") {
                     backgroundCommandFound = true;
@@ -128,7 +126,7 @@ class Parser {
                         }
                         else throw error(lineNumber, "'subtype' must be \"constant\", \"perlin\", or \"worley\"");
 
-                        scalarTextureIndices[name] = scalarTextures.size() - 1;
+                        scalarTextureIndices[name] = int(scalarTextures.size() - 1);
                     }
                     else if (type == "spectrum") {
                         if (subtype == "constant") spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, lineNumber, "spectrum", spectra, complexSpectra)));
@@ -142,7 +140,7 @@ class Parser {
                         }
                         else throw error(lineNumber, "'subtype' must be \"constant\" or \"checker\"");
 
-                        spectrumTextureIndices[name] = spectrumTextures.size() - 1;
+                        spectrumTextureIndices[name] = int(spectrumTextures.size() - 1);
                     }
                     else throw error(lineNumber, "'type' must be \"scalar\" or \"spectrum\"");
                 }
@@ -171,22 +169,22 @@ class Parser {
 
                         if (n.size() < 2) throw error(lineNumber, "'n' must have at least 2 entries, got " + std::to_string(n.size()));
 
-                        int nOffset = materialProperties.size();
+                        int nOffset = int(materialProperties.size());
 
                         materialProperties.insert(materialProperties.end(), n.begin(), n.end());
 
-                        int numLayers = n.size() - 2;
+                        int numLayers = int(n.size() - 2);
 
                         std::vector<std::string> dNames = parseArray<std::string>(ss, lineNumber, "d");
                         if ((int)dNames.size() != numLayers) throw error(lineNumber, "'d' must have " + std::to_string(numLayers) + " entries, got " + std::to_string(dNames.size()));
 
-                        int dOffset = materialProperties.size();
+                        int dOffset = int(materialProperties.size());
 
                         for (int i = 0; i < numLayers; i++) {
                             try {
-                                scalarTextures.push_back(ScalarTexture::makeConstant(std::stod(dNames[i])));
+                                scalarTextures.push_back(ScalarTexture::makeConstant(stoF(dNames[i])));
 
-                                materialProperties.push_back(scalarTextures.size() - 1);
+                                materialProperties.push_back(int(scalarTextures.size() - 1));
                             }
                             catch (const std::exception &) {
                                 try {
@@ -201,7 +199,7 @@ class Parser {
                     }
                     else throw error(lineNumber, "'type' must be \"dielectric\", \"emissive\", \"lambertian\", \"metal\", or \"thinfilm\"");
 
-                    materialIndices[name] = materials.size() - 1;
+                    materialIndices[name] = int(materials.size() - 1);
                 }
                 else if (command == "Object") {
                     std::string type = parseValue<std::string>(ss, lineNumber, "type");
@@ -237,9 +235,9 @@ class Parser {
                     else throw error(lineNumber, "'type' must be \"quad\" or \"sphere\"");
 
                     if (materials[material].isEmissive()) {
-                        lights.push_back(objects.size() - 1);
+                        lights.push_back(int(objects.size() - 1));
 
-                        Float lightPower = objects[objects.size() - 1].area() * materials[material].average(spectra.data(), spectrumTextures.data());
+                        Float lightPower = objects[int(objects.size() - 1)].area() * materials[material].averageEmission(spectra.data(), spectrumTextures.data());
 
                         lightPowers.push_back(lightPower);
                         totalLightPower += lightPower;
@@ -274,6 +272,8 @@ class Parser {
             return result;
         }
 
+        static Float stoF(const std::string & s, size_t * index = nullptr) { return Float((sizeof(Float) == sizeof(float)) ? std::stof(s, index) : std::stod(s, index)); }
+
         template <typename T>
         static T parseValue(std::stringstream & ss, int lineNumber, const std::string & parameter) {
             T value;
@@ -300,7 +300,7 @@ class Parser {
             }
 
             try {
-                real = std::stod(token, &index);
+                real = stoF(token, &index);
 
                 if (index < token.length()) {
                     token = token.substr(index);
@@ -314,7 +314,7 @@ class Parser {
                         imaginary = real;
                         real = 0;
                     }
-                    else imaginary = std::stod(token);
+                    else imaginary = stoF(token);
                 }
             }
             catch (const std::exception &) {
@@ -353,9 +353,9 @@ class Parser {
             if (token != "(") {
                 if constexpr (std::is_same_v<T, Float>) {
                     try {
-                        spectra.push_back(DenseSpectrum<Float>(std::stod(token)));
+                        spectra.push_back(DenseSpectrum<Float>(stoF(token)));
 
-                        return spectra.size() - 1;
+                        return int(spectra.size() - 1);
                     } catch (const std::exception &) {
                         throw error(lineNumber, message);
                     }
@@ -363,16 +363,16 @@ class Parser {
                 else if constexpr (std::is_same_v<T, Complex>) {
                     complexSpectra.push_back(DenseSpectrum<Complex>(parseComplex(token, lineNumber, message)));
 
-                    return complexSpectra.size() - 1;
+                    return int(complexSpectra.size() - 1);
                 }
             }
 
-            std::map<Float, T> samples;
+            std::map<double, T> samples;
 
             while (ss >> token) {
                 if (token == ")") break;
 
-                Float lambda;
+                double lambda;
 
                 try {
                     lambda = std::stod(token);
@@ -386,7 +386,7 @@ class Parser {
 
                 if constexpr (std::is_same_v<T, Float>) {
                     try {
-                        samples[lambda] = std::stod(token);
+                        samples[lambda] = stoF(token);
                     } catch (const std::exception &) {
                         throw error(lineNumber, message);
                     }
@@ -399,35 +399,35 @@ class Parser {
 
             DenseSpectrum<T> spectrum;
 
-            typename std::map<Float, T>::iterator iterator = samples.begin();
+            typename std::map<double, T>::iterator iterator = samples.begin();
 
-            Float sampleMin = iterator->first;
-            Float sampleMax = samples.rbegin()->first;
+            double sampleMin = iterator->first;
+            double sampleMax = samples.rbegin()->first;
 
             for (int i = 0; i < CIE_LAMBDA_BINS; i++) {
                 if (i <= sampleMin - CIE_LAMBDA_MIN || samples.size() == 1) spectrum[i] = samples[sampleMin];
                 else if (i >= sampleMax - CIE_LAMBDA_MIN) spectrum[i] = samples[sampleMax];
                 else {
-                    Float lambda = i + CIE_LAMBDA_MIN;
+                    double lambda = i + CIE_LAMBDA_MIN;
 
                     while (std::next(iterator) != samples.end() && std::next(iterator)->first < lambda) iterator++;
 
-                    Float min = iterator->first;
-                    Float max = std::next(iterator)->first;
+                    double min = iterator->first;
+                    double max = std::next(iterator)->first;
 
-                    spectrum[i] = (max - lambda) / (max - min) * samples[min] + (lambda - min) / (max - min) * samples[max];
+                    spectrum[i] = T((max - lambda) / (max - min) * samples[min] + (lambda - min) / (max - min) * samples[max]);
                 }
             }
 
             if constexpr (std::is_same_v<T, Float>) {
                 spectra.push_back(spectrum);
 
-                return spectra.size() - 1;
+                return int(spectra.size() - 1);
             }
             else if constexpr (std::is_same_v<T, Complex>) {
                 complexSpectra.push_back(spectrum);
 
-                return complexSpectra.size() - 1;
+                return int(complexSpectra.size() - 1);
             }
             else throw error(lineNumber, message);
         }
@@ -449,7 +449,7 @@ class Parser {
 
                 if constexpr (std::is_same_v<T, Float>) {
                     try {
-                        values.push_back(std::stod(token));
+                        values.push_back(stoF(token));
                     } catch (const std::exception &) {
                         throw error(lineNumber, message);
                     }
@@ -493,7 +493,7 @@ class Parser {
             try {
                 spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, lineNumber, parameter, spectra, complexSpectra)));
 
-                return spectrumTextures.size() - 1;
+                return int(spectrumTextures.size() - 1);
             }
             catch (const std::exception &) {
                 ss.seekg(pos);

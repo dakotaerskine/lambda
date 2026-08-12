@@ -11,7 +11,7 @@
             DeviceBuffer() : pointer(nullptr) {}
 
             DeviceBuffer(const T * h_data_begin, const T * h_data_end) {
-                int n = h_data_end - h_data_begin;
+                int n = int(h_data_end - h_data_begin);
                 checkCudaError(cudaMallocManaged(&pointer, n * sizeof(T)), "failed to allocate device memory");
                 checkCudaError(cudaMemcpy(pointer, h_data_begin, n * sizeof(T), cudaMemcpyHostToDevice), "failed to copy to device memory");
             }
@@ -21,7 +21,7 @@
                 checkCudaError(cudaMemcpy(pointer, h_data.data(), h_data.size() * sizeof(T), cudaMemcpyHostToDevice), "failed to copy to device memory");
             }
 
-            DeviceBuffer(int n) {
+            DeviceBuffer(long unsigned int n) {
                 checkCudaError(cudaMallocManaged(&pointer, n * sizeof(T)), "failed to allocate device memory");
                 checkCudaError(cudaMemset(pointer, 0, n * sizeof(T)), "failed to initialize device memory");
             }

@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 
+#include "core/constants.h"
 #include "core/platform.h"
 
 class Vector {
@@ -25,8 +26,8 @@ class Vector {
             return data[i];
         }
 
-        HOST_DEVICE bool operator==(const Vector & v) const { return data[0] == v.data[0] && data[1] == v.data[1] && data[2] == v.data[2]; }
-        HOST_DEVICE bool operator!=(const Vector & v) const { return data[0] != v.data[0] || data[1] != v.data[1] || data[2] != v.data[2]; }
+        HOST_DEVICE bool operator==(const Vector & v) const { return fabsF(data[0] - v.data[0]) < EPSILON && fabsF(data[1] - v.data[1]) < EPSILON && fabsF(data[2] - v.data[2]) < EPSILON; }
+        HOST_DEVICE bool operator!=(const Vector & v) const { return fabsF(data[0] - v.data[0]) >= EPSILON || fabsF(data[1] - v.data[1]) >= EPSILON || fabsF(data[2] - v.data[2]) >= EPSILON; }
 
         HOST_DEVICE Vector & operator+=(const Vector & v) {
             data[0] += v.data[0];
@@ -69,7 +70,7 @@ class Vector {
             return Vector(v.data[0] / d, v.data[1] / d, v.data[2] / d);
         }
 
-        HOST_DEVICE Float length() const { return sqrt(data[0] * data[0] + data[1] * data[1] + data[2] * data[2]); }
+        HOST_DEVICE Float length() const { return sqrtF(data[0] * data[0] + data[1] * data[1] + data[2] * data[2]); }
         HOST_DEVICE Float lengthSquared() const { return data[0] * data[0] + data[1] * data[1] + data[2] * data[2]; }
 
         HOST_DEVICE friend Vector normalize(const Vector & v) {

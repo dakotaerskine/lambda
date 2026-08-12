@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
+#include <string>
 
 #include "core/constants.h"
 #include "core/platform.h"
@@ -9,27 +11,29 @@
 #include "math/spectrum.h"
 #include "math/vector.h"
 
-HOST_DEVICE inline Float randomDouble(Random & state) {
+HOST_DEVICE inline Float clamp(Float x, Float min, Float max) { return x < min ? min : (x > max ? max : x); }
+
+HOST_DEVICE inline Float randomFloat(Random & state) {
     return state.next();
 }
 
 HOST_DEVICE inline Vector randomUnitVector(Random & state) {
-    Vector unitVector = normalize(Vector(randomDouble(state) * 2 - 1, randomDouble(state) * 2 - 1, randomDouble(state) * 2 - 1));
+    Vector unitVector = normalize(Vector(randomFloat(state) * 2 - 1, randomFloat(state) * 2 - 1, randomFloat(state) * 2 - 1));
 
     return unitVector;
 }
 
 HOST_DEVICE inline Vector randomInHemisphere(const Vector & n, Random & state) {
-    Float r1 = randomDouble(state);
-    Float r2 = randomDouble(state);
+    Float r1 = randomFloat(state);
+    Float r2 = randomFloat(state);
 
     Float phi = 2 * PI * r1;
 
-    Float r = sqrt(r2);
+    Float r = sqrtF(r2);
 
-    Float x = r * cos(phi);
-    Float y = r * sin(phi);
-    Float z = sqrt(1 - r2);
+    Float x = r * cosF(phi);
+    Float y = r * sinF(phi);
+    Float z = sqrtF(1 - r2);
 
     Vector w = normalize(n);
 
@@ -41,15 +45,15 @@ HOST_DEVICE inline Vector randomInHemisphere(const Vector & n, Random & state) {
 }
 
 HOST_DEVICE inline Vector randomInCone(const Vector & n, Float cosThetaMax, Random & state) {
-    Float r1 = randomDouble(state);
-    Float r2 = randomDouble(state);
+    Float r1 = randomFloat(state);
+    Float r2 = randomFloat(state);
 
     Float cosTheta = 1 + r1 * (cosThetaMax - 1);
-    Float sinTheta = sqrt(1 - cosTheta * cosTheta);
+    Float sinTheta = sqrtF(1 - cosTheta * cosTheta);
     Float phi = 2 * PI * r2;
 
-    Float x = sinTheta * cos(phi);
-    Float y = sinTheta * sin(phi);
+    Float x = sinTheta * cosF(phi);
+    Float y = sinTheta * sinF(phi);
     Float z = cosTheta;
 
     Vector w = normalize(n);
@@ -77,18 +81,13 @@ HOST_DEVICE inline Vector refracted(const Vector & v, const Vector & n, Float ra
     Float root = 1 - ratio * ratio * (1 - vn * vn);
 
     if (root < 0) direction = v - 2 * vn * n;
-    else direction = ratio * v - (ratio * vn + sqrt(root)) * n;
+    else direction = ratio * v - (ratio * vn + sqrtF(root)) * n;
 
     return direction;
 }
 
-HOST_DEVICE inline Float fade(Float t) {
-    return pow(t, 3) * (t * (6 * t - 15) + 10);
-}
-
-HOST_DEVICE inline int permutation(int i) {
-    return PERMUTATION[i & 255];
-}
+HOST_DEVICE inline Float fade(Float t) { return powF(t, 3) * (t * (6 * t - 15) + 10); }
+HOST_DEVICE inline int permutation(int i) { return PERMUTATION[i & 255]; }
 
 HOST_DEVICE inline Float gradient(int hash, Float x, Float y, Float z)
 {
@@ -114,12 +113,12 @@ HOST_DEVICE inline Float interpolate(Float a, Float b, Float x) {
 }
 
 HOST_DEVICE inline Float perlinNoise(const Vector & point) {
-    int i = (int)floor(point[0]) & 255;
-    int j = (int)floor(point[1]) & 255;
-    int k = (int)floor(point[2]) & 255;
-    Float tx = point[0] - floor(point[0]);
-    Float ty = point[1] - floor(point[1]);
-    Float tz = point[2] - floor(point[2]);
+    int i = (int)floorF(point[0]) & 255;
+    int j = (int)floorF(point[1]) & 255;
+    int k = (int)floorF(point[2]) & 255;
+    Float tx = point[0] - floorF(point[0]);
+    Float ty = point[1] - floorF(point[1]);
+    Float tz = point[2] - floorF(point[2]);
     Float u = fade(tx);
     Float v = fade(ty);
     Float w = fade(tz);
@@ -141,26 +140,24 @@ HOST_DEVICE inline Float perlinNoise(const Vector & point) {
 }
 
 HOST_DEVICE inline Float fract(Float x) {
-    return x - floor(x);
+    return x - floorF(x);
 }
 
 HOST_DEVICE inline Float worleyNoise(const Vector & point) {
-    int xi = int(floor(point[0]));
-    int yi = int(floor(point[1]));
-    int zi = int(floor(point[2]));
+    int xi = int(floorF(point[0]));
+    int yi = int(floorF(point[1]));
+    int zi = int(floorF(point[2]));
 
     Float distance = 9999;
 
-    for (int xo = -1; xo <= 1; xo++) {
-        for (int yo = -1; yo <= 1; yo++) {
+    for (int xo = -1; xo <= 1; xo++)
+        for (int yo = -1; yo <= 1; yo++)
             for (int zo = -1; zo <= 1; zo++) {
-                Vector cell(xi + xo, yi + yo, zi + zo);
-                Vector feature(fract(sin(dot(cell, Vector(127.1, 311.7, 74.7))) * 43758.5453), fract(sin(dot(cell, Vector(269.5, 183.3, 246.1))) * 43758.5453), fract(sin(dot(cell, Vector(113.5, 271.9, 124.6))) * 43758.5453));
+                Vector cell(Float(xi + xo), Float(yi + yo), Float(zi + zo));
+                Vector feature(fract(sinF(dot(cell, Vector(Float(127.1), Float(311.7), Float(74.7)))) * Float(43758.5453)), fract(sinF(dot(cell, Vector(Float(269.5), Float(183.3), Float(246.1)))) * Float(43758.5453)), fract(sinF(dot(cell, Vector(Float(113.5), Float(271.9), Float(124.6)))) * Float(43758.5453)));
                 feature += cell;
-                distance = fmin(distance, (point - feature).length());
+                distance = fminF(distance, (point - feature).length());
             }
-        }
-    }
 
     return distance;
 }
@@ -193,51 +190,60 @@ HOST_DEVICE inline Matrix interfaceMatrixP(const Complex & n1, const Complex & n
 
 HOST_DEVICE inline Matrix propagationMatrix(const Complex & phi) {
   Matrix propMatrix;
-  propMatrix.get(0, 0) = exponential(Complex(0, -1) * phi);
-  propMatrix.get(1, 1) = exponential(Complex(0, 1) * phi);
+  propMatrix.get(0, 0) = expC(Complex(0, -1) * phi);
+  propMatrix.get(1, 1) = expC(Complex(0, 1) * phi);
   return propMatrix;
 }
 
 HOST_DEVICE inline Float xyz31(Float lambda, int i) {
     int min = int(lambda);
 
-    if (min == CIE_LAMBDA_MAX) return CIE_XYZ_1931[(min - CIE_LAMBDA_MIN) * 3 + i];
+    if (min == CIE_LAMBDA_MAX) return Float(CIE_XYZ_1931[(min - CIE_LAMBDA_MIN) * 3 + i]);
 
     int max = min + 1;
 
-    return (max - lambda) * CIE_XYZ_1931[(min - CIE_LAMBDA_MIN) * 3 + i] + (lambda - min) * CIE_XYZ_1931[(max - CIE_LAMBDA_MIN) * 3 + i];
+    return (Float(max) - lambda) * Float(CIE_XYZ_1931[(min - CIE_LAMBDA_MIN) * 3 + i]) + (lambda - Float(min)) * Float(CIE_XYZ_1931[(max - CIE_LAMBDA_MIN) * 3 + i]);
 }
 
 HOST_DEVICE inline Float d65(Float lambda) {
     int min = int(lambda);
     int max = min + 1;
 
-    return (max - lambda) * CIE_D65[min - CIE_D65_LAMBDA_MIN] + (lambda - min) * CIE_D65[max - CIE_D65_LAMBDA_MIN];
+    return (Float(max) - lambda) * Float(CIE_D65[min - CIE_D65_LAMBDA_MIN]) + (lambda - Float(min)) * Float(CIE_D65[max - CIE_D65_LAMBDA_MIN]);
 }
 
-HOST_DEVICE inline Vector spectrumToRGB(const SampledSpectrum & s, Float min, Float max) {
-    Float x = 0, y = 0, z = 0, w = 0;
+HOST_DEVICE inline Vector spectrumToRGB(const SampledSpectrum & s, Float * lambdas, Float lambdaRange) {
+    Float x = 0, y = 0, z = 0;
 
-    int size = s.getSize();
+    Float weight = lambdaRange / HERO_COUNT;
 
-    for (int i = 0; i < size; i++) {
-        Float lambda = min + i * (max - min) / (size - 1);
+    for (int i = 0; i < HERO_COUNT; i++) {
+        Float lambda = lambdas[i];
         Float radiance = s[i];
-        Float y31 = xyz31(lambda, 1);
-        x += xyz31(lambda, 0) * radiance;
-        y += y31 * radiance;
-        z += xyz31(lambda, 2) * radiance;
-        w += y31;
+
+        x += xyz31(lambda, 0) * radiance * weight;
+        y += xyz31(lambda, 1) * radiance * weight;
+        z += xyz31(lambda, 2) * radiance * weight;
     }
 
-    x /= w;
-    y /= w;
-    z /= w;
+    x /= Float(106.856895);
+    y /= Float(106.856895);
+    z /= Float(106.856895);
 
-    return Vector(x * 3.2406255 - y * 1.5372080 - z * 0.4986286, -x * 0.9689307 + y * 1.8757561 + z * 0.0415175, x * 0.0557101 - y * 0.2040211 + z * 1.0569959);
+    return Vector(x * Float(3.2406255) - y * Float(1.5372080) - z * Float(0.4986286), -x * Float(0.9689307) + y * Float(1.8757561) + z * Float(0.0415175), x * Float(0.0557101) - y * Float(0.2040211) + z * Float(1.0569959));
 }
 
 HOST_DEVICE inline Float sRGB(Float r) {
-    if (r <= 0.0031308) return 12.92 * r;
-    else return 1.055 * pow(r, 1 / 2.4) - 0.055;
+    if (r <= 0.0031308) return Float(12.92) * r;
+    else return Float(1.055) * powF(r, 1 / Float(2.4)) - Float(0.055);
 }
+
+HOST_DEVICE inline Float toneMap(Float value) { return sRGB(clamp(value, 0, 1)); }
+
+HOST_DEVICE inline uint8_t quantize(Float value, Random & state) {
+    Float dither = randomFloat(state) - Float(0.5);
+
+    return uint8_t(clamp(int(std::round(value * 255 + dither)), 0, 255));
+}
+
+HOST_DEVICE inline bool hasExtension(const std::string & output, const std::string & extension) { return output.size() >= extension.size() && output.substr(output.size() - extension.size()) == extension; }

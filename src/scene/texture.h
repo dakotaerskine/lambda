@@ -134,19 +134,19 @@ class SpectrumTexture {
             return texture;
         }
 
-        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, const Intersection & i, Float lambda) const {
+        HOST_DEVICE Float average(DenseSpectrum<Float> * const spectra) const {
             switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT: return evaluateConstant(spectra, lambda);
-                case SpectrumTextureType::CHECKER: return evaluateChecker(spectra, i, lambda);
+                case SpectrumTextureType::SPECTRUM_CONSTANT: return averageConstant(spectra);
+                case SpectrumTextureType::CHECKER: return averageChecker(spectra);
             }
 
             return 0;
         }
 
-        HOST_DEVICE Float average(DenseSpectrum<Float> * const spectra) const {
+        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, const Intersection & i, Float lambda) const {
             switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT: return averageConstant(spectra);
-                case SpectrumTextureType::CHECKER: return averageChecker(spectra);
+                case SpectrumTextureType::SPECTRUM_CONSTANT: return evaluateConstant(spectra, lambda);
+                case SpectrumTextureType::CHECKER: return evaluateChecker(spectra, i, lambda);
             }
 
             return 0;
@@ -160,15 +160,15 @@ class SpectrumTexture {
             struct { int value1, value2; Float scale; } checker;
         };
 
+        HOST_DEVICE Float averageConstant(DenseSpectrum<Float> * const spectra) const { return spectra[constant.value].average(); }
+        HOST_DEVICE Float averageChecker(DenseSpectrum<Float> * const spectra) const { return Float(0.5) * (spectra[checker.value1].average() + spectra[checker.value2].average()); }
+
         HOST_DEVICE Float evaluateConstant(DenseSpectrum<Float> * const spectra, Float lambda) const { return spectra[constant.value](lambda); }
 
         HOST_DEVICE Float evaluateChecker(DenseSpectrum<Float> * const spectra, const Intersection & i, Float lambda) const {
-            int x = int(floor(i.u / checker.scale));
-            int y = int(floor(i.v / checker.scale));
+            int x = int(floorF(i.u / checker.scale));
+            int y = int(floorF(i.v / checker.scale));
 
             return (x + y) % 2 == 0 ? spectra[checker.value1](lambda) : spectra[checker.value2](lambda);
         }
-
-        HOST_DEVICE Float averageConstant(DenseSpectrum<Float> * const spectra) const { return spectra[constant.value].average(); }
-        HOST_DEVICE Float averageChecker(DenseSpectrum<Float> * const spectra) const { return 0.5 * (spectra[checker.value1].average() + spectra[checker.value2].average()); }
 };

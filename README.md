@@ -2,7 +2,7 @@
 A physically-based spectral path tracer implemented in C++ and CUDA built around wave-optical material appearance.
 
 ## Building
-Lambda requires CMake 3.18 or later and a C++20 compiler. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DCPU=ON`.
+Lambda requires CMake 3.24 or later and a C++20 compiler. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DCPU=ON`.
 
 ```sh
 mkdir build && cd build
@@ -21,10 +21,10 @@ Lambda takes in a single `.lrd` scene file and writes a `.ppm` image next to it 
 The Lambda Render Description is a plain text file format with one command per line. `#` starts a line comment. The first command must be `Render`.
 
 ### `Render`
-`depth` is the maximum bounce count, `samples` must be a perfect square, `wavelengthSamples` ranges from 2 to 64, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
+`depth` is the maximum bounce count, `samples` must be a perfect square, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
 
 ```
-Render <width> <height> <depth> <samples> <wavelengthSamples> <lambdaMin> <lambdaMax>
+Render <width> <height> <depth> <samples> <lambdaMin> <lambdaMax>
 ```
 
 ### `Background`

@@ -2,14 +2,14 @@
 
 #include "core/platform.h"
 
-constexpr Float EPSILON = 1e-4;
-constexpr Float PI = 3.14159265358979323846;
+constexpr Float EPSILON = Float(1e-4);
+constexpr Float PI = Float(3.14159265358979323846);
 
-constexpr int MAX_WAVELENGTH_SAMPLES = 64;
+constexpr int HERO_COUNT = 4;
 
-constexpr Float RR_START_DEPTH = 5;
+constexpr int RR_START_DEPTH = 5;
 
-constexpr Float T_MAX = 1e30;
+constexpr Float T_MAX = Float(1e30);
 
 constexpr int PERMUTATION_SIZE = 256;
 
