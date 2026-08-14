@@ -15,6 +15,7 @@
 #include "math/vector.h"
 #include "render/camera.h"
 #include "scene/background.h"
+#include "scene/bvh.h"
 #include "scene/material.h"
 #include "scene/object.h"
 #include "scene/scene.h"
@@ -33,7 +34,7 @@ class Renderer {
 
         void setCamera(const Vector & position, const Vector & corner, const Vector & horizontal, const Vector & vertical) { camera = Camera(position, corner, horizontal, vertical); }
 
-        void setScene(DenseSpectrum<Float> * const spectra, DenseSpectrum<Complex> * const complexSpectra, const Background & background, Object * const objects, int numObjects, int * const lights, int numLights, Float * const lightPowers, Float totalLightPower, Material * const materials, int * const materialProperties, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures) { scene = Scene(spectra, complexSpectra, background, objects, numObjects, lights, numLights, lightPowers, totalLightPower, materials, materialProperties, scalarTextures, spectrumTextures); }
+        void setScene(DenseSpectrum<Float> * const spectra, DenseSpectrum<Complex> * const complexSpectra, const Background & background, Object * const objects, int numObjects, BVHNode * const nodes, int * const lights, int numLights, Float * const lightPowers, Float totalLightPower, Material * const materials, int * const materialProperties, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures) { scene = Scene(spectra, complexSpectra, background, objects, numObjects, nodes, lights, numLights, lightPowers, totalLightPower, materials, materialProperties, scalarTextures, spectrumTextures); }
 
         void setBuffer(Float * _buffer) { buffer = _buffer; }
 
@@ -70,7 +71,7 @@ class Renderer {
                     Float v = (Float(py) + (Float(j) + randomFloat(state)) / Float(sqrtSamples)) / Float(height);
 
                     Float lambda = lambdaMin + randomFloat(state) * (lambdaMax - lambdaMin);
-                    Float lambdas[HERO_COUNT];
+                    SampledSpectrum lambdas;
 
                     for (int k = 0; k < HERO_COUNT; k++)
                         lambdas[k] = lambdaMin + fmodF(lambda - lambdaMin + Float(k) * lambdaRange / HERO_COUNT, lambdaRange);
@@ -95,11 +96,28 @@ class Renderer {
             Float previousScatterProbability = 1;
             bool specular = true;
 
+            const Background & background = scene.getBackground();
+
             for (int i = 0; i <= depth; i++) {
                 Intersection intersection;
 
                 if (!scene.hit(r, intersection)) {
-                    radiance += throughput * scene.getBackground().evaluate(scene.getSpectra(), scene.getSpectrumTextures(), r);
+                    Float weight = 1;
+
+                    if (!specular) {
+                        Float lightPower = 0;
+
+                        for (int j = 0; j < scene.getNumLights(); j++)
+                            if (scene.getLights()[j] == -1) {
+                                lightPower = scene.getLightPowers()[j];
+
+                                break;
+                            }
+
+                        weight = powerHeuristic(previousScatterProbability, background.pdf() * lightPower / scene.getTotalLightPower());
+                    }
+
+                    radiance += throughput * background.evaluate(scene.getSpectra(), scene.getSpectrumTextures(), r) * weight;
 
                     break;
                 }
@@ -123,7 +141,7 @@ class Renderer {
                         weight = powerHeuristic(previousScatterProbability, object.pdf(r.getOrigin(), r.getDirection()) * lightPower / scene.getTotalLightPower());
                     }
 
-                    radiance += throughput * material.emission(scene.getSpectra(), scene.getSpectrumTextures(), intersection, r) * weight;
+                    radiance += throughput * material.emission(scene.getSpectra(), scene.getSpectrumTextures(), intersection, r.getLambdas()) * weight;
 
                     break;
                 }
@@ -145,22 +163,23 @@ class Renderer {
                         }
                     }
 
-                    const Object & light = scene.getObjects()[lightIndex];
+                    const Object & light = lightIndex != -1 ? scene.getObjects()[lightIndex] : Object();
 
-                    Vector lightDirection = light.sample(intersection.point, state);
-                    Float lightProbability = light.pdf(intersection.point, lightDirection);
+                    Vector lightDirection = lightIndex != -1 ? light.sample(intersection.point, state) : background.sample(state);
+                    Float lightProbability = lightIndex != -1 ? light.pdf(intersection.point, lightDirection) : background.pdf();
 
-                    if (lightProbability > 0) {
+                    Float cosTheta = dot(intersection.normal, lightDirection);
+
+                    if (lightProbability > 0 && cosTheta > 0) {
                         lightProbability *= lightPower / scene.getTotalLightPower();
 
                         Ray shadowRay(intersection.point, lightDirection, r.getLambdas());
 
                         Intersection shadowIntersection;
 
-                        if (scene.hit(shadowRay, shadowIntersection) && shadowIntersection.i == lightIndex) {
-                            SampledSpectrum emission = scene.getMaterials()[light.getMaterial()].emission(scene.getSpectra(), scene.getSpectrumTextures(), shadowIntersection, shadowRay);
+                        if (!scene.hit(shadowRay, shadowIntersection, lightIndex)) {
+                            SampledSpectrum emission = lightIndex != -1 ? scene.getMaterials()[light.getMaterial()].emission(scene.getSpectra(), scene.getSpectrumTextures(), shadowIntersection, shadowRay.getLambdas()) : background.evaluate(scene.getSpectra(), scene.getSpectrumTextures(), shadowRay);
                             SampledSpectrum attenuation = material.evaluate(scene.getSpectra(), scene.getSpectrumTextures(), intersection, shadowRay);
-                            Float cosTheta = dot(intersection.normal, lightDirection);
                             Float scatterToLightProbability = material.pdf(intersection, shadowRay);
                             Float weight = powerHeuristic(lightProbability, scatterToLightProbability);
 
@@ -178,7 +197,7 @@ class Renderer {
                 else throughput *= attenuation * dot(intersection.normal, r.getDirection()) / previousScatterProbability;
 
                 if (i >= RR_START_DEPTH) {
-                    Float q = 1 - clamp(throughput[0], Float(0.05), Float(0.95));
+                    Float q = 1 - clamp(throughput.max(), Float(0.05), Float(0.95));
 
                     if (randomFloat(state) < q) break;
 

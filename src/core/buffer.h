@@ -30,6 +30,10 @@
                 if (pointer) checkCudaError(cudaFree(pointer), "failed to free device memory");
             }
 
+            DeviceBuffer(const DeviceBuffer<T> & b) = delete;
+
+            DeviceBuffer<T> & operator=(const DeviceBuffer<T> & b) = delete;
+
             T * data() const { return pointer; }
 
         private:

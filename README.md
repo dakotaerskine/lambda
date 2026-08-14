@@ -11,10 +11,10 @@ make
 ```
 
 ## Running
-Lambda takes in a single `.lrd` scene file and writes a `.ppm` image next to it (`render.lrd` → `render.ppm`).
+Lambda takes in a single `.lrd` scene file as well as an optional output file path and writes a `.ppm` image.
 
 ```sh
-./pathtracer render.lrd
+./lambda render.lrd
 ```
 
 ## Lambda Render Description (`.lrd`)
@@ -25,20 +25,6 @@ The Lambda Render Description is a plain text file format with one command per l
 
 ```
 Render <width> <height> <depth> <samples> <lambdaMin> <lambdaMax>
-```
-
-### `Background`
-`background` is a radiance spectrum returned for rays that hit nothing.
-
-```
-Background (background)
-```
-
-### `Camera`
-`corner` is the image plane's top-left position and `horizontal` and `vertical` span the plane.
-
-```
-Camera (position) (corner) (horizontal) (vertical)
 ```
 
 ### `Texture`
@@ -57,7 +43,7 @@ Most material properties are described by the names of previously defined textur
 
 ```
 Material <name> lambertian <albedo>
-Material <name> metal <albedo>
+Material <name> mirror <albedo>
 Material <name> dielectric <n0> <n1>
 Material <name> emissive <emission>
 Material <name> thinfilm [n] [d]
@@ -69,4 +55,18 @@ Material <name> thinfilm [n] [d]
 ```
 Object sphere <material> (center) <radius>
 Object quad <material> (corner) (horizontal) (vertical)
+```
+
+### `Background`
+`background` is a textured environment map returned for rays that hit nothing.
+
+```
+Background equirectangular (background)
+```
+
+### `Camera`
+`corner` is the image plane's top-left position and `horizontal` and `vertical` span the plane.
+
+```
+Camera (position) (corner) (horizontal) (vertical)
 ```

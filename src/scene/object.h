@@ -42,6 +42,42 @@ class Object {
 
         HOST_DEVICE int getMaterial() const { return material; }
 
+        HOST_DEVICE Vector min() const {
+            switch (type) {
+                case ObjectType::SPHERE: return minSphere();
+                case ObjectType::QUAD: return minQuad();
+            }
+
+            return Vector();
+        }
+
+        HOST_DEVICE Vector max() const {
+            switch (type) {
+                case ObjectType::SPHERE: return maxSphere();
+                case ObjectType::QUAD: return maxQuad();
+            }
+
+            return Vector();
+        }
+
+        HOST_DEVICE Vector center() const {
+            switch (type) {
+                case ObjectType::SPHERE: return centerSphere();
+                case ObjectType::QUAD: return centerQuad();
+            }
+
+            return Vector();
+        }
+
+        HOST_DEVICE Float radius() const {
+            switch (type) {
+                case ObjectType::SPHERE: return radiusSphere();
+                case ObjectType::QUAD: return radiusQuad();
+            }
+
+            return 0;
+        }
+
         HOST_DEVICE Float area() const {
             switch (type) {
                 case ObjectType::SPHERE: return areaSphere();
@@ -86,6 +122,18 @@ class Object {
             struct { Vector center; Float radius; } sphere;
             struct { Vector corner, horizontal, vertical, normal; } quad;
         };
+
+        HOST_DEVICE Vector minSphere() const { return sphere.center - Vector(sphere.radius, sphere.radius, sphere.radius); }
+        HOST_DEVICE Vector minQuad() const { return minV(quad.corner, quad.corner + quad.horizontal + quad.vertical) - Vector(EPSILON, EPSILON, EPSILON); }
+
+        HOST_DEVICE Vector maxSphere() const { return sphere.center + Vector(sphere.radius, sphere.radius, sphere.radius); }
+        HOST_DEVICE Vector maxQuad() const { return maxV(quad.corner, quad.corner + quad.horizontal + quad.vertical) + Vector(EPSILON, EPSILON, EPSILON); }
+
+        HOST_DEVICE Vector centerSphere() const { return sphere.center; }
+        HOST_DEVICE Vector centerQuad() const { return quad.corner + 0.5 * quad.horizontal + 0.5 * quad.vertical; }
+
+        HOST_DEVICE Float radiusSphere() const { return sphere.radius; }
+        HOST_DEVICE Float radiusQuad() const { return Float(0.5) * (quad.horizontal + quad.vertical).length(); }
 
         HOST_DEVICE Float areaSphere() const { return 4 * PI * sphere.radius * sphere.radius; }
         HOST_DEVICE Float areaQuad() const { return quad.normal.length(); }

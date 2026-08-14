@@ -37,8 +37,8 @@ HOST_DEVICE inline Vector randomInHemisphere(const Vector & n, Random & state) {
 
     Vector w = normalize(n);
 
-    Vector u = fabs(w[0]) > fabs(w[1]) ? Vector(0, 0, 1) : Vector(1, 0, 0);
-    u = cross(u, w);
+    Vector u = fabsF(w[0]) > fabsF(w[1]) ? Vector(0, 0, 1) : Vector(1, 0, 0);
+    u = normalize(cross(u, w));
     Vector v = cross(w, u);
 
     return x * u + y * v + z * w;
@@ -57,7 +57,7 @@ HOST_DEVICE inline Vector randomInCone(const Vector & n, Float cosThetaMax, Rand
     Float z = cosTheta;
 
     Vector w = normalize(n);
-    Vector u = fabs(w[0]) > fabs(w[1]) ? Vector(0, 0, 1) : Vector(1, 0, 0);
+    Vector u = fabsF(w[0]) > fabsF(w[1]) ? Vector(0, 0, 1) : Vector(1, 0, 0);
     u = normalize(cross(u, w));
     Vector v = cross(w, u);
 
@@ -212,7 +212,7 @@ HOST_DEVICE inline Float d65(Float lambda) {
     return (Float(max) - lambda) * Float(CIE_D65[min - CIE_D65_LAMBDA_MIN]) + (lambda - Float(min)) * Float(CIE_D65[max - CIE_D65_LAMBDA_MIN]);
 }
 
-HOST_DEVICE inline Vector spectrumToRGB(const SampledSpectrum & s, Float * lambdas, Float lambdaRange) {
+HOST_DEVICE inline Vector spectrumToRGB(const SampledSpectrum & s, const SampledSpectrum & lambdas, Float lambdaRange) {
     Float x = 0, y = 0, z = 0;
 
     Float weight = lambdaRange / HERO_COUNT;
@@ -246,4 +246,4 @@ HOST_DEVICE inline uint8_t quantize(Float value, Random & state) {
     return uint8_t(clamp(int(std::round(value * 255 + dither)), 0, 255));
 }
 
-HOST_DEVICE inline bool hasExtension(const std::string & output, const std::string & extension) { return output.size() >= extension.size() && output.substr(output.size() - extension.size()) == extension; }
+inline bool hasExtension(const std::string & output, const std::string & extension) { return output.size() >= extension.size() && output.substr(output.size() - extension.size()) == extension; }

@@ -133,6 +133,24 @@ class SampledSpectrum {
             return s2;
         }
 
+        HOST_DEVICE Float max() const {
+            Float maximum = data[0];
+
+            for (int i = 1; i < HERO_COUNT; i++)
+                if (data[i] > maximum) maximum = data[i];
+
+            return maximum;
+        }
+
+        HOST_DEVICE Float average() const {
+            Float sum = 0;
+
+            for (int i = 0; i < HERO_COUNT; i++)
+                sum += data[i];
+
+            return sum / HERO_COUNT;
+        }
+
     private:
         Float data[HERO_COUNT];
 };

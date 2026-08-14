@@ -82,6 +82,9 @@ class Vector {
         HOST_DEVICE friend Float dot(const Vector & v1, const Vector & v2) { return v1.data[0] * v2.data[0] + v1.data[1] * v2.data[1] + v1.data[2] * v2.data[2]; }
         HOST_DEVICE friend Vector cross(const Vector & v1, const Vector & v2) { return Vector(v1.data[1] * v2.data[2] - v1.data[2] * v2.data[1], v1.data[2] * v2.data[0] - v1.data[0] * v2.data[2], v1.data[0] * v2.data[1] - v1.data[1] * v2.data[0]); }
 
+        HOST_DEVICE friend Vector minV(const Vector & v1, const Vector & v2) { return Vector(fminF(v1.data[0], v2.data[0]), fminF(v1.data[1], v2.data[1]), fminF(v1.data[2], v2.data[2])); }
+        HOST_DEVICE friend Vector maxV(const Vector & v1, const Vector & v2) { return Vector(fmaxF(v1.data[0], v2.data[0]), fmaxF(v1.data[1], v2.data[1]), fmaxF(v1.data[2], v2.data[2])); }
+
     private:
         Float data[3];
 };

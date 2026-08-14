@@ -7,7 +7,7 @@
 
 class Intersection {
     public:
-        HOST_DEVICE Intersection() : i(-1), t(T_MAX), frontFacing(false) {}
+        HOST_DEVICE Intersection() : i(-1), t(MAX), frontFacing(false) {}
 
         int i;
         Float t;

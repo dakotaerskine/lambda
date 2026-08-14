@@ -12,7 +12,7 @@
 #include "math/vector.h"
 #include "scene/texture.h"
 
-enum class MaterialType { LAMBERTIAN, METAL, DIELECTRIC, EMISSIVE, THINFILM };
+enum class MaterialType { LAMBERTIAN, MIRROR, DIELECTRIC, EMISSIVE, THINFILM };
 
 class Material {
     public:
@@ -27,11 +27,11 @@ class Material {
             return material;
         }
 
-        HOST_DEVICE static Material makeMetal(int a) {
+        HOST_DEVICE static Material makeMirror(int a) {
             Material material;
 
-            material.type = MaterialType::METAL;
-            material.metal.albedo = a;
+            material.type = MaterialType::MIRROR;
+            material.mirror.albedo = a;
 
             return material;
         }
@@ -80,9 +80,9 @@ class Material {
             }
         }
 
-        HOST_DEVICE SampledSpectrum emission(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const Ray & r) const {
+        HOST_DEVICE SampledSpectrum emission(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const SampledSpectrum & lambdas) const {
             switch (type) {
-                case MaterialType::EMISSIVE: return emissionEmissive(spectra, spectrumTextures, i, r);
+                case MaterialType::EMISSIVE: return emissionEmissive(spectra, spectrumTextures, i, lambdas);
                 default: return SampledSpectrum(0);
             }
         }
@@ -117,7 +117,7 @@ class Material {
         HOST_DEVICE SampledSpectrum scatter(DenseSpectrum<Float> * const spectra, DenseSpectrum<Complex> * const complexSpectra, int * const materialProperties, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures, const Intersection & i, Ray & r, Random & state) const {
             switch (type) {
                 case MaterialType::LAMBERTIAN: return scatterLambertian(spectra, spectrumTextures, i, r, state);
-                case MaterialType::METAL: return scatterMetal(spectra, spectrumTextures, i, r);
+                case MaterialType::MIRROR: return scatterMirror(spectra, spectrumTextures, i, r);
                 case MaterialType::DIELECTRIC: return scatterDielectric(spectra, i, r, state);
                 case MaterialType::THINFILM: return scatterThinFilm(complexSpectra, materialProperties, scalarTextures, i, r, state);
                 default: return SampledSpectrum(0);
@@ -131,17 +131,17 @@ class Material {
 
         union {
             struct { int albedo; } lambertian;
-            struct { int albedo; } metal;
+            struct { int albedo; } mirror;
             struct { int n0, n1; } dielectric;
             struct { int emission; } emissive;
             struct { int numLayers; int n; int d; } thinFilm;
         };
 
-        HOST_DEVICE SampledSpectrum emissionEmissive(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const Ray & r) const {
+        HOST_DEVICE SampledSpectrum emissionEmissive(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, const SampledSpectrum & lambdas) const {
             SampledSpectrum emission;
 
             for (int j = 0; j < HERO_COUNT; j++)
-                emission[j] = spectrumTextures[emissive.emission].evaluate(spectra, i, r.getLambda(j));
+                emission[j] = spectrumTextures[emissive.emission].evaluate(spectra, i, lambdas[j]);
 
             return emission;
         }
@@ -160,7 +160,7 @@ class Material {
             SampledSpectrum attenuation;
 
             for (int j = 0; j < HERO_COUNT; j++)
-                attenuation[j] = spectrumTextures[lambertian.albedo].evaluate(spectra, i, r.getLambda(j)) / PI;
+                attenuation[j] = spectrumTextures[lambertian.albedo].evaluate(spectra, i, r.getLambdas()[j]) / PI;
 
             return attenuation;
         }
@@ -171,13 +171,13 @@ class Material {
             return evaluateLambertian(spectra, spectrumTextures, i, r);
         }
 
-        HOST_DEVICE SampledSpectrum scatterMetal(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, Ray & r) const {
+        HOST_DEVICE SampledSpectrum scatterMirror(DenseSpectrum<Float> * const spectra, SpectrumTexture * const spectrumTextures, const Intersection & i, Ray & r) const {
             r = Ray(i.point, reflected(r.getDirection(), i.normal), r.getLambdas());
 
             SampledSpectrum attenuation;
 
             for (int j = 0; j < HERO_COUNT; j++)
-                attenuation[j] = spectrumTextures[metal.albedo].evaluate(spectra, i, r.getLambda(j));
+                attenuation[j] = spectrumTextures[mirror.albedo].evaluate(spectra, i, r.getLambdas()[j]);
 
             return attenuation;
         }
@@ -185,19 +185,19 @@ class Material {
         HOST_DEVICE SampledSpectrum scatterDielectric(DenseSpectrum<Float> * const spectra, const Intersection & i, Ray & r, Random & state) const {
             Float factor = powF(1 + dot(r.getDirection(), i.normal), 5);
 
-            Float lambda = r.getLambda(0);
+            Float lambda = r.getLambdas()[0];
 
-            Float n0 = spectra[dielectric.n0](lambda);
-            Float n1 = spectra[dielectric.n1](lambda);
+            Float n0Hero = spectra[dielectric.n0](lambda);
+            Float n1Hero = spectra[dielectric.n1](lambda);
 
-            Float ratio = i.frontFacing ? n0 / n1 : n1 / n0;
+            Float ratio = i.frontFacing ? n0Hero / n1Hero : n1Hero / n0Hero;
 
-            Float r0 = (n0 - n1) / (n0 + n1);
+            Float r0 = (n0Hero - n1Hero) / (n0Hero + n1Hero);
             r0 *= r0;
 
-            Float heroReflectance = r0 + (1 - r0) * factor;
+            Float reflectanceHero = r0 + (1 - r0) * factor;
 
-            bool reflect = randomFloat(state) < heroReflectance;
+            bool reflect = randomFloat(state) < reflectanceHero;
 
             Vector direction = reflect ? reflected(r.getDirection(), i.normal) : refracted(r.getDirection(), i.normal, ratio);
 
@@ -205,10 +205,10 @@ class Material {
             attenuation[0] = 1;
 
             for (int j = 1; j < HERO_COUNT; j++) {
-                lambda = r.getLambda(j);
+                lambda = r.getLambdas()[j];
 
-                n0 = spectra[dielectric.n0](lambda);
-                n1 = spectra[dielectric.n1](lambda);
+                Float n0 = spectra[dielectric.n0](lambda);
+                Float n1 = spectra[dielectric.n1](lambda);
 
                 ratio = i.frontFacing ? n0 / n1 : n1 / n0;
 
@@ -217,7 +217,7 @@ class Material {
 
                 Float reflectance = r0 + (1 - r0) * factor;
 
-                attenuation[j] = reflect ? reflectance / heroReflectance : (1 - reflectance) / (1 - heroReflectance);
+                attenuation[j] = reflect ? reflectance / reflectanceHero : (fabsF(n0 - n0Hero) < EPSILON && fabsF(n1 - n1Hero) < EPSILON) ? (1 - reflectance) / (1 - reflectanceHero) : 0;
             }
 
             r = Ray(i.point, direction, r.getLambdas());
@@ -226,16 +226,16 @@ class Material {
         }
 
         HOST_DEVICE SampledSpectrum scatterThinFilm(DenseSpectrum<Complex> * const complexSpectra, int * const materialProperties, ScalarTexture * const scalarTextures, const Intersection & i, Ray & r, Random & state) const {
-            Float lambda = r.getLambda(0);
+            Float lambda = r.getLambdas()[0];
 
-            Float n0 = Float(complexSpectra[materialProperties[thinFilm.n]](lambda).real());
-            Float n1 = Float(complexSpectra[materialProperties[thinFilm.n + thinFilm.numLayers + 1]](lambda).real());
+            Float n0Hero = Float(complexSpectra[materialProperties[thinFilm.n]](lambda).real());
+            Float n1Hero = Float(complexSpectra[materialProperties[thinFilm.n + thinFilm.numLayers + 1]](lambda).real());
 
-            Float ratio = i.frontFacing ? n0 / n1 : n1 / n0;
+            Float ratio = i.frontFacing ? n0Hero / n1Hero : n1Hero / n0Hero;
 
-            Float heroReflectance = thinFilmReflectance(complexSpectra, materialProperties, scalarTextures, i, r, lambda);
+            Float reflectanceHero = thinFilmReflectance(complexSpectra, materialProperties, scalarTextures, i, r, lambda);
 
-            bool reflect = randomFloat(state) < heroReflectance;
+            bool reflect = randomFloat(state) < reflectanceHero;
 
             Vector direction = reflect ? reflected(r.getDirection(), i.normal) : refracted(r.getDirection(), i.normal, ratio);
 
@@ -243,16 +243,16 @@ class Material {
             attenuation[0] = 1;
 
             for (int j = 1; j < HERO_COUNT; j++) {
-                lambda = r.getLambda(j);
+                lambda = r.getLambdas()[j];
 
-                n0 = Float(complexSpectra[materialProperties[thinFilm.n]](lambda).real());
-                n1 = Float(complexSpectra[materialProperties[thinFilm.n + thinFilm.numLayers + 1]](lambda).real());
+                Float n0 = Float(complexSpectra[materialProperties[thinFilm.n]](lambda).real());
+                Float n1 = Float(complexSpectra[materialProperties[thinFilm.n + thinFilm.numLayers + 1]](lambda).real());
 
                 ratio = i.frontFacing ? n0 / n1 : n1 / n0;
 
                 Float reflectance = thinFilmReflectance(complexSpectra, materialProperties, scalarTextures, i, r, lambda);
 
-                attenuation[j] = reflect ? reflectance / heroReflectance : (1 - reflectance) / (1 - heroReflectance);
+                attenuation[j] = reflect ? reflectance / reflectanceHero : (fabsF(n0 - n0Hero) < EPSILON && fabsF(n1 - n1Hero) < EPSILON) ? (1 - reflectance) / (1 - reflectanceHero) : 0;
             }
 
             r = Ray(i.point, direction, r.getLambdas());
