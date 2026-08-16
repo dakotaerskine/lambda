@@ -18,7 +18,7 @@ Lambda takes in a single `.lrd` scene file as well as an optional output file pa
 ```
 
 ## Lambda Render Description (`.lrd`)
-The Lambda Render Description is a plain text file format with one command per line. `#` starts a line comment. The first command must be `Render`.
+The Lambda Render Description is a plain text file format with one command per line. `#` starts a line comment. The first command must be `Render`. `default` can be used in place of `material` or `texture`.
 
 ### `Render`
 `depth` is the maximum bounce count, `samples` must be a perfect square, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
@@ -36,6 +36,7 @@ Texture <name> scalar perlin <min> <max> <frequency>
 Texture <name> scalar worley <min> <max> <frequency>
 Texture <name> spectrum constant (value)
 Texture <name> spectrum checker (value1) (value2) <scale>
+Texture <name> spectrum scalar <texture>
 ```
 
 ### `Material`
@@ -50,18 +51,27 @@ Material <name> thinfilm [n] [d]
 ```
 
 ### `Object`
-`material` is the name of a previously defined material.
+The same `name` can be used for consecutive object declarations. `material` is the name of a previously defined material.
 
 ```
-Object sphere <material> (center) <radius>
-Object quad <material> (corner) (horizontal) (vertical)
+Object <name> sphere <material> (center) <radius>
+Object <name> quad <material> (corner) (horizontal) (vertical)
+Object <name> tri <material> (corner) (horizontal) (vertical)
+Object <name> mesh <material> <file>
+```
+
+### `Instance`
+`object` is the name of a previously defined object. `material` is the name of a previously defined material.
+
+```
+Instance <object> <material> (translation) (rotation) (scale)
 ```
 
 ### `Background`
 `background` is a textured environment map returned for rays that hit nothing.
 
 ```
-Background equirectangular (background)
+Background equirectangular <background>
 ```
 
 ### `Camera`

@@ -86,6 +86,14 @@ HOST_DEVICE inline Vector refracted(const Vector & v, const Vector & n, Float ra
     return direction;
 }
 
+HOST_DEVICE inline Vector transform(const Matrix4<Float> & m, const Vector & v, Float w = 1) {
+    Float denominator = m.get(3, 0) * v[0] + m.get(3, 1) * v[1] + m.get(3, 2) * v[2] + m.get(3, 3) * w;
+
+    if (fabsF(denominator) < EPSILON) denominator = 1;
+
+    return Vector(m.get(0, 0) * v[0] + m.get(0, 1) * v[1] + m.get(0, 2) * v[2] + m.get(0, 3) * w, m.get(1, 0) * v[0] + m.get(1, 1) * v[1] + m.get(1, 2) * v[2] + m.get(1, 3) * w, m.get(2, 0) * v[0] + m.get(2, 1) * v[1] + m.get(2, 2) * v[2] + m.get(2, 3) * w) / denominator;
+}
+
 HOST_DEVICE inline Float fade(Float t) { return powF(t, 3) * (t * (6 * t - 15) + 10); }
 HOST_DEVICE inline int permutation(int i) { return PERMUTATION[i & 255]; }
 
@@ -162,38 +170,27 @@ HOST_DEVICE inline Float worleyNoise(const Vector & point) {
     return distance;
 }
 
-HOST_DEVICE inline Matrix interfaceMatrixS(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
-  Matrix interfaceMatrix;
+HOST_DEVICE inline Matrix2<Complex> interfaceMatrixS(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
   Complex r = (n1 * cos1 - n2 * cos2) / (n1 * cos1 + n2 * cos2);
 
-  interfaceMatrix.get(0, 0) = 1;
-  interfaceMatrix.get(0, 1) = r;
-  interfaceMatrix.get(1, 0) = r;
-  interfaceMatrix.get(1, 1) = 1;
+  Matrix2<Complex> interfaceMatrix(1, r, r, 1);
 
   interfaceMatrix /= Complex(2) * n1 * cos1 / (n1 * cos1 + n2 * cos2);
+
   return interfaceMatrix;
 }
 
-HOST_DEVICE inline Matrix interfaceMatrixP(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
-  Matrix interfaceMatrix;
+HOST_DEVICE inline Matrix2<Complex> interfaceMatrixP(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
   Complex r = (n2 * cos1 - n1 * cos2) / (n2 * cos1 + n1 * cos2);
 
-  interfaceMatrix.get(0, 0) = 1;
-  interfaceMatrix.get(0, 1) = r;
-  interfaceMatrix.get(1, 0) = r;
-  interfaceMatrix.get(1, 1) = 1;
+  Matrix2<Complex> interfaceMatrix(1, r, r, 1);
 
   interfaceMatrix /= Complex(2) * n1 * cos1 / (n2 * cos1 + n1 * cos2);
+
   return interfaceMatrix;
 }
 
-HOST_DEVICE inline Matrix propagationMatrix(const Complex & phi) {
-  Matrix propMatrix;
-  propMatrix.get(0, 0) = expC(Complex(0, -1) * phi);
-  propMatrix.get(1, 1) = expC(Complex(0, 1) * phi);
-  return propMatrix;
-}
+HOST_DEVICE inline Matrix2<Complex> propagationMatrix(const Complex & phi) { return Matrix2<Complex>(expC(Complex(0, -1) * phi), 0, 0, expC(Complex(0, 1) * phi)); }
 
 HOST_DEVICE inline Float xyz31(Float lambda, int i) {
     int min = int(lambda);

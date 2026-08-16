@@ -187,6 +187,24 @@ class DenseSpectrum {
             return T((max - index) * data[min] + (index - min) * data[max]);
         }
 
+        HOST_DEVICE T min() const {
+            T minimum = data[0];
+
+            for (int i = 1; i < CIE_LAMBDA_BINS; i++)
+                if (data[i] < minimum) minimum = data[i];
+
+            return minimum;
+        }
+
+        HOST_DEVICE T max() const {
+            T maximum = data[0];
+
+            for (int i = 1; i < CIE_LAMBDA_BINS; i++)
+                if (data[i] > maximum) maximum = data[i];
+
+            return maximum;
+        }
+
         HOST_DEVICE T average() const {
             T sum = 0;
 

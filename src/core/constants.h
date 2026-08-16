@@ -3,10 +3,11 @@
 #include "core/platform.h"
 
 constexpr Float EPSILON = Float(1e-4);
+constexpr Float EPSILON_SQUARED = EPSILON * EPSILON;
 constexpr Float PI = Float(3.14159265358979323846);
 
 constexpr int BVH_BIN_COUNT = 16;
-constexpr int BVH_MAX_DEPTH = 64;
+constexpr int BVH_MAX_DEPTH = 20;
 
 constexpr int HERO_COUNT = 4;
 

@@ -6,7 +6,7 @@
 #include "math/spectrum.h"
 
 enum class ScalarTextureType { SCALAR_CONSTANT, PERLIN, WORLEY };
-enum class SpectrumTextureType { SPECTRUM_CONSTANT, CHECKER };
+enum class SpectrumTextureType { SPECTRUM_CONSTANT, CHECKER, SCALAR };
 
 class ScalarTexture {
     public:
@@ -43,6 +43,36 @@ class ScalarTexture {
             return texture;
         }
 
+        HOST_DEVICE Float min() const {
+            switch (type) {
+                case ScalarTextureType::SCALAR_CONSTANT: return constant.value;
+                case ScalarTextureType::PERLIN: return perlin.min;
+                case ScalarTextureType::WORLEY: return worley.min;
+            }
+
+            return 0;
+        }
+
+        HOST_DEVICE Float max() const {
+            switch (type) {
+                case ScalarTextureType::SCALAR_CONSTANT: return constant.value;
+                case ScalarTextureType::PERLIN: return perlin.max;
+                case ScalarTextureType::WORLEY: return worley.max;
+            }
+
+            return 0;
+        }
+
+        HOST_DEVICE Float average() const {
+            switch (type) {
+                case ScalarTextureType::SCALAR_CONSTANT: return averageConstant();
+                case ScalarTextureType::PERLIN: return averagePerlin();
+                case ScalarTextureType::WORLEY: return averageWorley();
+            }
+
+            return 0;
+        }
+
         HOST_DEVICE Float evaluate(const Intersection & i) const {
             switch (type) {
                 case ScalarTextureType::SCALAR_CONSTANT:
@@ -65,6 +95,10 @@ class ScalarTexture {
             struct { Float min, max, frequency; } worley;
         };
 
+        HOST_DEVICE Float averageConstant() const { return constant.value; }
+        HOST_DEVICE Float averagePerlin() const { return (perlin.min + perlin.max) / 2; }
+        HOST_DEVICE Float averageWorley() const { return (worley.min + worley.max) / 2; }
+
         HOST_DEVICE Float evaluateConstant() const {
             return constant.value;
         }
@@ -81,38 +115,6 @@ class ScalarTexture {
 class SpectrumTexture {
     public:
         HOST_DEVICE SpectrumTexture() : type(SpectrumTextureType::SPECTRUM_CONSTANT) {}
-
-        HOST_DEVICE SpectrumTexture(const SpectrumTexture & s) {
-            type = s.type;
-
-            switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT:
-                    constant.value = s.constant.value;
-                    break;
-                case SpectrumTextureType::CHECKER:
-                    checker.value1 = s.checker.value1;
-                    checker.value2 = s.checker.value2;
-                    checker.scale = s.checker.scale;
-                    break;
-            }
-        }
-
-        HOST_DEVICE SpectrumTexture & operator=(const SpectrumTexture & s) {
-            type = s.type;
-
-            switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT:
-                    constant.value = s.constant.value;
-                    break;
-                case SpectrumTextureType::CHECKER:
-                    checker.value1 = s.checker.value1;
-                    checker.value2 = s.checker.value2;
-                    checker.scale = s.checker.scale;
-                    break;
-            }
-
-            return *this;
-        }
 
         HOST_DEVICE static SpectrumTexture makeConstant(int v) {
             SpectrumTexture texture;
@@ -134,19 +136,50 @@ class SpectrumTexture {
             return texture;
         }
 
-        HOST_DEVICE Float average(DenseSpectrum<Float> * const spectra) const {
+        HOST_DEVICE static SpectrumTexture makeScalar(int index) {
+            SpectrumTexture texture;
+
+            texture.type = SpectrumTextureType::SCALAR;
+            texture.scalar.index = index;
+
+            return texture;
+        }
+
+        HOST_DEVICE Float min(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures) const {
             switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT: return averageConstant(spectra);
-                case SpectrumTextureType::CHECKER: return averageChecker(spectra);
+                case SpectrumTextureType::SPECTRUM_CONSTANT: return spectra[constant.value].min();
+                case SpectrumTextureType::CHECKER: return fminF(spectra[checker.value1].min(), spectra[checker.value2].min());
+                case SpectrumTextureType::SCALAR: return scalarTextures[scalar.index].min();
             }
 
             return 0;
         }
 
-        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, const Intersection & i, Float lambda) const {
+        HOST_DEVICE Float max(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures) const {
+            switch (type) {
+                case SpectrumTextureType::SPECTRUM_CONSTANT: return spectra[constant.value].max();
+                case SpectrumTextureType::CHECKER: return fmaxF(spectra[checker.value1].max(), spectra[checker.value2].max());
+                case SpectrumTextureType::SCALAR: return scalarTextures[scalar.index].max();
+            }
+
+            return 0;
+        }
+
+        HOST_DEVICE Float average(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures) const {
+            switch (type) {
+                case SpectrumTextureType::SPECTRUM_CONSTANT: return averageConstant(spectra);
+                case SpectrumTextureType::CHECKER: return averageChecker(spectra);
+                case SpectrumTextureType::SCALAR: return averageScalar(scalarTextures);
+            }
+
+            return 0;
+        }
+
+        HOST_DEVICE Float evaluate(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures, const Intersection & i, Float lambda) const {
             switch (type) {
                 case SpectrumTextureType::SPECTRUM_CONSTANT: return evaluateConstant(spectra, lambda);
                 case SpectrumTextureType::CHECKER: return evaluateChecker(spectra, i, lambda);
+                case SpectrumTextureType::SCALAR: return evaluateScalar(scalarTextures, i);
             }
 
             return 0;
@@ -158,10 +191,12 @@ class SpectrumTexture {
         union {
             struct { int value; } constant;
             struct { int value1, value2; Float scale; } checker;
+            struct { int index; } scalar;
         };
 
         HOST_DEVICE Float averageConstant(DenseSpectrum<Float> * const spectra) const { return spectra[constant.value].average(); }
         HOST_DEVICE Float averageChecker(DenseSpectrum<Float> * const spectra) const { return Float(0.5) * (spectra[checker.value1].average() + spectra[checker.value2].average()); }
+        HOST_DEVICE Float averageScalar(ScalarTexture * const scalarTextures) const { return scalarTextures[scalar.index].average(); }
 
         HOST_DEVICE Float evaluateConstant(DenseSpectrum<Float> * const spectra, Float lambda) const { return spectra[constant.value](lambda); }
 
@@ -171,4 +206,6 @@ class SpectrumTexture {
 
             return (x + y) % 2 == 0 ? spectra[checker.value1](lambda) : spectra[checker.value2](lambda);
         }
+
+        HOST_DEVICE Float evaluateScalar(ScalarTexture * const scalarTextures, const Intersection & i) const { return scalarTextures[scalar.index].evaluate(i); }
 };
