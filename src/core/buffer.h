@@ -1,38 +1,30 @@
 #pragma once
 
+#include <cstring>
 #include <vector>
 
 #include "core/utils.h"
 
 #ifdef __CUDACC__
     template <typename T>
-    class DeviceBuffer {
+    class Buffer {
         public:
-            DeviceBuffer() : pointer(nullptr) {}
+            Buffer() : pointer(nullptr) {}
 
-            DeviceBuffer(const T * h_data_begin, const T * h_data_end) {
-                int n = int(h_data_end - h_data_begin);
-                checkCudaError(cudaMallocManaged(&pointer, n * sizeof(T)), "failed to allocate device memory");
-                checkCudaError(cudaMemcpy(pointer, h_data_begin, n * sizeof(T), cudaMemcpyHostToDevice), "failed to copy to device memory");
-            }
-
-            DeviceBuffer(const std::vector<T> & h_data) {
+            Buffer(const std::vector<T> & h_data) {
                 checkCudaError(cudaMallocManaged(&pointer, h_data.size() * sizeof(T)), "failed to allocate device memory");
                 checkCudaError(cudaMemcpy(pointer, h_data.data(), h_data.size() * sizeof(T), cudaMemcpyHostToDevice), "failed to copy to device memory");
             }
 
-            DeviceBuffer(long unsigned int n) {
+            Buffer(long unsigned int n) {
                 checkCudaError(cudaMallocManaged(&pointer, n * sizeof(T)), "failed to allocate device memory");
                 checkCudaError(cudaMemset(pointer, 0, n * sizeof(T)), "failed to initialize device memory");
             }
 
-            ~DeviceBuffer() {
-                if (pointer) checkCudaError(cudaFree(pointer), "failed to free device memory");
-            }
+            ~Buffer() { if (pointer) checkCudaError(cudaFree(pointer), "failed to free device memory"); }
 
-            DeviceBuffer(const DeviceBuffer<T> & b) = delete;
-
-            DeviceBuffer<T> & operator=(const DeviceBuffer<T> & b) = delete;
+            Buffer(const Buffer<T> &) = delete;
+            Buffer<T> & operator=(const Buffer<T> &) = delete;
 
             T * data() const { return pointer; }
 
@@ -41,8 +33,54 @@
     };
 
     template <typename T>
-    using Buffer = DeviceBuffer<T>;
+    class ConstantBuffer {
+        public:
+            ConstantBuffer() : pointer(nullptr), size(0) {}
+
+            ConstantBuffer(const T * h_data, size_t _size) {
+                size = _size;
+
+                checkCudaError(cudaMallocManaged(&pointer, size * sizeof(T)), "failed to allocate device memory");
+                checkCudaError(cudaMemcpy(pointer, h_data, size * sizeof(T), cudaMemcpyHostToDevice), "failed to copy to device memory");
+            }
+
+            ~ConstantBuffer() { if (pointer) checkCudaError(cudaFree(pointer), "failed to free device memory"); }
+
+            ConstantBuffer(const ConstantBuffer &) = delete;
+            ConstantBuffer & operator=(const ConstantBuffer &) = delete;
+
+            void copy(void * destination) const { checkCudaError(cudaMemcpyToSymbol(destination, pointer, size * sizeof(T), 0, cudaMemcpyDeviceToDevice), "failed to copy to device memory"); }
+
+        private:
+            T * pointer;
+            size_t size;
+    };
 #else
     template <typename T>
     using Buffer = std::vector<T>;
+
+    template <typename T>
+    class ConstantBuffer {
+        public:
+            ConstantBuffer() : pointer(nullptr), size(0) {}
+
+            ConstantBuffer(const T * h_data, size_t _size) {
+                size = _size;
+
+                pointer = new T[size];
+
+                std::memcpy(pointer, h_data, size * sizeof(T));
+            }
+
+            ~ConstantBuffer() { if (pointer) delete [] pointer; }
+
+            ConstantBuffer(const ConstantBuffer &) = delete;
+            ConstantBuffer & operator=(const ConstantBuffer &) = delete;
+
+            void copy(void * destination) const { std::memcpy(destination, pointer, size * sizeof(T)); }
+
+        private:
+            T * pointer;
+            size_t size;
+    };
 #endif

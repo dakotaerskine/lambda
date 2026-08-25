@@ -13,10 +13,10 @@
 
 class BVHNode {
     public:
-        HOST_DEVICE BVHNode(const Vector & _min, const Vector & _max, int _index, int _count = 0) : min(_min), max(_max), index(_index), count(_count) {}
+        HOST_DEVICE BVHNode(const Vector<Float> & _min, const Vector<Float> & _max, int _index, int _count = 0) : min(_min), max(_max), index(_index), count(_count) {}
 
-        HOST_DEVICE const Vector & getMin() const { return min; }
-        HOST_DEVICE const Vector & getMax() const { return max; }
+        HOST_DEVICE const Vector<Float> & getMin() const { return min; }
+        HOST_DEVICE const Vector<Float> & getMax() const { return max; }
 
         HOST_DEVICE bool isLeaf() const { return count > 0; }
 
@@ -42,8 +42,8 @@ class BVHNode {
                     tMax = temp;
                 }
 
-                t1 = fmaxF(tMin, t1);
-                t2 = fminF(tMax, t2);
+                t1 = fmax(tMin, t1);
+                t2 = fmin(tMax, t2);
             }
 
             intersection.t = t1;
@@ -52,7 +52,7 @@ class BVHNode {
         }
 
     private:
-        Vector min, max;
+        Vector<Float> min, max;
         int index, count;
 };
 
@@ -109,10 +109,10 @@ class BVH {
 
     private:
         static int makeBVH(const std::vector<Object> & objects, const std::vector<Instance> & instances, std::vector<int> & indices, int start, int end, std::vector<BVHNode> & nodes, int depth) {
-            Vector min(MAX, MAX, MAX);
-            Vector max(-MAX, -MAX, -MAX);
-            Vector minCenter(MAX, MAX, MAX);
-            Vector maxCenter(-MAX, -MAX, -MAX);
+            Vector<Float> min(MAX, MAX, MAX);
+            Vector<Float> max(-MAX, -MAX, -MAX);
+            Vector<Float> minCenter(MAX, MAX, MAX);
+            Vector<Float> maxCenter(-MAX, -MAX, -MAX);
 
             for (int i = start; i < end; i++) {
                 if (instances.size() > 0) {
@@ -135,18 +135,18 @@ class BVH {
 
             for (int i = 0; i < 3; i++)
                 if (maxCenter[i] - minCenter[i] >= EPSILON) {
-                    Vector binMin[BVH_BIN_COUNT];
-                    Vector binMax[BVH_BIN_COUNT];
+                    Vector<Float> binMin[BVH_BIN_COUNT];
+                    Vector<Float> binMax[BVH_BIN_COUNT];
                     int binCount[BVH_BIN_COUNT];
 
                     for (int j = 0; j < BVH_BIN_COUNT; j++) {
-                        binMin[j] = Vector(MAX, MAX, MAX);
-                        binMax[j] = Vector(-MAX, -MAX, -MAX);
+                        binMin[j] = Vector<Float>(MAX, MAX, MAX);
+                        binMax[j] = Vector<Float>(-MAX, -MAX, -MAX);
                         binCount[j] = 0;
                     }
 
                     for (int j = start; j < end; j++) {
-                        Vector center = instances.size() > 0 ? instances[indices[j]].center(objects.data()) : objects[indices[j]].center();
+                        Vector<Float> center = instances.size() > 0 ? instances[indices[j]].center(objects.data()) : objects[indices[j]].center();
                         int bin = std::clamp(int(BVH_BIN_COUNT * (center[i] - minCenter[i]) / (maxCenter[i] - minCenter[i])), 0, BVH_BIN_COUNT - 1);
 
                         if (instances.size() > 0) {
@@ -157,16 +157,16 @@ class BVH {
                             binMin[bin] = minV(binMin[bin], objects[indices[j]].min());
                             binMax[bin] = maxV(binMax[bin], objects[indices[j]].max());
                         }
-                        
+
                         binCount[bin]++;
                     }
 
-                    Vector leftMin[BVH_BIN_COUNT];
-                    Vector leftMax[BVH_BIN_COUNT];
+                    Vector<Float> leftMin[BVH_BIN_COUNT];
+                    Vector<Float> leftMax[BVH_BIN_COUNT];
                     int leftCount[BVH_BIN_COUNT];
 
-                    Vector runningMin(MAX, MAX, MAX);
-                    Vector runningMax(-MAX, -MAX, -MAX);
+                    Vector<Float> runningMin(MAX, MAX, MAX);
+                    Vector<Float> runningMax(-MAX, -MAX, -MAX);
                     int runningCount = 0;
 
                     for (int j = 0; j < BVH_BIN_COUNT; j++) {
@@ -179,12 +179,12 @@ class BVH {
                         leftCount[j] = runningCount;
                     }
 
-                    Vector rightMin[BVH_BIN_COUNT];
-                    Vector rightMax[BVH_BIN_COUNT];
+                    Vector<Float> rightMin[BVH_BIN_COUNT];
+                    Vector<Float> rightMax[BVH_BIN_COUNT];
                     int rightCount[BVH_BIN_COUNT];
 
-                    runningMin = Vector(MAX, MAX, MAX);
-                    runningMax = Vector(-MAX, -MAX, -MAX);
+                    runningMin = Vector<Float>(MAX, MAX, MAX);
+                    runningMax = Vector<Float>(-MAX, -MAX, -MAX);
                     runningCount = 0;
 
                     for (int j = BVH_BIN_COUNT - 1; j >= 0; j--) {
@@ -200,9 +200,9 @@ class BVH {
                     for (int j = 0; j < BVH_BIN_COUNT - 1; j++) {
                         if (leftCount[j] == 0 || rightCount[j + 1] == 0) continue;
 
-                        Vector leftExtents = leftMax[j] - leftMin[j];
-                        Vector rightExtents = rightMax[j + 1] - rightMin[j + 1];
-                        Vector totalExtents = max - min;
+                        Vector<Float> leftExtents = leftMax[j] - leftMin[j];
+                        Vector<Float> rightExtents = rightMax[j + 1] - rightMin[j + 1];
+                        Vector<Float> totalExtents = max - min;
 
                         Float leftArea = 2 * (leftExtents[0] * leftExtents[1] + leftExtents[0] * leftExtents[2] + leftExtents[1] * leftExtents[2]);
                         Float rightArea = 2 * (rightExtents[0] * rightExtents[1] + rightExtents[0] * rightExtents[2] + rightExtents[1] * rightExtents[2]);
@@ -237,7 +237,7 @@ class BVH {
             nodes.push_back(BVHNode(min, max, -1));
 
             makeBVH(objects, instances, indices, start, mid, nodes, depth + 1);
-            
+
             int right = makeBVH(objects, instances, indices, mid, end, nodes, depth + 1);
 
             nodes[current].setRight(right);

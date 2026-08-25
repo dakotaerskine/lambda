@@ -11,7 +11,7 @@ make
 ```
 
 ## Running
-Lambda takes in a single `.lrd` scene file as well as an optional output file path and writes a `.ppm` image.
+Lambda takes in a single `.lrd` scene file as well as an optional output file path and writes an `.exr`, `.pfm`, or `.png` image.
 
 ```sh
 ./lambda render.lrd
@@ -21,10 +21,10 @@ Lambda takes in a single `.lrd` scene file as well as an optional output file pa
 The Lambda Render Description is a plain text file format with one command per line. `#` starts a line comment. The first command must be `Render`. `default` can be used in place of `material` or `texture`.
 
 ### `Render`
-`depth` is the maximum bounce count, `samples` must be a perfect square, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
+`space` is one of `srgb`, `rec2020`, or `aces2065-1`, `depth` is the maximum bounce count, `samples` must be a perfect square, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
 
 ```
-Render <width> <height> <depth> <samples> <lambdaMin> <lambdaMax>
+Render <space> <width> <height> <depth> <samples> <lambdaMin> <lambdaMax>
 ```
 
 ### `Texture`
@@ -34,9 +34,11 @@ Render <width> <height> <depth> <samples> <lambdaMin> <lambdaMax>
 Texture <name> scalar constant <value>
 Texture <name> scalar perlin <min> <max> <frequency>
 Texture <name> scalar worley <min> <max> <frequency>
+Texture <name> scalar image <file>
 Texture <name> spectrum constant (value)
 Texture <name> spectrum checker (value1) (value2) <scale>
 Texture <name> spectrum scalar <texture>
+Texture <name> spectrum image <file>
 ```
 
 ### `Material`

@@ -7,6 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(CPU "Force CPU build" OFF)
+option(DOUBLE_PRECISION "Use double precision for floating point values" OFF)
 
 if (NOT CPU)
     include(CheckLanguage)
@@ -21,7 +22,9 @@ endif()
 
 add_executable(lambda main.cpp)
 
-target_include_directories(lambda PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(lambda SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ext ${CMAKE_CURRENT_SOURCE_DIR}/ext/tinyexr/deps/miniz PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/data")
 
 if(CMAKE_CUDA_COMPILER AND NOT CPU)
     set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
@@ -39,4 +42,10 @@ else()
     target_compile_definitions(lambda PRIVATE USE_OPENMP)
 
     target_compile_options(lambda PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wfloat-equal)
+endif()
+
+target_compile_definitions(lambda PRIVATE TINYEXR_USE_MINIZ=0 TINYEXR_USE_STB_ZLIB=1)
+
+if (DOUBLE_PRECISION)
+    target_compile_definitions(lambda PRIVATE DOUBLE_PRECISION)
 endif()

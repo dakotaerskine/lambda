@@ -5,11 +5,11 @@
 #include "math/intersection.h"
 #include "math/ray.h"
 #include "math/spectrum.h"
+#include "scene/background.h"
 #include "scene/bvh.h"
 #include "scene/instance.h"
 #include "scene/object.h"
 
-class Background;
 class Material;
 class ScalarTexture;
 class SpectrumTexture;
@@ -18,7 +18,7 @@ class Scene {
     public:
         HOST_DEVICE Scene() : spectra(nullptr), complexSpectra(nullptr), background(), objects(nullptr), instances(nullptr), nodes(nullptr), lightInstances(nullptr), lightObjects(nullptr), numLights(0), lightPowers(nullptr), totalLightPower(0), materials(nullptr), materialProperties(nullptr), scalarTextures(nullptr), spectrumTextures(nullptr) {}
 
-        HOST_DEVICE Scene(DenseSpectrum<Float> * const _spectra, DenseSpectrum<Complex> * const _complexSpectra, const Background & _background, Object * const _objects, Instance * const _instances, BVHNode * const _nodes, int * const _lightInstances, int * const _lightObjects, int _numLights, Float * const _lightPowers, Float _totalLightPower, Material * const _materials, int * const _materialProperties, ScalarTexture * const _scalarTextures, SpectrumTexture * const _spectrumTextures) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), instances(_instances), nodes(_nodes), lightInstances(_lightInstances), lightObjects(_lightObjects), numLights(_numLights), lightPowers(_lightPowers), totalLightPower(_totalLightPower), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures) {}
+        HOST_DEVICE Scene(DenseSpectrum<Float> * const _spectra, DenseSpectrum<Complex> * const _complexSpectra, const Background & _background, Object * const _objects, Instance * const _instances, BVHNode * const _nodes, int * const _lightInstances, int * const _lightObjects, int _numLights, Float * const _lightPowers, Float _totalLightPower, Material * const _materials, int * const _materialProperties, ScalarTexture * const _scalarTextures, SpectrumTexture * const _spectrumTextures, Float * const _images) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), instances(_instances), nodes(_nodes), lightInstances(_lightInstances), lightObjects(_lightObjects), numLights(_numLights), lightPowers(_lightPowers), totalLightPower(_totalLightPower), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures), images(_images) {}
 
         HOST_DEVICE DenseSpectrum<Float> * getSpectra() const { return spectra; }
 
@@ -48,6 +48,8 @@ class Scene {
 
         HOST_DEVICE SpectrumTexture * getSpectrumTextures() const { return spectrumTextures; }
 
+        HOST_DEVICE Float * getImages() const { return images; }
+
         HOST_DEVICE bool hit(const Ray & r, Intersection & intersection, int occludedInstance = -1, int occludedObject = -2) const {
             int stack[BVH_MAX_DEPTH];
             int stackSize = 0;
@@ -61,9 +63,10 @@ class Scene {
             if (occludedInstance != -1) {
                 Ray transformedRay = instances[occludedInstance].transformRayToLocal(r);
 
-                if (!objects[occludedObject].intersect(occludedObject, transformedRay, intersection)) return true;
-                else {
+                if (objects[occludedObject].intersect(occludedObject, transformedRay, intersection)) {
                     intersection.instance = occludedInstance;
+                    intersection.localPoint = intersection.point;
+                    intersection.localNormal = intersection.normal;
                     intersection.point = instances[occludedInstance].transformPointToWorld(intersection.point);
                     intersection.normal = instances[occludedInstance].transformNormalToWorld(intersection.normal);
                 }
@@ -79,38 +82,42 @@ class Scene {
                 if (nodes[current].isLeaf()) {
                     int instanceIndex = nodes[current].getIndex();
 
-                    const Instance & instance = instances[instanceIndex];
+                    for (int i = 0; i < nodes[current].getCount(); i++) {
+                        const Instance & instance = instances[instanceIndex + i];
 
-                    subStack[subStackSize++] = instance.getNode();
+                        subStack[subStackSize++] = instance.getNode();
 
-                    Ray transformedRay = instance.transformRayToLocal(r);
+                        Ray transformedRay = instance.transformRayToLocal(r);
 
-                    while (subStackSize > 0) {
-                        int subCurrent = subStack[--subStackSize];
+                        while (subStackSize > 0) {
+                            int subCurrent = subStack[--subStackSize];
 
-                        Intersection subNodeIntersection;
+                            Intersection subNodeIntersection;
 
-                        if (!nodes[subCurrent].intersect(transformedRay, subNodeIntersection) || subNodeIntersection.t > intersection.t) continue;
+                            if (!nodes[subCurrent].intersect(transformedRay, subNodeIntersection) || subNodeIntersection.t > intersection.t) continue;
 
-                        if (nodes[subCurrent].isLeaf()) {
-                            int objectIndex = nodes[subCurrent].getIndex();
+                            if (nodes[subCurrent].isLeaf()) {
+                                int objectIndex = nodes[subCurrent].getIndex();
 
-                            for (int i = 0; i < nodes[subCurrent].getCount(); i++) {
-                                if (occludedInstance != -1 && instanceIndex == occludedInstance && objectIndex + i == occludedObject) continue;
+                                for (int j = 0; j < nodes[subCurrent].getCount(); j++) {
+                                    if (occludedInstance != -1 && instanceIndex + i == occludedInstance && objectIndex + j == occludedObject) continue;
 
-                                if (objects[objectIndex + i].intersect(objectIndex + i, transformedRay, intersection)) {
-                                    intersection.instance = instanceIndex;
-                                    intersection.point = instance.transformPointToWorld(intersection.point);
-                                    intersection.normal = instance.transformNormalToWorld(intersection.normal);
+                                    if (objects[objectIndex + j].intersect(objectIndex + j, transformedRay, intersection)) {
+                                        intersection.instance = instanceIndex + i;
+                                        intersection.localPoint = intersection.point;
+                                        intersection.localNormal = intersection.normal;
+                                        intersection.point = instance.transformPointToWorld(intersection.point);
+                                        intersection.normal = instance.transformNormalToWorld(intersection.normal);
 
-                                    if (occludedObject != -2) return true;
-                                    else hitObject = true;
+                                        if (occludedObject != -2) return true;
+                                        else hitObject = true;
+                                    }
                                 }
                             }
-                        }
-                        else {
-                            subStack[subStackSize++] = subCurrent + 1;
-                            subStack[subStackSize++] = nodes[subCurrent].getRight();
+                            else {
+                                subStack[subStackSize++] = subCurrent + 1;
+                                subStack[subStackSize++] = nodes[subCurrent].getRight();
+                            }
                         }
                     }
                 }
@@ -119,7 +126,7 @@ class Scene {
                     stack[stackSize++] = nodes[current].getRight();
                 }
             }
-            
+
             return hitObject;
         }
 
@@ -139,4 +146,5 @@ class Scene {
         int * materialProperties;
         ScalarTexture * scalarTextures;
         SpectrumTexture * spectrumTextures;
+        Float * images;
 };

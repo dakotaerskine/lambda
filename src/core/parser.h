@@ -11,8 +11,15 @@
 #include <string>
 #include <vector>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "ext/stb/stb_image.h"
+
+#define TINYEXR_IMPLEMENTATION
+#include "ext/tinyexr/tinyexr.h"
+
 #include "core/constants.h"
 #include "core/platform.h"
+#include "core/utils.h"
 #include "math/spectrum.h"
 #include "math/vector.h"
 #include "render/renderer.h"
@@ -26,7 +33,7 @@ class Parser {
     public:
         static bool hasValidExtension(const std::string & output) { return hasExtension(output, ".lrd"); }
 
-        static void parseLRD(const std::string & input, Renderer & renderer, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, Background & background, std::vector<Object> & objects, std::vector<Instance> & instances, std::vector<BVHNode> & nodes, std::vector<int> & lightInstances, std::vector<int> & lightObjects, std::vector<Float> & lightPowers, Float & totalLightPower, std::vector<Material> & materials, std::vector<int> & materialProperties, std::vector<ScalarTexture> & scalarTextures, std::vector<SpectrumTexture> & spectrumTextures) {
+        static void parseLRD(const std::string & input, ColorSpace & space, Renderer & renderer, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, Background & background, std::vector<Object> & objects, std::vector<Instance> & instances, std::vector<BVHNode> & nodes, std::vector<int> & lightInstances, std::vector<int> & lightObjects, std::vector<Float> & lightPowers, Float & totalLightPower, std::vector<Material> & materials, std::vector<int> & materialProperties, std::vector<ScalarTexture> & scalarTextures, std::vector<SpectrumTexture> & spectrumTextures, std::vector<Float> & images) {
             std::ifstream inputFile(input);
 
             if (!inputFile.is_open()) {
@@ -43,10 +50,18 @@ class Parser {
             bool instanceCommandFound = false;
 
             std::vector<int> objectOffsets;
+
+            std::map<std::string, int> spectrumIndices;
+            std::map<std::string, int> complexSpectrumIndices;
             std::map<std::string, int> objectIndices;
             std::map<std::string, int> materialIndices;
             std::map<std::string, int> scalarTextureIndices;
             std::map<std::string, int> spectrumTextureIndices;
+
+            std::map<std::string, int> imageDataIndices;
+
+            std::vector<ColorSpace> imageSpaces;
+            std::vector<int> imageIndices, imageWidths, imageHeights, imageChannels;
 
             spectra.push_back(DenseSpectrum<Float>(0.5));
 
@@ -74,6 +89,13 @@ class Parser {
 
                 if (command == "Render") {
                     renderCommandFound = true;
+
+                    std::string colorSpace = parseValue<std::string>(ss, input, lineNumber, "space");
+
+                    if (colorSpace == "srgb") space = ColorSpace::SRGB;
+                    else if (colorSpace == "rec2020") space = ColorSpace::REC2020;
+                    else if (colorSpace == "aces2065-1") space = ColorSpace::ACES2065;
+                    else throw error(input, lineNumber, "'space' must be \"aces2065-1\", \"rec2020\", or \"srgb\"");
 
                     int width = parseValue<int>(ss, input, lineNumber, "width");
                     if (width <= 0) throw error(input, lineNumber, "'width' must be positive, got " + std::to_string(width));
@@ -121,29 +143,95 @@ class Parser {
                             if (subtype == "perlin") scalarTextures.push_back(ScalarTexture::makePerlin(min, max, frequency));
                             else if (subtype == "worley") scalarTextures.push_back(ScalarTexture::makeWorley(min, max, frequency));
                         }
-                        else throw error(input, lineNumber, "'subtype' must be \"constant\", \"perlin\", or \"worley\"");
+                        else if (subtype == "image") {
+                            std::string imageFile = parseValue<std::string>(ss, input, lineNumber, "file");
+
+                            ColorSpace inputSpace;
+                            int imageIndex = -1, width, height;
+
+                            if (imageDataIndices.contains(imageFile)) {
+                                int imageDataIndex = imageDataIndices.at(imageFile);
+
+                                if (imageChannels[imageDataIndex] == 1) {
+                                    inputSpace = imageSpaces[imageDataIndex];
+                                    imageIndex = imageIndices[imageDataIndex];
+                                    width = imageWidths[imageDataIndex];
+                                    height = imageHeights[imageDataIndex];
+                                }
+                            }
+
+                            if (imageIndex == -1) {
+                                imageIndex = int(images.size());
+
+                                parseImage(imageFile, images, inputSpace, width, height, 1);
+
+                                imageDataIndices[imageFile] = int(imageIndices.size());
+                                imageSpaces.push_back(inputSpace);
+                                imageIndices.push_back(imageIndex);
+                                imageWidths.push_back(width);
+                                imageHeights.push_back(height);
+                                imageChannels.push_back(1);
+                            }
+
+                            scalarTextures.push_back(ScalarTexture::makeImage(imageIndex, width, height));
+                        }
+                        else throw error(input, lineNumber, "'subtype' must be \"constant\", \"image\", \"perlin\", or \"worley\"");
 
                         scalarTextureIndices[name] = int(scalarTextures.size() - 1);
                     }
                     else if (type == "spectrum") {
-                        if (subtype == "constant") spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, input, lineNumber, "spectrum", spectra, complexSpectra)));
+                        if (subtype == "constant") spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, input, lineNumber, "spectrum", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices)));
                         else if (subtype == "checker") {
-                            int value1 = parseSpectrum<Float>(ss, input, lineNumber, "value1", spectra, complexSpectra);
-                            int value2 = parseSpectrum<Float>(ss, input, lineNumber, "value2", spectra, complexSpectra);
+                            int value1 = parseSpectrum<Float>(ss, input, lineNumber, "value1", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices);
+                            int value2 = parseSpectrum<Float>(ss, input, lineNumber, "value2", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices);
 
                             Float scale = parseValue<Float>(ss, input, lineNumber, "scale");
 
                             spectrumTextures.push_back(SpectrumTexture::makeChecker(value1, value2, scale));
                         }
                         else if (subtype == "scalar") {
+                            std::string scalarTextureName = parseValue<std::string>(ss, input, lineNumber, "texture");
+
                             int scalarTextureIndex;
-                            
-                            if (scalarTextureIndices.contains(parseValue<std::string>(ss, input, lineNumber, "texture"))) scalarTextureIndex = scalarTextureIndices.at(parseValue<std::string>(ss, input, lineNumber, "texture"));
+
+                            if (scalarTextureIndices.contains(scalarTextureName)) scalarTextureIndex = scalarTextureIndices.at(scalarTextureName);
                             else throw error(input, lineNumber, "'texture' is not defined");
 
                             spectrumTextures.push_back(SpectrumTexture::makeScalar(scalarTextureIndex));
                         }
-                        else throw error(input, lineNumber, "'subtype' must be \"constant\", \"checker\", or \"scalar\"");
+                        else if (subtype == "image") {
+                            std::string imageFile = parseValue<std::string>(ss, input, lineNumber, "file");
+
+                            ColorSpace inputSpace;
+                            int imageIndex = -1, width, height;
+
+                            if (imageDataIndices.contains(imageFile)) {
+                                int imageDataIndex = imageDataIndices.at(imageFile);
+
+                                if (imageChannels[imageDataIndex] == 3) {
+                                    inputSpace = imageSpaces[imageDataIndex];
+                                    imageIndex = imageIndices[imageDataIndex];
+                                    width = imageWidths[imageDataIndex];
+                                    height = imageHeights[imageDataIndex];
+                                }
+                            }
+
+                            if (imageIndex == -1) {
+                                imageIndex = int(images.size());
+
+                                parseImage(imageFile, images, inputSpace, width, height, 3);
+
+                                imageDataIndices[imageFile] = int(imageIndices.size());
+                                imageSpaces.push_back(inputSpace);
+                                imageIndices.push_back(imageIndex);
+                                imageWidths.push_back(width);
+                                imageHeights.push_back(height);
+                                imageChannels.push_back(3);
+                            }
+
+                            spectrumTextures.push_back(SpectrumTexture::makeImage(inputSpace, imageIndex, width, height));
+                        }
+                        else throw error(input, lineNumber, "'subtype' must be \"constant\", \"checker\", \"image\", or \"scalar\"");
 
                         spectrumTextureIndices[name] = int(spectrumTextures.size() - 1);
                     }
@@ -156,10 +244,10 @@ class Parser {
                     if (materialIndices.contains(name)) throw error(input, lineNumber, "'name' is already defined");
 
                     if (type == "lambertian" || type == "mirror") {
-                        int albedo = parseSpectrumTexture(ss, input, lineNumber, "albedo", spectra, complexSpectra, scalarTextureIndices, spectrumTextures, spectrumTextureIndices);
+                        int albedo = parseSpectrumTexture(ss, input, lineNumber, "albedo", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices, scalarTextureIndices, spectrumTextures, spectrumTextureIndices);
 
-                        Float minAlbedo = spectrumTextures[albedo].min(spectra.data(), scalarTextures.data());
-                        Float maxAlbedo = spectrumTextures[albedo].max(spectra.data(), scalarTextures.data());
+                        Float minAlbedo = spectrumTextures[albedo].min(spectra.data(), scalarTextures.data(), images.data());
+                        Float maxAlbedo = spectrumTextures[albedo].max(spectra.data(), scalarTextures.data(), images.data());
 
                         if (minAlbedo < 0) throw error(input, lineNumber, "'albedo' must be positive, got " + std::to_string(minAlbedo));
                         else if (maxAlbedo > 1) throw error(input, lineNumber, "'albedo' must be at most 1, got " + std::to_string(maxAlbedo));
@@ -168,8 +256,8 @@ class Parser {
                         else if (type == "mirror") materials.push_back(Material::makeMirror(albedo));
                     }
                     else if (type == "dielectric") {
-                        int n0 = parseSpectrum<Float>(ss, input, lineNumber, "n0", spectra, complexSpectra);
-                        int n1 = parseSpectrum<Float>(ss, input, lineNumber, "n1", spectra, complexSpectra);
+                        int n0 = parseSpectrum<Float>(ss, input, lineNumber, "n0", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices);
+                        int n1 = parseSpectrum<Float>(ss, input, lineNumber, "n1", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices);
 
                         for (int i = 0; i < CIE_LAMBDA_BINS; i++) {
                             if (spectra[n0][i] <= 0) throw error(input, lineNumber, "'n0' must be positive, got " + std::to_string(spectra[n0][i]));
@@ -178,9 +266,9 @@ class Parser {
 
                         materials.push_back(Material::makeDielectric(n0, n1));
                     }
-                    else if (type == "emissive") materials.push_back(Material::makeEmissive(parseSpectrumTexture(ss, input, lineNumber, "emission", spectra, complexSpectra, scalarTextureIndices, spectrumTextures, spectrumTextureIndices)));
+                    else if (type == "emissive") materials.push_back(Material::makeEmissive(parseSpectrumTexture(ss, input, lineNumber, "emission", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices, scalarTextureIndices, spectrumTextures, spectrumTextureIndices)));
                     else if (type == "thinfilm") {
-                        std::vector<int> n = parseSpectrumArray(ss, input, lineNumber, "n", spectra, complexSpectra);
+                        std::vector<int> n = parseSpectrumArray(ss, input, lineNumber, "n", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices);
 
                         if (n.size() < 2) throw error(input, lineNumber, "'n' must have at least 2 entries, got " + std::to_string(n.size()));
 
@@ -233,7 +321,7 @@ class Parser {
                     else throw error(input, lineNumber, "'material' is not defined");
 
                     if (type == "sphere") {
-                        Vector center = parseVector(ss, input, lineNumber, "center");
+                        Vector<Float> center = parseVector(ss, input, lineNumber, "center");
                         Float radius = parseValue<Float>(ss, input, lineNumber, "radius");
 
                         if (radius <= 0) throw error(input, lineNumber, "'radius' must be positive, got " + std::to_string(radius));
@@ -241,9 +329,9 @@ class Parser {
                         objects.push_back(Object::makeSphere(material, center, radius));
                     }
                     else if (type == "quad" || type == "tri") {
-                        Vector corner = parseVector(ss, input, lineNumber, "corner");
-                        Vector horizontal = parseVector(ss, input, lineNumber, "horizontal");
-                        Vector vertical = parseVector(ss, input, lineNumber, "vertical");
+                        Vector<Float> corner = parseVector(ss, input, lineNumber, "corner");
+                        Vector<Float> horizontal = parseVector(ss, input, lineNumber, "horizontal");
+                        Vector<Float> vertical = parseVector(ss, input, lineNumber, "vertical");
 
                         if (horizontal.length() < EPSILON) throw error(input, lineNumber, "'horizontal' must be non-zero");
                         if (vertical.length() < EPSILON) throw error(input, lineNumber, "'vertical' must be non-zero");
@@ -255,7 +343,8 @@ class Parser {
                     else if (type == "mesh") {
                         std::string objFile = parseValue<std::string>(ss, input, lineNumber, "file");
 
-                        parseOBJ(objFile, objects, material);
+                        if (hasExtension(objFile, ".obj")) parseOBJ(objFile, objects, material);
+                        else throw std::runtime_error(objFile + ": invalid file extension");
                     }
                     else throw error(input, lineNumber, "'type' must be \"quad\", \"sphere\", or \"tri\"");
                 }
@@ -282,15 +371,15 @@ class Parser {
                         else throw error(input, lineNumber, "'material' is not defined");
                     }
 
-                    Vector translation = parseVector(ss, input, lineNumber, "translation");
-                    Vector rotation = parseVector(ss, input, lineNumber, "rotation");
-                    Vector scale = parseVector(ss, input, lineNumber, "scale");
+                    Vector<Float> translation = parseVector(ss, input, lineNumber, "translation");
+                    Vector<Float> rotation = parseVector(ss, input, lineNumber, "rotation");
+                    Vector<Float> scale = parseVector(ss, input, lineNumber, "scale");
 
-                    if (fabsF(scale[0]) < EPSILON || fabsF(scale[1]) < EPSILON || fabsF(scale[2]) < EPSILON) throw error(input, lineNumber, "'scale' must be non-zero");
+                    if (fabs(scale[0]) < EPSILON || fabs(scale[1]) < EPSILON || fabs(scale[2]) < EPSILON) throw error(input, lineNumber, "'scale' must be non-zero");
 
                     Instance instance(object, count, material, translation, rotation, scale);
 
-                    if (fabsF(scale[0] - scale[1]) > EPSILON || fabsF(scale[1] - scale[2]) > EPSILON)
+                    if (fabs(scale[0] - scale[1]) > EPSILON || fabs(scale[1] - scale[2]) > EPSILON)
                         for (int i = 0; i < count; i++)
                             if (materials[instance.getMaterial(objects.data(), i)].isEmissive()) throw error(input, lineNumber, "'scale' must be uniform for emissive objects");
 
@@ -301,16 +390,16 @@ class Parser {
 
                     std::string type = parseValue<std::string>(ss, input, lineNumber, "type");
 
-                    if (type == "equirectangular") background = Background::makeEquirectangular(parseSpectrumTexture(ss, input, lineNumber, "background", spectra, complexSpectra, scalarTextureIndices, spectrumTextures, spectrumTextureIndices));
+                    if (type == "equirectangular") background = Background::makeEquirectangular(parseSpectrumTexture(ss, input, lineNumber, "background", spectra, spectrumIndices, complexSpectra, complexSpectrumIndices, scalarTextureIndices, spectrumTextures, spectrumTextureIndices));
                     else throw error(input, lineNumber, "'type' must be \"equirectangular\"");
                 }
                 else if (command == "Camera") {
                     cameraCommandFound = true;
 
-                    Vector position = parseVector(ss, input, lineNumber, "position");
-                    Vector corner = parseVector(ss, input, lineNumber, "corner");
-                    Vector horizontal = parseVector(ss, input, lineNumber, "horizontal");
-                    Vector vertical = parseVector(ss, input, lineNumber, "vertical");
+                    Vector<Float> position = parseVector(ss, input, lineNumber, "position");
+                    Vector<Float> corner = parseVector(ss, input, lineNumber, "corner");
+                    Vector<Float> horizontal = parseVector(ss, input, lineNumber, "horizontal");
+                    Vector<Float> vertical = parseVector(ss, input, lineNumber, "vertical");
 
                     if (horizontal.length() < EPSILON) throw error(input, lineNumber, "'horizontal' must be non-zero");
                     if (vertical.length() < EPSILON) throw error(input, lineNumber, "'vertical' must be non-zero");
@@ -323,6 +412,8 @@ class Parser {
                 if (ss >> command) throw error(input, lineNumber, "unexpected token \"" + command + "\"");
             }
 
+            inputFile.close();
+
             if (!renderCommandFound) throw std::runtime_error(input + ": expected \"Render\"");
             if (!backgroundCommandFound) throw std::runtime_error(input + ": expected \"Background\"");
             if (!cameraCommandFound) throw std::runtime_error(input + ": expected \"Camera\"");
@@ -332,17 +423,17 @@ class Parser {
 
             nodes = BVH::makeBVH(objects, instances, objectOffsets);
 
-            Vector sceneCenter;
+            Vector<Float> sceneCenter;
             Float sceneRadius = 0;
 
             for (int i = 0; i < int(instances.size()); i++)
                 for (int j = 0; j < instances[i].getCount(); j++) {
                     int objectIndex = instances[i].getObject() + j;
 
-                    Vector objectCenter = instances[i].center(objects.data(), j);
+                    Vector<Float> objectCenter = instances[i].center(objects.data(), j);
                     Float objectRadius = instances[i].radius(objects.data(), j);
 
-                    Vector sceneToObject = objectCenter - sceneCenter;
+                    Vector<Float> sceneToObject = objectCenter - sceneCenter;
                     Float distance = sceneToObject.length();
 
                     if (distance + sceneRadius <= objectRadius) {
@@ -362,7 +453,7 @@ class Parser {
                         lightInstances.push_back(i);
                         lightObjects.push_back(objectIndex);
 
-                        Float lightPower = instances[i].area(objects.data(), j) * materials[material].averageEmission(spectra.data(), scalarTextures.data(), spectrumTextures.data());
+                        Float lightPower = instances[i].area(objects.data(), j) * materials[material].averageEmission(spectra.data(), scalarTextures.data(), spectrumTextures.data(), images.data());
 
                         lightPowers.push_back(lightPower);
                         totalLightPower += lightPower;
@@ -372,10 +463,35 @@ class Parser {
             lightInstances.push_back(-1);
             lightObjects.push_back(-1);
 
-            Float backgroundLightPower = background.area(sceneRadius) * background.average(spectra.data(), scalarTextures.data(), spectrumTextures.data());
+            Float backgroundLightPower = background.area(sceneRadius) * background.average(spectra.data(), scalarTextures.data(), spectrumTextures.data(), images.data());
 
             lightPowers.push_back(backgroundLightPower);
             totalLightPower += backgroundLightPower;
+        }
+
+        static bool parseUpsamplingLUT(const std::string & input, std::vector<float> & scale, std::vector<float> & lut) {
+            std::ifstream inputFile(input, std::ios::binary);
+
+            if (!inputFile) return false;
+
+            char header[4];
+
+            inputFile.read(header, 4);
+
+            if (!inputFile || std::memcmp(header, "SPEC", 4) != 0) return false;
+
+            uint32_t resolution;
+
+            inputFile.read(reinterpret_cast<char *>(&resolution), sizeof(uint32_t));
+
+            if (!inputFile || resolution != UPSAMPLING_RESOLUTION) return false;
+
+            inputFile.read(reinterpret_cast<char *>(scale.data()), sizeof(float) * resolution);
+            inputFile.read(reinterpret_cast<char *>(lut.data()), sizeof(float) * 3 * resolution * resolution * resolution * 3);
+
+            if (!inputFile) return false;
+
+            return true;
         }
 
     private:
@@ -393,14 +509,23 @@ class Parser {
                     result += c;
                     result += ' ';
                 }
-                else if (c == ',') result += ' ';
                 else result += c;
             }
 
             return result;
         }
 
-        static Float stoF(const std::string & s, size_t * index = nullptr) { return Float((sizeof(Float) == sizeof(float)) ? std::stof(s, index) : std::stod(s, index)); }
+        static Float stoF(const std::string & s, size_t * index = nullptr) {
+            size_t localIndex = 0;
+
+            Float result = Float((sizeof(Float) == sizeof(float)) ? std::stof(s, &localIndex) : std::stod(s, &localIndex));
+
+            if (localIndex < s.length()) throw std::invalid_argument("stoF");
+
+            if (index) *index = localIndex;
+
+            return result;
+        }
 
         template <typename T>
         static T parseValue(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter) {
@@ -428,7 +553,7 @@ class Parser {
             }
 
             try {
-                real = stoF(token, &index);
+                real = std::stod(token, &index);
 
                 if (index < token.length()) {
                     token = token.substr(index);
@@ -442,7 +567,7 @@ class Parser {
                         imaginary = real;
                         real = 0;
                     }
-                    else imaginary = stoF(token);
+                    else imaginary = std::stod(token);
                 }
             }
             catch (const std::exception &) {
@@ -452,14 +577,14 @@ class Parser {
             return Complex(real, imaginary);
         }
 
-        static Vector parseVector(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter) {
+        static Vector<Float> parseVector(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter) {
             std::string message = "'" + parameter + "' is missing or invalid";
 
             std::string token;
 
             if (!(ss >> token) || token != "(") throw error(input, lineNumber, message);
 
-            Vector vector;
+            Vector<Float> vector;
 
             if (!(ss >> vector[0])) throw error(input, lineNumber, message);
             if (!(ss >> vector[1])) throw error(input, lineNumber, message);
@@ -471,14 +596,14 @@ class Parser {
         }
 
         template <typename T>
-        static int parseSpectrum(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra) {
+        static int parseSpectrum(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, std::vector<DenseSpectrum<Float>> & spectra, std::map<std::string, int> & spectrumIndices, std::vector<DenseSpectrum<Complex>> & complexSpectra, std::map<std::string, int> & complexSpectrumIndices) {
             std::string message = "'" + parameter + "' is missing or invalid";
 
             std::string token;
 
             if (!(ss >> token)) throw error(input, lineNumber, message);
 
-            if (token != "(") {
+            if (token != "(" && !hasExtension(token, ".spd")) {
                 if constexpr (std::is_same_v<T, Float>) {
                     try {
                         spectra.push_back(DenseSpectrum<Float>(stoF(token)));
@@ -489,41 +614,59 @@ class Parser {
                     }
                 }
                 else if constexpr (std::is_same_v<T, Complex>) {
-                    complexSpectra.push_back(DenseSpectrum<Complex>(parseComplex(token, input, lineNumber, message)));
+                    complexSpectra.push_back(DenseSpectrum<Complex>(parseComplex(token, input, lineNumber, parameter)));
 
                     return int(complexSpectra.size() - 1);
                 }
+                else throw error(input, lineNumber, message);
             }
 
             std::map<double, T> samples;
 
-            while (ss >> token) {
-                if (token == ")") break;
+            if (token != "(") {
+                if (hasExtension(token, ".spd")) {
+                    if constexpr (std::is_same_v<T, Float>) {
+                        if (spectrumIndices.contains(token)) return spectrumIndices.at(token);
+                        else spectrumIndices[token] = int(spectra.size());
+                    }
+                    else if constexpr (std::is_same_v<T, Complex>) {
+                        if (complexSpectrumIndices.contains(token)) return complexSpectrumIndices.at(token);
+                        else complexSpectrumIndices[token] = int(complexSpectra.size());
+                    }
 
-                double lambda;
-
-                try {
-                    lambda = std::stod(token);
-                } catch (const std::exception &) {
-                    throw error(input, lineNumber, message);
+                    parseSPD(token, samples);
                 }
+                else throw std::runtime_error(token + ": invalid file extension");
+            }
+            else {
+                while (ss >> token) {
+                    if (token == ")") break;
 
-                if (lambda < CIE_LAMBDA_MIN || lambda > CIE_LAMBDA_MAX) throw error(input, lineNumber, message);
+                    double lambda;
 
-                if (!(ss >> token)) throw error(input, lineNumber, message);
-
-                if constexpr (std::is_same_v<T, Float>) {
                     try {
-                        samples[lambda] = stoF(token);
+                        lambda = std::stod(token);
                     } catch (const std::exception &) {
                         throw error(input, lineNumber, message);
                     }
+
+                    if (!(ss >> token)) throw error(input, lineNumber, message);
+
+                    if constexpr (std::is_same_v<T, Float>) {
+                        try {
+                            samples[lambda] = stoF(token);
+                        } catch (const std::exception &) {
+                            throw error(input, lineNumber, message);
+                        }
+                    }
+                    else if constexpr (std::is_same_v<T, Complex>) samples[lambda] = parseComplex(token, input, lineNumber, parameter);
+                    else throw error(input, lineNumber, message);
                 }
-                else if constexpr (std::is_same_v<T, Complex>) samples[lambda] = parseComplex(token, input, lineNumber, message);
-                else throw error(input, lineNumber, message);
+
+                if (token != ")") throw error(input, lineNumber, message);
             }
 
-            if (token != ")" || samples.empty()) throw error(input, lineNumber, message);
+            if (samples.empty()) throw error(input, lineNumber, message);
 
             DenseSpectrum<T> spectrum;
 
@@ -587,7 +730,7 @@ class Parser {
             throw error(input, lineNumber, message);
         }
 
-        static std::vector<int> parseSpectrumArray(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra) {
+        static std::vector<int> parseSpectrumArray(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, std::vector<DenseSpectrum<Float>> & spectra, std::map<std::string, int> & spectrumIndices, std::vector<DenseSpectrum<Complex>> & complexSpectra, std::map<std::string, int> & complexSpectrumIndices) {
             std::string message = "'" + parameter + "' is missing or invalid";
 
             std::string token;
@@ -603,7 +746,7 @@ class Parser {
 
                 ss.seekg(pos);
 
-                values.push_back(parseSpectrum<Complex>(ss, input, lineNumber, parameter, spectra, complexSpectra));
+                values.push_back(parseSpectrum<Complex>(ss, input, lineNumber, parameter, spectra, spectrumIndices, complexSpectra, complexSpectrumIndices));
 
                 pos = ss.tellg();
             }
@@ -611,11 +754,11 @@ class Parser {
             throw error(input, lineNumber, message);
         }
 
-        static int parseSpectrumTexture(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, std::vector<DenseSpectrum<Float>> & spectra, std::vector<DenseSpectrum<Complex>> & complexSpectra, const std::map<std::string, int> & scalarTextureIndices, std::vector<SpectrumTexture> & spectrumTextures, std::map<std::string, int> & spectrumTextureIndices) {
+        static int parseSpectrumTexture(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, std::vector<DenseSpectrum<Float>> & spectra, std::map<std::string, int> & spectrumIndices, std::vector<DenseSpectrum<Complex>> & complexSpectra, std::map<std::string, int> & complexSpectrumIndices, const std::map<std::string, int> & scalarTextureIndices, std::vector<SpectrumTexture> & spectrumTextures, std::map<std::string, int> & spectrumTextureIndices) {
             std::streampos pos = ss.tellg();
 
             try {
-                spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, input, lineNumber, parameter, spectra, complexSpectra)));
+                spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, input, lineNumber, parameter, spectra, spectrumIndices, complexSpectra, complexSpectrumIndices)));
 
                 return int(spectrumTextures.size() - 1);
             }
@@ -623,7 +766,7 @@ class Parser {
                 ss.seekg(pos);
 
                 std::string name = parseValue<std::string>(ss, input, lineNumber, parameter);
-                
+
                 if (spectrumTextureIndices.contains(name)) return spectrumTextureIndices.at(name);
                 else if (scalarTextureIndices.contains(name)) {
                     int scalarTextureIndex = scalarTextureIndices.at(name);
@@ -634,6 +777,115 @@ class Parser {
                 }
                 else throw error(input, lineNumber, "'" + parameter + "' is not defined");
             }
+        }
+
+        static void parseImage(const std::string & input, std::vector<Float> & images, ColorSpace & space, int & width, int & height, int channels) {
+            bool is16Bit = stbi_is_16_bit(input.c_str());
+            bool is32Bit = stbi_is_hdr(input.c_str());
+            bool isEXR = IsEXR(input.c_str()) == TINYEXR_SUCCESS;
+
+            bool sRGB = !isEXR && !is32Bit && channels == 3;
+
+            int nativeChannels = 0;
+
+            unsigned char * data8 = nullptr;
+            unsigned short * data16 = nullptr;
+            float * data32 = nullptr;
+            float * dataEXR = nullptr;
+
+            const char * errorEXR = nullptr;
+
+            Float rx = chromaticity(ColorSpace::SRGB, 0);
+            Float ry = chromaticity(ColorSpace::SRGB, 1);
+            Float gx = chromaticity(ColorSpace::SRGB, 2);
+            Float gy = chromaticity(ColorSpace::SRGB, 3);
+            Float bx = chromaticity(ColorSpace::SRGB, 4);
+            Float by = chromaticity(ColorSpace::SRGB, 5);
+            Float wx = chromaticity(ColorSpace::SRGB, 6);
+            Float wy = chromaticity(ColorSpace::SRGB, 7);
+
+            if (isEXR) {
+                EXRVersion version;
+
+                if (ParseEXRVersionFromFile(&version, input.c_str()) == TINYEXR_SUCCESS) {
+                    EXRHeader header;
+
+                    InitEXRHeader(&header);
+
+                    if (ParseEXRHeaderFromFile(&header, &version, input.c_str(), &errorEXR) == TINYEXR_SUCCESS) {
+                        for (int i = 0; i < header.num_custom_attributes; i++) {
+                            if (std::strcmp(header.custom_attributes[i].name, "chromaticities") == 0) {
+                                const float * chromas = reinterpret_cast<const float *>(header.custom_attributes[i].value);
+
+                                rx = Float(chromas[0]);
+                                ry = Float(chromas[1]);
+                                gx = Float(chromas[2]);
+                                gy = Float(chromas[3]);
+                                bx = Float(chromas[4]);
+                                by = Float(chromas[5]);
+                                wx = Float(chromas[6]);
+                                wy = Float(chromas[7]);
+                            }
+                        }
+
+                        FreeEXRHeader(&header);
+                    }
+                }
+
+                if (LoadEXR(&dataEXR, &width, &height, input.c_str(), &errorEXR) != TINYEXR_SUCCESS) {
+                    std::string error = errorEXR;
+                    FreeEXRErrorMessage(errorEXR);
+                    throw std::runtime_error(input + ": failed to open file (" + error + ")");
+                }
+            }
+            else if (is32Bit) data32 = stbi_loadf(input.c_str(), &width, &height, &nativeChannels, channels);
+            else if (is16Bit) data16 = stbi_load_16(input.c_str(), &width, &height, &nativeChannels, channels);
+            else data8 = stbi_load(input.c_str(), &width, &height, &nativeChannels, channels);
+
+            if (!data8 && !data16 && !data32 && !dataEXR) {
+                std::string error = stbi_failure_reason();
+                if (error == "unknown image type") throw std::runtime_error(input + ": invalid file extension");
+                else throw std::runtime_error(input + ": failed to open file (" + error + ")");
+            }
+
+            space = ColorSpace::SRGB;
+
+            Matrix3<double> colorTransform(1, 0, 0, 0, 1, 0, 0, 0, 1);
+
+            if (channels == 3) {
+                if (colorSpaceContains(ColorSpace::SRGB, rx, ry, gx, gy, bx, by, wx, wy)) space = ColorSpace::SRGB;
+                else if (colorSpaceContains(ColorSpace::REC2020, rx, ry, gx, gy, bx, by, wx, wy)) space = ColorSpace::REC2020;
+                else space = ColorSpace::ACES2065;
+
+                if (fabs(rx - chromaticity(space, 0)) > EPSILON || fabs(ry - chromaticity(space, 1)) > EPSILON || fabs(gx - chromaticity(space, 2)) > EPSILON || fabs(gy - chromaticity(space, 3)) > EPSILON || fabs(bx - chromaticity(space, 4)) > EPSILON || fabs(by - chromaticity(space, 5)) > EPSILON || fabs(wx - chromaticity(space, 6)) > EPSILON || fabs(wy - chromaticity(space, 7)) > EPSILON)  colorTransform = toRGBMatrix(space) * bradfordAdapt(wx, wy, chromaticity(space, 6), chromaticity(space, 7)) * toXYZMatrix(rx, ry, gx, gy, bx, by, wx, wy);
+            }
+
+            size_t totalElements = width * height * channels;
+
+            images.reserve(images.size() + totalElements);
+
+            for (size_t i = 0, j = 0; i < totalElements; i++, j += i % channels == 0 ? 4 - channels + 1 : 1) {
+                Float value = isEXR ? (std::isfinite(dataEXR[j]) ? Float(dataEXR[j]) : Float(0)) : is32Bit ? (std::isfinite(data32[i]) ? Float(data32[i]) : Float(0)) : is16Bit ? Float(data16[i]) / Float(65535) : Float(data8[i]) / Float(255);
+
+                if (sRGB) value = sRGBToLinear(value);
+
+                images.push_back(value);
+
+                if (channels == 3 && i % 3 == 2) {
+                    Vector<Float> color(images[images.size() - 3], images[images.size() - 2], images[images.size() - 1]);
+
+                    color = transform(colorTransform, color);
+
+                    images[images.size() - 3] = color[0];
+                    images[images.size() - 2] = color[1];
+                    images[images.size() - 1] = color[2];
+                }
+            }
+
+            if (data8) stbi_image_free(data8);
+            if (data16) stbi_image_free(data16);
+            if (data32) stbi_image_free(data32);
+            if (dataEXR) free(dataEXR);
         }
 
         static void parseOBJ(const std::string & input, std::vector<Object> & objects, int material) {
@@ -649,10 +901,10 @@ class Parser {
             int lineNumber = 0;
             bool fTagFound = false;
 
-            std::vector<Vector> vertices;
+            std::vector<Vector<Float>> vertices;
             std::vector<Float> u;
             std::vector<Float> v;
-            std::vector<Vector> normals;
+            std::vector<Vector<Float>> normals;
 
             while (std::getline(inputFile, line)) {
                 lineNumber++;
@@ -665,7 +917,7 @@ class Parser {
                 if (!(ss >> tag)) continue;
 
                 if (tag == "v") {
-                    Vector vertex;
+                    Vector<Float> vertex;
 
                     if (!(ss >> vertex[0])) throw error(input, lineNumber, "'x' is missing or invalid");
                     if (!(ss >> vertex[1])) throw error(input, lineNumber, "'y' is missing or invalid");
@@ -683,7 +935,7 @@ class Parser {
                     v.push_back(vValue);
                 }
                 else if (tag == "vn") {
-                    Vector normal;
+                    Vector<Float> normal;
 
                     if (!(ss >> normal[0])) throw error(input, lineNumber, "'x' is missing or invalid");
                     if (!(ss >> normal[1])) throw error(input, lineNumber, "'y' is missing or invalid");
@@ -757,19 +1009,19 @@ class Parser {
 
                     if (vertexIndices.size() < 3) throw error(input, lineNumber, "'f' must have at least 3 vertices");
 
-                    Vector vertex0 = vertices[vertexIndices[0]];
-                    Vector normal0 = normalIndices[0] >= 0 ? normals[normalIndices[0]] : Vector(0, 0, 0);
+                    Vector<Float> vertex0 = vertices[vertexIndices[0]];
+                    Vector<Float> normal0 = normalIndices[0] >= 0 ? normals[normalIndices[0]] : Vector<Float>(0, 0, 0);
                     Float u0 = textureIndices[0] >= 0 ? u[textureIndices[0]] : 0;
                     Float v0 = textureIndices[0] >= 0 ? v[textureIndices[0]] : 0;
 
                     for (int i = 1; i < int(vertexIndices.size()) - 1; i++) {
-                        Vector vertex1 = vertices[vertexIndices[i]];
-                        Vector normal1 = normalIndices[i] >= 0 ? normals[normalIndices[i]] : Vector(0, 0, 0);
+                        Vector<Float> vertex1 = vertices[vertexIndices[i]];
+                        Vector<Float> normal1 = normalIndices[i] >= 0 ? normals[normalIndices[i]] : Vector<Float>(0, 0, 0);
                         Float u1 = textureIndices[i] >= 0 ? u[textureIndices[i]] : 1;
                         Float v1 = textureIndices[i] >= 0 ? v[textureIndices[i]] : 0;
 
-                        Vector vertex2 = vertices[vertexIndices[i + 1]];
-                        Vector normal2 = normalIndices[i + 1] >= 0 ? normals[normalIndices[i + 1]] : Vector(0, 0, 0);
+                        Vector<Float> vertex2 = vertices[vertexIndices[i + 1]];
+                        Vector<Float> normal2 = normalIndices[i + 1] >= 0 ? normals[normalIndices[i + 1]] : Vector<Float>(0, 0, 0);
                         Float u2 = textureIndices[i + 1] >= 0 ? u[textureIndices[i + 1]] : 0;
                         Float v2 = textureIndices[i + 1] >= 0 ? v[textureIndices[i + 1]] : 1;
 
@@ -780,8 +1032,55 @@ class Parser {
 
                 if (ss >> tag) throw error(input, lineNumber, "unexpected token \"" + tag + "\"");
             }
-                
 
             if (!fTagFound) throw error(input, lineNumber, "expected \"f\"");
+
+            inputFile.close();
+        }
+
+        template <typename T>
+        static void parseSPD(const std::string & input, std::map<double, T> & samples) {
+            std::ifstream inputFile(input);
+
+            if (!inputFile.is_open()) {
+                std::string error = std::strerror(errno);
+                error[0] = char(std::tolower(error[0]));
+                throw std::runtime_error(input + ": failed to open file (" + error + ")");
+            }
+
+            std::string line, token;
+            int lineNumber = 0;
+
+            while (std::getline(inputFile, line)) {
+                lineNumber++;
+
+                std::stringstream ss(preprocess(line));
+
+                if (!(ss >> token)) continue;
+
+                double lambda;
+
+                try {
+                    lambda = std::stod(token);
+                } catch (const std::exception &) {
+                    throw error(input, lineNumber, "'lambda' is missing or invalid");
+                }
+
+                if (!(ss >> token)) throw error(input, lineNumber, "'value' is missing or invalid");
+
+                if constexpr (std::is_same_v<T, Float>) {
+                    try {
+                        samples[lambda] = stoF(token);
+                    } catch (const std::exception &) {
+                        throw error(input, lineNumber, "'value' is missing or invalid");
+                    }
+                }
+                else if constexpr (std::is_same_v<T, Complex>) samples[lambda] = parseComplex(token, input, lineNumber, "value");
+                else throw error(input, lineNumber, "'value' is missing or invalid");
+
+                if (ss >> token) throw error(input, lineNumber, "unexpected token \"" + token + "\"");
+            }
+
+            inputFile.close();
         }
 };

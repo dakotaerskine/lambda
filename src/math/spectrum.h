@@ -26,14 +26,14 @@ class SampledSpectrum {
 
         HOST_DEVICE bool operator==(const SampledSpectrum & s) const {
             for (int i = 0; i < HERO_COUNT; i++)
-                if (fabsF(data[i] - s.data[i]) >= EPSILON) return false;
+                if (fabs(data[i] - s.data[i]) >= EPSILON) return false;
 
             return true;
         }
 
         HOST_DEVICE bool operator!=(const SampledSpectrum & s) const {
             for (int i = 0; i < HERO_COUNT; i++)
-                if (fabsF(data[i] - s.data[i]) >= EPSILON) return true;
+                if (fabs(data[i] - s.data[i]) >= EPSILON) return true;
 
             return false;
         }
@@ -67,7 +67,7 @@ class SampledSpectrum {
         }
 
         HOST_DEVICE SampledSpectrum & operator/=(Float d) {
-            assert(d != 0);
+            assert(fabs(d) > EPSILON);
 
             for (int i = 0; i < HERO_COUNT; i++)
                 data[i] /= d;
@@ -123,7 +123,7 @@ class SampledSpectrum {
         }
 
         HOST_DEVICE friend SampledSpectrum operator/(const SampledSpectrum & s1, Float d) {
-            assert(d != 0);
+            assert(fabs(d) > EPSILON);
 
             SampledSpectrum s2;
 
@@ -176,7 +176,7 @@ class DenseSpectrum {
         HOST_DEVICE T operator()(Float lambda) const {
             assert(lambda >= CIE_LAMBDA_MIN && lambda < CIE_LAMBDA_MAX);
 
-            double index = lambda - CIE_LAMBDA_MIN;
+            Float index = lambda - CIE_LAMBDA_MIN;
 
             int min = int(index);
 
@@ -184,7 +184,10 @@ class DenseSpectrum {
 
             int max = min + 1;
 
-            return T((max - index) * data[min] + (index - min) * data[max]);
+            if constexpr (std::is_same_v<T, Complex>) return T(double(max - index) * data[min] + double(index - min) * data[max]);
+            else return T((max - index) * data[min] + (index - min) * data[max]);
+
+            return T(0);
         }
 
         HOST_DEVICE T min() const {

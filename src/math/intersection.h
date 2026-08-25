@@ -11,7 +11,8 @@ class Intersection {
 
         int instance, object;
         Float t;
-        Vector point, normal;
+        Vector<Float> point, normal;
+        Vector<Float> localPoint, localNormal;
         Float u, v;
         bool frontFacing;
 };
