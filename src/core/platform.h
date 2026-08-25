@@ -11,7 +11,6 @@ enum class ColorSpace {SRGB, REC2020, ACES2065};
 #ifdef __CUDACC__
     #define HOST_DEVICE __host__ __device__
     #define GLOBAL __global__
-    #define CONSTANT __constant__
     #define MANAGED __managed__
     #include <cctype>
     #include <stdexcept>
@@ -32,7 +31,6 @@ enum class ColorSpace {SRGB, REC2020, ACES2065};
 #else
     #define HOST_DEVICE
     #define GLOBAL
-    #define CONSTANT
     #define MANAGED inline
     #include <cmath>
     #include <complex>

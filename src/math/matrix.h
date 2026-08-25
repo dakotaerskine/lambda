@@ -19,6 +19,11 @@ class Matrix2 {
             elements[3] = d3;
         }
 
+        HOST_DEVICE Matrix2(T * d) {
+            for (int i = 0; i < 4; i++)
+                elements[i] = d[i];
+        }
+
         HOST_DEVICE Matrix2(const T d[2][2]) {
             for (int i = 0; i < 4; i++)
                 elements[i] = d[i / 2][i % 2];
@@ -143,6 +148,11 @@ class Matrix3 {
             elements[6] = d6;
             elements[7] = d7;
             elements[8] = d8;
+        }
+
+        HOST_DEVICE Matrix3(T * d) {
+            for (int i = 0; i < 9; i++)
+                elements[i] = d[i];
         }
 
         HOST_DEVICE Matrix3(const T d[3][3]) {
@@ -281,6 +291,11 @@ class Matrix4 {
             elements[13] = d13;
             elements[14] = d14;
             elements[15] = d15;
+        }
+
+        HOST_DEVICE Matrix4(T * d) {
+            for (int i = 0; i < 16; i++)
+                elements[i] = d[i];
         }
 
         HOST_DEVICE Matrix4(const T d[4][4]) {

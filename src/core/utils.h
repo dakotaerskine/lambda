@@ -94,8 +94,6 @@ HOST_DEVICE inline Vector<Float> refracted(const Vector<Float> & v, const Vector
 template <typename T>
 HOST_DEVICE inline Vector<T> transform(const Matrix3<T> & m, const Vector<T> & v) { return Vector<T>(m.get(0, 0) * v[0] + m.get(0, 1) * v[1] + m.get(0, 2) * v[2], m.get(1, 0) * v[0] + m.get(1, 1) * v[1] + m.get(1, 2) * v[2], m.get(2, 0) * v[0] + m.get(2, 1) * v[1] + m.get(2, 2) * v[2]); }
 
-HOST_DEVICE inline Vector<Float> transform(const Matrix3<double> & m, const Vector<Float> & v) { return Vector<Float>(m.get(0, 0) * v[0] + m.get(0, 1) * v[1] + m.get(0, 2) * v[2], m.get(1, 0) * v[0] + m.get(1, 1) * v[1] + m.get(1, 2) * v[2], m.get(2, 0) * v[0] + m.get(2, 1) * v[1] + m.get(2, 2) * v[2]); }
-
 template <typename T>
 HOST_DEVICE inline Vector<T> transform(const Matrix4<T> & m, const Vector<T> & v, T w = 1) {
     T denominator = m.get(3, 0) * v[0] + m.get(3, 1) * v[1] + m.get(3, 2) * v[2] + m.get(3, 3) * w;
@@ -104,6 +102,8 @@ HOST_DEVICE inline Vector<T> transform(const Matrix4<T> & m, const Vector<T> & v
 
     return Vector<T>(m.get(0, 0) * v[0] + m.get(0, 1) * v[1] + m.get(0, 2) * v[2] + m.get(0, 3) * w, m.get(1, 0) * v[0] + m.get(1, 1) * v[1] + m.get(1, 2) * v[2] + m.get(1, 3) * w, m.get(2, 0) * v[0] + m.get(2, 1) * v[1] + m.get(2, 2) * v[2] + m.get(2, 3) * w) / denominator;
 }
+
+inline Vector<Float> transform(const Matrix3<double> & m, const Vector<Float> & v) { return Vector<Float>(Float(m.get(0, 0)) * v[0] + Float(m.get(0, 1)) * v[1] + Float(m.get(0, 2)) * v[2], Float(m.get(1, 0)) * v[0] + Float(m.get(1, 1)) * v[1] + Float(m.get(1, 2)) * v[2], Float(m.get(2, 0)) * v[0] + Float(m.get(2, 1)) * v[1] + Float(m.get(2, 2)) * v[2]); }
 
 HOST_DEVICE inline Float fade(Float t) { return pow(t, 3) * (t * (6 * t - 15) + 10); }
 HOST_DEVICE inline int permutation(int i) { return PERMUTATION[i & 255]; }
@@ -199,7 +199,7 @@ HOST_DEVICE inline Matrix2<Complex> interfaceMatrixP(const Complex & n1, const C
 
 HOST_DEVICE inline Matrix2<Complex> propagationMatrix(const Complex & phi) { return Matrix2<Complex>(expC(Complex(0, -1) * phi), 0, 0, expC(Complex(0, 1) * phi)); }
 
-HOST_DEVICE inline double xyz31(int lambda, int i) { return CIE_XYZ_1931[lambda - CIE_LAMBDA_MIN][i]; }
+HOST_DEVICE inline double xyz31(int lambda, int i) { return CIE_XYZ_1931[(lambda - CIE_LAMBDA_MIN) * 3 + i]; }
 
 HOST_DEVICE inline Float xyz31(Float lambda, int i) {
     int min = int(lambda);
@@ -211,7 +211,7 @@ HOST_DEVICE inline Float xyz31(Float lambda, int i) {
     return interpolate(Float(xyz31(min, i)), Float(xyz31(max, i)), lambda - Float(min));
 }
 
-HOST_DEVICE inline Matrix3<double> toXYZMatrix(ColorSpace space) {
+inline Matrix3<double> toXYZMatrix(ColorSpace space) {
     if (space == ColorSpace::SRGB) return Matrix3<double>(SRGB_TO_XYZ);
     else if (space == ColorSpace::REC2020) return Matrix3<double>(REC2020_TO_XYZ);
     else if (space == ColorSpace::ACES2065) return Matrix3<double>(ACES2065_TO_XYZ);
@@ -219,7 +219,7 @@ HOST_DEVICE inline Matrix3<double> toXYZMatrix(ColorSpace space) {
     return Matrix3<double>();
 }
 
-HOST_DEVICE inline Matrix3<double> toXYZMatrix(double rx, double ry, double gx, double gy, double bx, double by, double wx, double wy) {
+inline Matrix3<double> toXYZMatrix(double rx, double ry, double gx, double gy, double bx, double by, double wx, double wy) {
     double xr = rx / ry;
     double yr = 1;
     double zr = (1 - rx - ry) / ry;
@@ -242,7 +242,7 @@ HOST_DEVICE inline Matrix3<double> toXYZMatrix(double rx, double ry, double gx, 
     return Matrix3<double>(sr * xr, sg * xg, sb * xb, sr * yr, sg * yg, sb * yb, sr * zr, sg * zg, sb * zb);
 }
 
-HOST_DEVICE inline Matrix3<double> toRGBMatrix(ColorSpace space) {
+inline Matrix3<double> toRGBMatrix(ColorSpace space) {
     if (space == ColorSpace::SRGB) return Matrix3<double>(XYZ_TO_SRGB);
     else if (space == ColorSpace::REC2020) return Matrix3<double>(XYZ_TO_REC2020);
     else if (space == ColorSpace::ACES2065) return Matrix3<double>(XYZ_TO_ACES2065);

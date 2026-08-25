@@ -65,7 +65,7 @@ int main(int argc, char * argv[]) {
         output += ".exr";
     }
 
-    std::string errorPrefix;
+    std::string errorPrefix = std::string(argv[0]) + ": ";
 
     try {
         Matrix3<double> h_SRGB_TO_XYZ = toXYZMatrix(CHROMATICITIES_SRGB[0], CHROMATICITIES_SRGB[1], CHROMATICITIES_SRGB[2], CHROMATICITIES_SRGB[3], CHROMATICITIES_SRGB[4], CHROMATICITIES_SRGB[5], CHROMATICITIES_SRGB[6], CHROMATICITIES_SRGB[7]);
@@ -79,33 +79,33 @@ int main(int argc, char * argv[]) {
 
         Matrix3<double> h_BRADFORD_INVERSE = inverse(Matrix3<double>(BRADFORD));
     
-        ConstantBuffer<double> d_SRGB_TO_XYZ(h_SRGB_TO_XYZ.data(), 3 * 3);
-        ConstantBuffer<double> d_XYZ_TO_SRGB(h_XYZ_TO_SRGB.data(), 3 * 3);
+        Buffer<double> d_SRGB_TO_XYZ(h_SRGB_TO_XYZ.data(), h_SRGB_TO_XYZ.data() + 3 * 3);
+        Buffer<double> d_XYZ_TO_SRGB(h_XYZ_TO_SRGB.data(), h_XYZ_TO_SRGB.data() + 3 * 3);
 
-        d_SRGB_TO_XYZ.copy(SRGB_TO_XYZ);
-        d_XYZ_TO_SRGB.copy(XYZ_TO_SRGB);
+        SRGB_TO_XYZ = d_SRGB_TO_XYZ.data();
+        XYZ_TO_SRGB = d_XYZ_TO_SRGB.data();
 
-        ConstantBuffer<double> d_REC2020_TO_XYZ(h_REC2020_TO_XYZ.data(), 3 * 3);
-        ConstantBuffer<double> d_XYZ_TO_REC2020(h_XYZ_TO_REC2020.data(), 3 * 3);
+        Buffer<double> d_REC2020_TO_XYZ(h_REC2020_TO_XYZ.data(), h_REC2020_TO_XYZ.data() + 3 * 3);
+        Buffer<double> d_XYZ_TO_REC2020(h_XYZ_TO_REC2020.data(), h_XYZ_TO_REC2020.data() + 3 * 3);
 
-        d_REC2020_TO_XYZ.copy(REC2020_TO_XYZ);
-        d_XYZ_TO_REC2020.copy(XYZ_TO_REC2020);
+        REC2020_TO_XYZ = d_REC2020_TO_XYZ.data();
+        XYZ_TO_REC2020 = d_XYZ_TO_REC2020.data();
 
-        ConstantBuffer<double> d_ACES2065_TO_XYZ(h_ACES2065_TO_XYZ.data(), 3 * 3);
-        ConstantBuffer<double> d_XYZ_TO_ACES2065(h_XYZ_TO_ACES2065.data(), 3 * 3);
+        Buffer<double> d_ACES2065_TO_XYZ(h_ACES2065_TO_XYZ.data(), h_ACES2065_TO_XYZ.data() + 3 * 3);
+        Buffer<double> d_XYZ_TO_ACES2065(h_XYZ_TO_ACES2065.data(), h_XYZ_TO_ACES2065.data() + 3 * 3);
 
-        d_ACES2065_TO_XYZ.copy(ACES2065_TO_XYZ);
-        d_XYZ_TO_ACES2065.copy(XYZ_TO_ACES2065);
+        ACES2065_TO_XYZ = d_ACES2065_TO_XYZ.data();
+        XYZ_TO_ACES2065 = d_XYZ_TO_ACES2065.data();
 
-        ConstantBuffer<double> d_BRADFORD_INVERSE(h_BRADFORD_INVERSE.data(), 3 * 3);
+        Buffer<double> d_BRADFORD_INVERSE(h_BRADFORD_INVERSE.data(), h_BRADFORD_INVERSE.data() + 3 * 3);
 
-        d_BRADFORD_INVERSE.copy(BRADFORD_INVERSE);
+        BRADFORD_INVERSE = d_BRADFORD_INVERSE.data();
 
-        ConstantBuffer<int> d_PERMUTATION(&h_PERMUTATION[0], PERMUTATION_SIZE);
-        ConstantBuffer<double> d_CIE_XYZ_1931(&h_CIE_XYZ_1931[0][0], CIE_LAMBDA_BINS * 3);
+        Buffer<int> d_PERMUTATION(&h_PERMUTATION[0], &h_PERMUTATION[0] + PERMUTATION_SIZE);
+        Buffer<double> d_CIE_XYZ_1931(&h_CIE_XYZ_1931[0][0], &h_CIE_XYZ_1931[0][0] + CIE_LAMBDA_BINS * 3);
 
-        d_PERMUTATION.copy(PERMUTATION);
-        d_CIE_XYZ_1931.copy(CIE_XYZ_1931);
+        PERMUTATION = d_PERMUTATION.data();
+        CIE_XYZ_1931 = d_CIE_XYZ_1931.data();
 
         std::vector<float> h_UPSAMPLING_SCALE_SRGB(UPSAMPLING_RESOLUTION);
         std::vector<float> h_UPSAMPLING_LUT_SRGB(3 * UPSAMPLING_RESOLUTION * UPSAMPLING_RESOLUTION * UPSAMPLING_RESOLUTION * 3);
@@ -139,6 +139,10 @@ int main(int argc, char * argv[]) {
 
         UPSAMPLING_SCALE_ACES2065 = d_UPSAMPLING_SCALE_ACES2065.data();
         UPSAMPLING_LUT_ACES2065 = d_UPSAMPLING_LUT_ACES2065.data();
+
+        #ifdef __CUDACC__
+            checkCudaError(cudaDeviceSynchronize(), "failed to synchronize device");
+        #endif
 
         errorPrefix = "";
 
