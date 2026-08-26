@@ -2,9 +2,7 @@
 
 #include <atomic>
 
-#ifdef USE_OPENMP
-    #include <omp.h>
-#endif
+#include <omp.h>
 
 #include "core/constants.h"
 #include "core/platform.h"
@@ -48,10 +46,7 @@ class Renderer {
         void setBuffer(Float * _buffer) { buffer = _buffer; }
 
         void renderImage(int * completed, uint64_t seed) const {
-            #ifdef USE_OPENMP
-                #pragma omp parallel for schedule(guided)
-            #endif
-
+            #pragma omp parallel for schedule(guided)
             for (int py = 0; py < height; py++)
                 for (int px = 0; px < width; px++) {
                     Random state(seed, py * width + px);

@@ -22,26 +22,25 @@ endif()
 
 add_executable(lambda main.cpp)
 
-target_include_directories(lambda SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ext ${CMAKE_CURRENT_SOURCE_DIR}/ext/tinyexr/deps/miniz PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(lambda SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ext PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/data")
+
+find_package(OpenMP REQUIRED)
+target_link_libraries(lambda PRIVATE OpenMP::OpenMP_CXX)
 
 if(CMAKE_CUDA_COMPILER AND NOT CPU)
     set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
 
     set_target_properties(lambda PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_SEPARABLE_COMPILATION ON)
 
-    target_compile_options(lambda PRIVATE -lineinfo -Xcompiler=-Wall,-Wextra,-Wshadow,-Wconversion,-Wfloat-equal)
+    target_compile_options(lambda PRIVATE -lineinfo -Xcompiler=-Wall,-Wextra,-Wshadow,-Wconversion,-Wfloat-equal,${OpenMP_CXX_FLAGS})
 
     target_link_options(lambda PRIVATE "$<DEVICE_LINK:SHELL:-Xnvlink -w>")
 else()
     set_target_properties(lambda PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
-    find_package(OpenMP REQUIRED)
-    target_link_libraries(lambda PRIVATE OpenMP::OpenMP_CXX)
-    target_compile_definitions(lambda PRIVATE USE_OPENMP)
-
-    target_compile_options(lambda PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wfloat-equal)
+    target_compile_options(lambda PRIVATE -Wall -Wextra -Wshadow -Wconversion -Wfloat-equal)
 endif()
 
 target_compile_definitions(lambda PRIVATE TINYEXR_USE_MINIZ=0 TINYEXR_USE_STB_ZLIB=1)

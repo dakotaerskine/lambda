@@ -456,10 +456,7 @@ inline void solveGrid(ColorSpace space, std::vector<float> & scale, std::vector<
 
     int nTasks = 3 * UPSAMPLING_RESOLUTION;
 
-    #ifdef USE_OPENMP
-        #pragma omp parallel for schedule(dynamic)
-    #endif
-
+    #pragma omp parallel for schedule(dynamic)
     for (int task = 0; task < nTasks; task++) {
         int channel = task / UPSAMPLING_RESOLUTION;
         int index = task % UPSAMPLING_RESOLUTION;

@@ -4,9 +4,7 @@
 #include <thread>
 #include <vector>
 
-#ifdef USE_OPENMP
-    #include <omp.h>
-#endif
+#include <omp.h>
 
 #include "core/buffer.h"
 #include "core/constants.h"
@@ -140,10 +138,6 @@ int main(int argc, char * argv[]) {
         UPSAMPLING_SCALE_ACES2065 = d_UPSAMPLING_SCALE_ACES2065.data();
         UPSAMPLING_LUT_ACES2065 = d_UPSAMPLING_LUT_ACES2065.data();
 
-        #ifdef __CUDACC__
-            checkCudaError(cudaDeviceSynchronize(), "failed to synchronize device");
-        #endif
-
         errorPrefix = "";
 
         ColorSpace space;
@@ -203,6 +197,8 @@ int main(int argc, char * argv[]) {
             dim3 block(BLOCK_W, BLOCK_H);
             dim3 grid((renderer.getWidth() + BLOCK_W - 1) / BLOCK_W, (renderer.getHeight() + BLOCK_H - 1) / BLOCK_H);
 
+            checkCudaError(cudaDeviceSynchronize(), "failed to synchronize device");
+
             renderKernel<<<grid, block>>>(d_completed.data(), renderer, 42ULL);
 
             checkCudaError(cudaGetLastError(), "failed to launch kernel");
@@ -219,9 +215,7 @@ int main(int argc, char * argv[]) {
 
             completed = *(volatile int *)d_completed.data();
 
-            #ifdef USE_OPENMP
-                #pragma omp critical
-            #endif
+            #pragma omp critical
             {
                 std::cout << "\r" << argv[0] << ": " << int(100.0 * completed / renderer.getTotalPixels()) << "% complete" << std::flush;
             }
