@@ -7,14 +7,17 @@
 #include <cstdio>
 #include <string>
 
+#include <omp.h>
+
 #include "core/constants.h"
 #include "core/platform.h"
+#include "math/complex.h"
 #include "math/matrix.h"
 #include "math/random.h"
 #include "math/spectrum.h"
 #include "math/vector.h"
 
-HOST_DEVICE inline Float clamp(Float x, Float min, Float max) { return fmin(fmax(x, min), max); }
+HOST_DEVICE inline Float clamp(Float x, Float min, Float max) { return std::fmin(std::fmax(x, min), max); }
 
 HOST_DEVICE inline Float interpolate(Float a, Float b, Float t) { return (1 - t) * a + t * b; }
 
@@ -34,15 +37,15 @@ HOST_DEVICE inline Vector<Float> randomInHemisphere(const Vector<Float> & n, Ran
 
     Float phi = 2 * PI * r1;
 
-    Float r = sqrt(r2);
+    Float r = std::sqrt(r2);
 
-    Float x = r * cos(phi);
-    Float y = r * sin(phi);
-    Float z = sqrt(1 - r2);
+    Float x = r * std::cos(phi);
+    Float y = r * std::sin(phi);
+    Float z = std::sqrt(1 - r2);
 
     Vector<Float> w = normalize(n);
 
-    Vector<Float> u = fabs(w[0]) > fabs(w[1]) ? Vector<Float>(0, 0, 1) : Vector<Float>(1, 0, 0);
+    Vector<Float> u = std::fabs(w[0]) > std::fabs(w[1]) ? Vector<Float>(0, 0, 1) : Vector<Float>(1, 0, 0);
     u = normalize(cross(u, w));
     Vector<Float> v = cross(w, u);
 
@@ -54,15 +57,15 @@ HOST_DEVICE inline Vector<Float> randomInCone(const Vector<Float> & n, Float cos
     Float r2 = randomFloat(state);
 
     Float cosTheta = 1 + r1 * (cosThetaMax - 1);
-    Float sinTheta = sqrt(1 - cosTheta * cosTheta);
+    Float sinTheta = std::sqrt(1 - cosTheta * cosTheta);
     Float phi = 2 * PI * r2;
 
-    Float x = sinTheta * cos(phi);
-    Float y = sinTheta * sin(phi);
+    Float x = sinTheta * std::cos(phi);
+    Float y = sinTheta * std::sin(phi);
     Float z = cosTheta;
 
     Vector<Float> w = normalize(n);
-    Vector<Float> u = fabs(w[0]) > fabs(w[1]) ? Vector<Float>(0, 0, 1) : Vector<Float>(1, 0, 0);
+    Vector<Float> u = std::fabs(w[0]) > std::fabs(w[1]) ? Vector<Float>(0, 0, 1) : Vector<Float>(1, 0, 0);
     u = normalize(cross(u, w));
     Vector<Float> v = cross(w, u);
 
@@ -86,7 +89,7 @@ HOST_DEVICE inline Vector<Float> refracted(const Vector<Float> & v, const Vector
     Float root = 1 - ratio * ratio * (1 - vn * vn);
 
     if (root < 0) direction = v - 2 * vn * n;
-    else direction = ratio * v - (ratio * vn + sqrt(root)) * n;
+    else direction = ratio * v - (ratio * vn + std::sqrt(root)) * n;
 
     return direction;
 }
@@ -98,14 +101,14 @@ template <typename T>
 HOST_DEVICE inline Vector<T> transform(const Matrix4<T> & m, const Vector<T> & v, T w = 1) {
     T denominator = m.get(3, 0) * v[0] + m.get(3, 1) * v[1] + m.get(3, 2) * v[2] + m.get(3, 3) * w;
 
-    if (fabs(denominator) < EPSILON) denominator = 1;
+    if (std::fabs(denominator) < EPSILON) denominator = 1;
 
     return Vector<T>(m.get(0, 0) * v[0] + m.get(0, 1) * v[1] + m.get(0, 2) * v[2] + m.get(0, 3) * w, m.get(1, 0) * v[0] + m.get(1, 1) * v[1] + m.get(1, 2) * v[2] + m.get(1, 3) * w, m.get(2, 0) * v[0] + m.get(2, 1) * v[1] + m.get(2, 2) * v[2] + m.get(2, 3) * w) / denominator;
 }
 
-inline Vector<Float> transform(const Matrix3<double> & m, const Vector<Float> & v) { return Vector<Float>(Float(m.get(0, 0)) * v[0] + Float(m.get(0, 1)) * v[1] + Float(m.get(0, 2)) * v[2], Float(m.get(1, 0)) * v[0] + Float(m.get(1, 1)) * v[1] + Float(m.get(1, 2)) * v[2], Float(m.get(2, 0)) * v[0] + Float(m.get(2, 1)) * v[1] + Float(m.get(2, 2)) * v[2]); }
+HOST_DEVICE inline Vector<Float> transform(const Matrix3<double> & m, const Vector<Float> & v) { return Vector<Float>(Float(m.get(0, 0)) * v[0] + Float(m.get(0, 1)) * v[1] + Float(m.get(0, 2)) * v[2], Float(m.get(1, 0)) * v[0] + Float(m.get(1, 1)) * v[1] + Float(m.get(1, 2)) * v[2], Float(m.get(2, 0)) * v[0] + Float(m.get(2, 1)) * v[1] + Float(m.get(2, 2)) * v[2]); }
 
-HOST_DEVICE inline Float fade(Float t) { return pow(t, 3) * (t * (6 * t - 15) + 10); }
+HOST_DEVICE inline Float fade(Float t) { return std::pow(t, Float(3)) * (t * (6 * t - 15) + 10); }
 HOST_DEVICE inline int permutation(int i) { return PERMUTATION[i & 255]; }
 
 HOST_DEVICE inline Float gradient(int hash, Float x, Float y, Float z)
@@ -128,12 +131,12 @@ HOST_DEVICE inline Float gradient(int hash, Float x, Float y, Float z)
 }
 
 HOST_DEVICE inline Float perlinNoise(const Vector<Float> & point) {
-    int i = (int)floor(point[0]) & 255;
-    int j = (int)floor(point[1]) & 255;
-    int k = (int)floor(point[2]) & 255;
-    Float tx = point[0] - floor(point[0]);
-    Float ty = point[1] - floor(point[1]);
-    Float tz = point[2] - floor(point[2]);
+    int i = (int)std::floor(point[0]) & 255;
+    int j = (int)std::floor(point[1]) & 255;
+    int k = (int)std::floor(point[2]) & 255;
+    Float tx = point[0] - std::floor(point[0]);
+    Float ty = point[1] - std::floor(point[1]);
+    Float tz = point[2] - std::floor(point[2]);
     Float u = fade(tx);
     Float v = fade(ty);
     Float w = fade(tz);
@@ -155,13 +158,13 @@ HOST_DEVICE inline Float perlinNoise(const Vector<Float> & point) {
 }
 
 HOST_DEVICE inline Float fract(Float x) {
-    return x - floor(x);
+    return x - std::floor(x);
 }
 
 HOST_DEVICE inline Float worleyNoise(const Vector<Float> & point) {
-    int xi = int(floor(point[0]));
-    int yi = int(floor(point[1]));
-    int zi = int(floor(point[2]));
+    int xi = int(std::floor(point[0]));
+    int yi = int(std::floor(point[1]));
+    int zi = int(std::floor(point[2]));
 
     Float distance = 9999;
 
@@ -169,9 +172,9 @@ HOST_DEVICE inline Float worleyNoise(const Vector<Float> & point) {
         for (int yo = -1; yo <= 1; yo++)
             for (int zo = -1; zo <= 1; zo++) {
                 Vector<Float> cell(Float(xi + xo), Float(yi + yo), Float(zi + zo));
-                Vector<Float> feature(fract(sin(dot(cell, Vector<Float>(Float(127.1), Float(311.7), Float(74.7)))) * Float(43758.5453)), fract(sin(dot(cell, Vector<Float>(Float(269.5), Float(183.3), Float(246.1)))) * Float(43758.5453)), fract(sin(dot(cell, Vector<Float>(Float(113.5), Float(271.9), Float(124.6)))) * Float(43758.5453)));
+                Vector<Float> feature(fract(std::sin(dot(cell, Vector<Float>(Float(127.1), Float(311.7), Float(74.7)))) * Float(43758.5453)), fract(std::sin(dot(cell, Vector<Float>(Float(269.5), Float(183.3), Float(246.1)))) * Float(43758.5453)), fract(std::sin(dot(cell, Vector<Float>(Float(113.5), Float(271.9), Float(124.6)))) * Float(43758.5453)));
                 feature += cell;
-                distance = fmin(distance, (point - feature).length());
+                distance = std::fmin(distance, (point - feature).length());
             }
 
     return distance;
@@ -197,7 +200,7 @@ HOST_DEVICE inline Matrix2<Complex> interfaceMatrixP(const Complex & n1, const C
   return interfaceMatrix;
 }
 
-HOST_DEVICE inline Matrix2<Complex> propagationMatrix(const Complex & phi) { return Matrix2<Complex>(expC(Complex(0, -1) * phi), 0, 0, expC(Complex(0, 1) * phi)); }
+HOST_DEVICE inline Matrix2<Complex> propagationMatrix(const Complex & phi) { return Matrix2<Complex>(exp(Complex(0, -1) * phi), 0, 0, exp(Complex(0, 1) * phi)); }
 
 HOST_DEVICE inline double xyz31(int lambda, int i) { return CIE_XYZ_1931[(lambda - CIE_LAMBDA_MIN) * 3 + i]; }
 
@@ -242,6 +245,8 @@ inline Matrix3<double> toXYZMatrix(double rx, double ry, double gx, double gy, d
     return Matrix3<double>(sr * xr, sg * xg, sb * xb, sr * yr, sg * yg, sb * yb, sr * zr, sg * zg, sb * zb);
 }
 
+inline Matrix3<double> toXYZMatrix(const double chromaticities[8]) { return toXYZMatrix(chromaticities[0], chromaticities[1], chromaticities[2], chromaticities[3], chromaticities[4], chromaticities[5], chromaticities[6], chromaticities[7]); }
+
 inline Matrix3<double> toRGBMatrix(ColorSpace space) {
     if (space == ColorSpace::SRGB) return Matrix3<double>(XYZ_TO_SRGB);
     else if (space == ColorSpace::REC2020) return Matrix3<double>(XYZ_TO_REC2020);
@@ -267,12 +272,12 @@ HOST_DEVICE inline Vector<Float> spectrumToXYZ(const SampledSpectrum & s, const 
 
 inline Float linearToSRGB(Float r) {
     if (r <= 0.0031308) return Float(12.92) * r;
-    else return Float(1.055) * pow(r, 1 / Float(2.4)) - Float(0.055);
+    else return Float(1.055) * std::pow(r, 1 / Float(2.4)) - Float(0.055);
 }
 
 inline Float sRGBToLinear(Float r) {
     if (r <= 0.04045) return r / Float(12.92);
-    else return pow((r + Float(0.055)) / Float(1.055), Float(2.4));
+    else return std::pow((r + Float(0.055)) / Float(1.055), Float(2.4));
 }
 
 inline Float toneMap(Float value) { return linearToSRGB(clamp(value, 0, 1)); }
@@ -285,9 +290,9 @@ inline uint8_t quantize(Float value, Random & state) {
 
 inline bool hasExtension(const std::string & output, const std::string & extension) { return output.size() >= extension.size() && std::equal(extension.begin(), extension.end(), output.end() - extension.size(), [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); }); }
 
-HOST_DEVICE inline Float sigmoidF(Float x) { return Float(0.5) + Float(0.5) * x / sqrt(1 + x * x); }
+HOST_DEVICE inline Float sigmoidF(Float x) { return Float(0.5) + Float(0.5) * x / std::sqrt(1 + x * x); }
 
-inline double sigmoid(double x) { return 0.5 + 0.5 * x / sqrt(1 + x * x); }
+inline double sigmoid(double x) { return 0.5 + 0.5 * x / std::sqrt(1 + x * x); }
 
 inline double smoothStep(double x) { return x * x * (3 - 2 * x); }
 
@@ -387,7 +392,7 @@ inline double solveLM(ColorSpace space, const Vector<double> & color, Vector<dou
 
             double det = M.determinant();
 
-            if (fabs(det) < LM_EPSILON) {
+            if (std::fabs(det) < LM_EPSILON) {
                 lambda *= 10;
                 continue;
             }
@@ -400,7 +405,7 @@ inline double solveLM(ColorSpace space, const Vector<double> & color, Vector<dou
             if (trialCost < cost) {
                 coefficients = trial;
                 cost = trialCost;
-                lambda = fmax(lambda * 0.5, LM_EPSILON_SQUARED);
+                lambda = std::fmax(lambda * 0.5, LM_EPSILON_SQUARED);
                 accepted = true;
             }
             else {
@@ -414,10 +419,10 @@ inline double solveLM(ColorSpace space, const Vector<double> & color, Vector<dou
         res = residual(space, coefficients, color, rgbTable, whitepoint);
     }
 
-    return sqrt(cost);
+    return std::sqrt(cost);
 }
 
-inline void solveGrid(ColorSpace space, std::vector<float> & scale, std::vector<float> & lut) {
+inline void solveGrid(ColorSpace space, float * scale, float * lut) {
     Vector<double> whitepoint;
     Matrix3<double> toRGB = toRGBMatrix(space);
     double rgbTable[3][CIE_LAMBDA_BINS];
@@ -585,9 +590,9 @@ HOST_DEVICE inline Vector<Float> upsampleRGB(ColorSpace space, const Vector<Floa
 
     int x0 = upsamplingInterval(space, x);
     int x1 = x0 + 1;
-    int y0 = (int)clamp(floor(y), Float(0), UPSAMPLING_RESOLUTION - 2);
+    int y0 = (int)clamp(std::floor(y), Float(0), UPSAMPLING_RESOLUTION - 2);
     int y1 = y0 + 1;
-    int z0 = (int)clamp(floor(z), Float(0), UPSAMPLING_RESOLUTION - 2);
+    int z0 = (int)clamp(std::floor(z), Float(0), UPSAMPLING_RESOLUTION - 2);
     int z1 = z0 + 1;
 
     Float tx = (x - upsamplingScale(space, x0)) / (upsamplingScale(space, x1) - upsamplingScale(space, x0));
@@ -613,9 +618,9 @@ HOST_DEVICE inline Vector<Float> upsampleRGB(ColorSpace space, const Vector<Floa
 }
 
 inline Float chromaticity(ColorSpace space, int i) {
-    if (space == ColorSpace::SRGB) return CHROMATICITIES_SRGB[i];
-    else if (space == ColorSpace::REC2020) return CHROMATICITIES_REC2020[i];
-    else if (space == ColorSpace::ACES2065) return CHROMATICITIES_ACES2065[i];
+    if (space == ColorSpace::SRGB) return Float(CHROMATICITIES_SRGB[i]);
+    else if (space == ColorSpace::REC2020) return Float(CHROMATICITIES_REC2020[i]);
+    else if (space == ColorSpace::ACES2065) return Float(CHROMATICITIES_ACES2065[i]);
 
     return Float(0);
 }
@@ -633,7 +638,7 @@ HOST_DEVICE inline bool pointInTriangle(Float px, Float py, Float ax, Float ay, 
     return !(hasNeg && hasPos);
 }
 
-HOST_DEVICE inline bool colorSpaceContains(ColorSpace space, Float rx, Float ry, Float gx, Float gy, Float bx, Float by, Float wx, Float wy) { return pointInTriangle(rx, ry, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)) && pointInTriangle(gx, gy, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)) && pointInTriangle(bx, by, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)) && pointInTriangle(wx, wy, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)); }
+inline bool colorSpaceContains(ColorSpace space, Float rx, Float ry, Float gx, Float gy, Float bx, Float by, Float wx, Float wy) { return pointInTriangle(rx, ry, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)) && pointInTriangle(gx, gy, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)) && pointInTriangle(bx, by, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)) && pointInTriangle(wx, wy, chromaticity(space, 0), chromaticity(space, 1), chromaticity(space, 2), chromaticity(space, 3), chromaticity(space, 4), chromaticity(space, 5)); }
 
 inline Matrix3<double> bradfordAdapt(double wx1, double wy1, double wx2, double wy2) {
     Matrix3<double> bradford(BRADFORD);

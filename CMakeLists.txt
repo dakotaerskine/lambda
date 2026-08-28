@@ -20,9 +20,10 @@ if (NOT CPU)
     endif()
 endif()
 
-add_executable(lambda main.cpp)
+add_executable(lambda src/main.cpp)
 
-target_include_directories(lambda SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ext PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(lambda PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(lambda SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ext)
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/data")
 
@@ -30,7 +31,7 @@ find_package(OpenMP REQUIRED)
 target_link_libraries(lambda PRIVATE OpenMP::OpenMP_CXX)
 
 if(CMAKE_CUDA_COMPILER AND NOT CPU)
-    set_source_files_properties(main.cpp PROPERTIES LANGUAGE CUDA)
+    set_source_files_properties(src/main.cpp PROPERTIES LANGUAGE CUDA)
 
     set_target_properties(lambda PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_SEPARABLE_COMPILATION ON)
 

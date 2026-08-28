@@ -5,9 +5,8 @@ A physically-based spectral path tracer implemented in C++ and CUDA built around
 Lambda requires CMake 3.24 or later and a C++20 compiler. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DCPU=ON`.
 
 ```sh
-mkdir build && cd build
-cmake ../src
-make
+cmake -S . -B build
+cmake --build build
 ```
 
 ## Running
@@ -24,7 +23,7 @@ The Lambda Render Description is a plain text file format with one command per l
 `space` is one of `srgb`, `rec2020`, or `aces2065-1`, `depth` is the maximum bounce count, `samples` must be a perfect square, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
 
 ```
-Render <space> <width> <height> <depth> <samples> <lambdaMin> <lambdaMax>
+Render <space> <width> <height> <samples> <depth> <lambdaMin> <lambdaMax> <seed>
 ```
 
 ### `Texture`

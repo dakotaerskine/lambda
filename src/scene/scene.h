@@ -18,37 +18,37 @@ class Scene {
     public:
         HOST_DEVICE Scene() : spectra(nullptr), complexSpectra(nullptr), background(), objects(nullptr), instances(nullptr), nodes(nullptr), lightInstances(nullptr), lightObjects(nullptr), numLights(0), lightPowers(nullptr), totalLightPower(0), materials(nullptr), materialProperties(nullptr), scalarTextures(nullptr), spectrumTextures(nullptr) {}
 
-        HOST_DEVICE Scene(DenseSpectrum<Float> * const _spectra, DenseSpectrum<Complex> * const _complexSpectra, const Background & _background, Object * const _objects, Instance * const _instances, BVHNode * const _nodes, int * const _lightInstances, int * const _lightObjects, int _numLights, Float * const _lightPowers, Float _totalLightPower, Material * const _materials, int * const _materialProperties, ScalarTexture * const _scalarTextures, SpectrumTexture * const _spectrumTextures, Float * const _images) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), instances(_instances), nodes(_nodes), lightInstances(_lightInstances), lightObjects(_lightObjects), numLights(_numLights), lightPowers(_lightPowers), totalLightPower(_totalLightPower), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures), images(_images) {}
+        HOST_DEVICE Scene(const DenseSpectrum<Float> * _spectra, const DenseSpectrum<Complex> * _complexSpectra, const Background & _background, const Object * _objects, const Instance * _instances, const BVHNode * _nodes, const int * _lightInstances, const int * _lightObjects, int _numLights, const Float * _lightPowers, Float _totalLightPower, const Material * _materials, const int * _materialProperties, const ScalarTexture * _scalarTextures, const SpectrumTexture * _spectrumTextures, const Float * _images) : spectra(_spectra), complexSpectra(_complexSpectra), background(_background), objects(_objects), instances(_instances), nodes(_nodes), lightInstances(_lightInstances), lightObjects(_lightObjects), numLights(_numLights), lightPowers(_lightPowers), totalLightPower(_totalLightPower), materials(_materials), materialProperties(_materialProperties), scalarTextures(_scalarTextures), spectrumTextures(_spectrumTextures), images(_images) {}
 
-        HOST_DEVICE DenseSpectrum<Float> * getSpectra() const { return spectra; }
+        HOST_DEVICE const DenseSpectrum<Float> * getSpectra() const { return spectra; }
 
-        HOST_DEVICE DenseSpectrum<Complex> * getComplexSpectra() const { return complexSpectra; }
+        HOST_DEVICE const DenseSpectrum<Complex> * getComplexSpectra() const { return complexSpectra; }
 
         HOST_DEVICE const Background & getBackground() const { return background; }
 
-        HOST_DEVICE Object * getObjects() const { return objects; }
+        HOST_DEVICE const Object * getObjects() const { return objects; }
 
-        HOST_DEVICE Instance * getInstances() const { return instances; }
+        HOST_DEVICE const Instance * getInstances() const { return instances; }
 
-        HOST_DEVICE int * getLightInstances() const { return lightInstances; }
+        HOST_DEVICE const int * getLightInstances() const { return lightInstances; }
 
-        HOST_DEVICE int * getLightObjects() const { return lightObjects; }
+        HOST_DEVICE const int * getLightObjects() const { return lightObjects; }
 
         HOST_DEVICE int getNumLights() const { return numLights; }
 
-        HOST_DEVICE Float * getLightPowers() const { return lightPowers; }
+        HOST_DEVICE const Float * getLightPowers() const { return lightPowers; }
 
         HOST_DEVICE Float getTotalLightPower() const { return totalLightPower; }
 
-        HOST_DEVICE Material * getMaterials() const { return materials; }
+        HOST_DEVICE const Material * getMaterials() const { return materials; }
 
-        HOST_DEVICE int * getMaterialProperties() const { return materialProperties; }
+        HOST_DEVICE const int * getMaterialProperties() const { return materialProperties; }
 
-        HOST_DEVICE ScalarTexture * getScalarTextures() const { return scalarTextures; }
+        HOST_DEVICE const ScalarTexture * getScalarTextures() const { return scalarTextures; }
 
-        HOST_DEVICE SpectrumTexture * getSpectrumTextures() const { return spectrumTextures; }
+        HOST_DEVICE const SpectrumTexture * getSpectrumTextures() const { return spectrumTextures; }
 
-        HOST_DEVICE Float * getImages() const { return images; }
+        HOST_DEVICE const Float * getImages() const { return images; }
 
         HOST_DEVICE bool hit(const Ray & r, Intersection & intersection, int occludedInstance = -1, int occludedObject = -2) const {
             int stack[BVH_MAX_DEPTH];
@@ -131,20 +131,20 @@ class Scene {
         }
 
     private:
-        DenseSpectrum<Float> * spectra;
-        DenseSpectrum<Complex> * complexSpectra;
+        const DenseSpectrum<Float> * spectra;
+        const DenseSpectrum<Complex> * complexSpectra;
         Background background;
-        Object * objects;
-        Instance * instances;
-        BVHNode * nodes;
-        int * lightInstances;
-        int * lightObjects;
+        const Object * objects;
+        const Instance * instances;
+        const BVHNode * nodes;
+        const int * lightInstances;
+        const int * lightObjects;
         int numLights;
-        Float * lightPowers;
+        const Float * lightPowers;
         Float totalLightPower;
-        Material * materials;
-        int * materialProperties;
-        ScalarTexture * scalarTextures;
-        SpectrumTexture * spectrumTextures;
-        Float * images;
+        const Material * materials;
+        const int * materialProperties;
+        const ScalarTexture * scalarTextures;
+        const SpectrumTexture * spectrumTextures;
+        const Float * images;
 };

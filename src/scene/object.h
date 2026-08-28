@@ -172,7 +172,7 @@ class Object {
             Float diagonal1 = (quad.horizontal + quad.vertical).lengthSquared();
             Float diagonal2 = (quad.horizontal - quad.vertical).lengthSquared();
 
-            return Float(0.5) * sqrt(fmax(diagonal1, diagonal2));
+            return Float(0.5) * std::sqrt(std::fmax(diagonal1, diagonal2));
         }
 
         HOST_DEVICE Float radiusTri() const {
@@ -182,7 +182,7 @@ class Object {
             Float distance2 = (tri.corner + tri.horizontal - center).lengthSquared();
             Float distance3 = (tri.corner + tri.vertical - center).lengthSquared();
 
-            return sqrt(fmax(distance1, fmax(distance2, distance3)));
+            return std::sqrt(std::fmax(distance1, std::fmax(distance2, distance3)));
         }
 
         HOST_DEVICE Float areaSphere() const { return 4 * PI * sphere.radius * sphere.radius; }
@@ -196,7 +196,7 @@ class Object {
 
             if (distanceSquared <= radiusSquared) return 1 / (4 * PI);
 
-            Float cosThetaMax = sqrt(1 - radiusSquared / distanceSquared);
+            Float cosThetaMax = std::sqrt(1 - radiusSquared / distanceSquared);
             Float cosTheta = dot(normalize(oc), direction);
 
             if (cosTheta < cosThetaMax) return 0;
@@ -209,7 +209,7 @@ class Object {
 
             Float cosTheta = dot(n, direction);
 
-            if (fabs(cosTheta) < EPSILON) return 0;
+            if (std::fabs(cosTheta) < EPSILON) return 0;
 
             Float t = dot(quad.corner - point, n) / cosTheta;
 
@@ -222,7 +222,7 @@ class Object {
 
             if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
 
-            return t * t / (fabs(cosTheta) * quad.normal.length());
+            return t * t / (std::fabs(cosTheta) * quad.normal.length());
         }
 
         HOST_DEVICE Float pdfTri(const Vector<Float> & point, const Vector<Float> & direction) const {
@@ -230,7 +230,7 @@ class Object {
 
             Float determinant = dot(tri.horizontal, rayCrossVertical);
 
-            if (fabs(determinant) < EPSILON_SQUARED) return 0;
+            if (std::fabs(determinant) < EPSILON_SQUARED) return 0;
 
             Float inverseDeterminant = 1 / determinant;
 
@@ -253,7 +253,7 @@ class Object {
             Float area = tri.normal.length() * 0.5f;
             Float cosTheta = dot(normalize(tri.normal), direction);
 
-            return t * t / (fabs(cosTheta) * area);
+            return t * t / (std::fabs(cosTheta) * area);
         }
 
         HOST_DEVICE Vector<Float> sampleSphere(const Vector<Float> & point, Random & state) const {
@@ -263,7 +263,7 @@ class Object {
 
             if (distanceSquared <= radiusSquared) return randomUnitVector(state);
 
-            Float cosThetaMax = sqrt(1 - radiusSquared / distanceSquared);
+            Float cosThetaMax = std::sqrt(1 - radiusSquared / distanceSquared);
 
             return randomInCone(normalize(oc), cosThetaMax, state);
         }
@@ -301,7 +301,7 @@ class Object {
 
             if (d < 0) return false;
 
-            d = sqrt(d);
+            d = std::sqrt(d);
 
             Float t1 = (-b - d) / (2 * a);
             Float t2 = (-b + d) / (2 * a);
@@ -316,8 +316,8 @@ class Object {
             intersection.t = t;
             intersection.point = r.at(t);
             intersection.normal = normalize(intersection.point - sphere.center);
-            intersection.u = (atan2(-intersection.normal[2], intersection.normal[0]) + PI) / (2 * PI);
-            intersection.v = 1 - acos(-intersection.normal[1]) / PI;
+            intersection.u = (std::atan2(-intersection.normal[2], intersection.normal[0]) + PI) / (2 * PI);
+            intersection.v = 1 - std::acos(-intersection.normal[1]) / PI;
             intersection.frontFacing = dot(r.getDirection(), intersection.normal) < 0;
             if (!intersection.frontFacing) intersection.normal *= -1;
 
@@ -329,7 +329,7 @@ class Object {
 
             Float denominator = dot(n, r.getDirection());
 
-            if (fabs(denominator) < EPSILON) return false;
+            if (std::fabs(denominator) < EPSILON) return false;
 
             Float t = dot(n, quad.corner - r.getOrigin()) / denominator;
 
@@ -360,7 +360,7 @@ class Object {
 
             Float determinant = dot(tri.horizontal, rayCrossVertical);
 
-            if (fabs(determinant) < EPSILON_SQUARED) return false;
+            if (std::fabs(determinant) < EPSILON_SQUARED) return false;
 
             Float inverseDeterminant = 1 / determinant;
 

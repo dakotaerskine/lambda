@@ -21,9 +21,11 @@
 
 class Renderer {
     public:
-        HOST_DEVICE Renderer() : width(0), height(0), totalPixels(0), depth(0), samples(0), sqrtSamples(0), lambdaMin(0), lambdaMax(0), lambdaRange(0), buffer(nullptr) {}
+        HOST_DEVICE Renderer() : space(ColorSpace::SRGB), width(0), height(0), totalPixels(0), samples(0), sqrtSamples(0), depth(0), lambdaMin(0), lambdaMax(0), lambdaRange(0), seed(0), buffer(nullptr) {}
 
-        HOST_DEVICE Renderer(int _width, int _height, int _depth, int _samples, int _sqrtSamples, Float _lambdaMin, Float _lambdaMax) : width(_width), height(_height), totalPixels(width * height), depth(_depth), samples(_samples), sqrtSamples(_sqrtSamples), lambdaMin(_lambdaMin), lambdaMax(_lambdaMax), lambdaRange(_lambdaMax - _lambdaMin), buffer(nullptr) {}
+        HOST_DEVICE Renderer(ColorSpace _space, int _width, int _height, int _samples, int _sqrtSamples, int _depth, Float _lambdaMin, Float _lambdaMax, uint64_t _seed) : space(_space), width(_width), height(_height), totalPixels(width * height), samples(_samples), sqrtSamples(_sqrtSamples), depth(_depth), lambdaMin(_lambdaMin), lambdaMax(_lambdaMax), lambdaRange(_lambdaMax - _lambdaMin), seed(_seed), buffer(nullptr) {}
+
+        HOST_DEVICE ColorSpace getSpace() const { return space; }
 
         HOST_DEVICE int getWidth() const { return width; }
 
@@ -39,13 +41,15 @@ class Renderer {
 
         HOST_DEVICE const Camera & getCamera() const { return camera; }
 
+        HOST_DEVICE Float getChannel(int i, int j) const { return buffer[i * 3 + j]; }
+
         void setCamera(const Vector<Float> & position, const Vector<Float> & corner, const Vector<Float> & horizontal, const Vector<Float> & vertical) { camera = Camera(position, corner, horizontal, vertical); }
 
-        void setScene(DenseSpectrum<Float> * const spectra, DenseSpectrum<Complex> * const complexSpectra, const Background & background, Object * const objects, Instance * const instances, BVHNode * const nodes, int * const lightInstances, int * const lightObjects, int numLights, Float * const lightPowers, Float totalLightPower, Material * const materials, int * const materialProperties, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures, Float * const images) { scene = Scene(spectra, complexSpectra, background, objects, instances, nodes, lightInstances, lightObjects, numLights, lightPowers, totalLightPower, materials, materialProperties, scalarTextures, spectrumTextures, images); }
+        void setScene(const DenseSpectrum<Float> * spectra, const DenseSpectrum<Complex> * complexSpectra, const Background & background, const Object * objects, const Instance * instances, const BVHNode * nodes, const int * lightInstances, const int * lightObjects, int numLights, const Float * lightPowers, Float totalLightPower, const Material * materials, const int * materialProperties, const ScalarTexture * scalarTextures, const SpectrumTexture * spectrumTextures, const Float * images) { scene = Scene(spectra, complexSpectra, background, objects, instances, nodes, lightInstances, lightObjects, numLights, lightPowers, totalLightPower, materials, materialProperties, scalarTextures, spectrumTextures, images); }
 
         void setBuffer(Float * _buffer) { buffer = _buffer; }
 
-        void renderImage(int * completed, uint64_t seed) const {
+        void renderImage(int * completed) const {
             #pragma omp parallel for schedule(guided)
             for (int py = 0; py < height; py++)
                 for (int px = 0; px < width; px++) {
@@ -58,8 +62,10 @@ class Renderer {
         }
 
     private:
-        int width, height, totalPixels, depth, samples, sqrtSamples;
+        ColorSpace space;
+        int width, height, totalPixels, samples, sqrtSamples, depth;
         Float lambdaMin, lambdaMax, lambdaRange;
+        uint64_t seed;
         Camera camera;
         Scene scene;
         Float * buffer;
@@ -78,7 +84,7 @@ class Renderer {
                     SampledSpectrum lambdas;
 
                     for (int k = 0; k < HERO_COUNT; k++)
-                        lambdas[k] = lambdaMin + fmod(lambda - lambdaMin + Float(k) * lambdaRange / HERO_COUNT, lambdaRange);
+                        lambdas[k] = lambdaMin + std::fmod(lambda - lambdaMin + Float(k) * lambdaRange / HERO_COUNT, lambdaRange);
 
                     Ray ray = camera.getRay(u, v, lambdas);
 
@@ -202,20 +208,5 @@ class Renderer {
             return radiance;
         }
 
-        friend GLOBAL void renderKernel(int * d_completed, Renderer renderer, uint64_t seed);
+        friend GLOBAL void renderKernel(Renderer renderer, int * d_completed);
 };
-
-#ifdef __CUDACC__
-    GLOBAL void renderKernel(int * d_completed, Renderer renderer, uint64_t seed) {
-        int px = blockIdx.x * blockDim.x + threadIdx.x;
-        int py = blockIdx.y * blockDim.y + threadIdx.y;
-
-        if (px >= renderer.width || py >= renderer.height) return;
-
-        Random state(seed, py * renderer.width + px);
-
-        renderer.renderPixel(px, py, state);
-
-        atomicAdd(d_completed, 1);
-    }
-#endif

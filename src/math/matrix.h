@@ -19,7 +19,7 @@ class Matrix2 {
             elements[3] = d3;
         }
 
-        HOST_DEVICE Matrix2(T * d) {
+        HOST_DEVICE Matrix2(const T * d) {
             for (int i = 0; i < 4; i++)
                 elements[i] = d[i];
         }
@@ -119,7 +119,7 @@ class Matrix2 {
         HOST_DEVICE friend Matrix2<T> inverse(const Matrix2<T> & m) {
             T det = m.determinant();
 
-            assert(fabs(det) > EPSILON);
+            assert(std::fabs(det) > EPSILON);
 
             return Matrix2<T>(m.elements[3] / det, -m.elements[1] / det, -m.elements[2] / det, m.elements[0] / det);
         }
@@ -150,7 +150,7 @@ class Matrix3 {
             elements[8] = d8;
         }
 
-        HOST_DEVICE Matrix3(T * d) {
+        HOST_DEVICE Matrix3(const T * d) {
             for (int i = 0; i < 9; i++)
                 elements[i] = d[i];
         }
@@ -255,7 +255,7 @@ class Matrix3 {
         HOST_DEVICE friend Matrix3<T> inverse(const Matrix3<T> & m) {
             T det = m.determinant();
 
-            assert(fabs(det) > EPSILON);
+            assert(std::fabs(det) > EPSILON);
 
             return Matrix3<T>((m.elements[4] * m.elements[8] - m.elements[5] * m.elements[7]) / det, (m.elements[2] * m.elements[7] - m.elements[1] * m.elements[8]) / det, (m.elements[1] * m.elements[5] - m.elements[2] * m.elements[4]) / det, (m.elements[5] * m.elements[6] - m.elements[3] * m.elements[8]) / det, (m.elements[0] * m.elements[8] - m.elements[2] * m.elements[6]) / det, (m.elements[2] * m.elements[3] - m.elements[0] * m.elements[5]) / det, (m.elements[3] * m.elements[7] - m.elements[4] * m.elements[6]) / det, (m.elements[1] * m.elements[6] - m.elements[0] * m.elements[7]) / det, (m.elements[0] * m.elements[4] - m.elements[1] * m.elements[3]) / det);
         }
@@ -293,7 +293,7 @@ class Matrix4 {
             elements[15] = d15;
         }
 
-        HOST_DEVICE Matrix4(T * d) {
+        HOST_DEVICE Matrix4(const T * d) {
             for (int i = 0; i < 16; i++)
                 elements[i] = d[i];
         }
@@ -405,7 +405,7 @@ class Matrix4 {
         HOST_DEVICE friend Matrix4<T> inverse(const Matrix4<T> & m) {
             T det = m.determinant();
 
-            assert(fabs(det) > EPSILON);
+            assert(std::fabs(det) > EPSILON);
 
             T s0 = m.elements[0] * m.elements[5] - m.elements[1] * m.elements[4];
             T s1 = m.elements[0] * m.elements[6] - m.elements[2] * m.elements[4];

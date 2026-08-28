@@ -12,30 +12,8 @@ enum class ColorSpace {SRGB, REC2020, ACES2065};
     #define HOST_DEVICE __host__ __device__
     #define GLOBAL __global__
     #define MANAGED __managed__
-    #include <cctype>
-    #include <stdexcept>
-    #include <string>
-    #include <cuda_runtime.h>
-    #include <thrust/complex.h>
-    using Complex = thrust::complex<double>;
-    HOST_DEVICE inline Float absC(const Complex & c) { return Float(thrust::abs((thrust::complex<double>)c)); }
-    HOST_DEVICE inline Complex expC(const Complex & c) { return thrust::exp((thrust::complex<double>)c); }
-    HOST_DEVICE inline Complex sqrtC(const Complex & c) { return thrust::sqrt((thrust::complex<double>)c); }
-    inline void checkCudaError(cudaError_t err, const std::string & message) {
-        if (err != cudaSuccess) {
-            std::string error = cudaGetErrorString(err);
-            error[0] = char(std::tolower(error[0]));
-            throw std::runtime_error(message + " (" + error + ")");
-        }
-    }
 #else
     #define HOST_DEVICE
     #define GLOBAL
-    #define MANAGED inline
-    #include <cmath>
-    #include <complex>
-    using Complex = std::complex<double>;
-    inline Float absC(const Complex & c) { return Float(std::abs((std::complex<double>)c)); }
-    inline Complex expC(const Complex & c) { return std::exp((std::complex<double>)c); }
-    inline Complex sqrtC(const Complex & c) { return std::sqrt((std::complex<double>)c); }
+    #define MANAGED
 #endif

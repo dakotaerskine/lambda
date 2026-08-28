@@ -1,19 +1,18 @@
 #pragma once
 
 #include <cctype>
-#include <cerrno>
 #include <cstring>
 #include <fstream>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "ext/stb/stb_image_write.h"
+#include <stb/stb_image_write.h>
 
 #define TINYEXR_IMPLEMENTATION
-#include "ext/tinyexr/tinyexr.h"
+#include <tinyexr/tinyexr.h>
 
+#include "core/error.h"
 #include "core/utils.h"
 #include "render/camera.h"
 #include "render/renderer.h"
@@ -25,21 +24,17 @@ class Writer {
     public:
         static bool hasValidExtension(const std::string & output) { return hasExtension(output, ".exr") || hasExtension(output, ".pfm") || hasExtension(output, ".png"); }
 
-        static void writeImage(const std::string & output, ColorSpace space, const Renderer & renderer, Float duration, Float * const buffer) {
-            if (hasExtension(output, ".exr")) writeEXR(output, space, renderer, duration, buffer);
-            else if (hasExtension(output, ".pfm")) writePFM(output, space, renderer, buffer);
-            else if (hasExtension(output, ".png")) writePNG(output, renderer, buffer);
-            else throw std::runtime_error("invalid file extension");
+        static void writeImage(const std::string & output, const Renderer & renderer, Float duration) {
+            if (hasExtension(output, ".exr")) writeEXR(output, renderer, duration);
+            else if (hasExtension(output, ".pfm")) writePFM(output, renderer);
+            else if (hasExtension(output, ".png")) writePNG(output, renderer);
+            else fileError(output, "invalid file extension");
         }
 
-        static void writeUpsamplingLUT(const std::string & output, const std::vector<float> & scale, const std::vector<float> & lut) {
+        static void writeUpsamplingTables(const std::string & output, const std::vector<float> & scale, const std::vector<float> & lut) {
             std::ofstream outputFile(output, std::ios::binary);
 
-            if (!outputFile.is_open()) {
-                std::string error = std::strerror(errno);
-                error[0] = char(std::tolower(error[0]));
-                throw std::runtime_error("failed to open file (" + error + ")");
-            }
+            if (!outputFile.is_open()) failedToOpenFileError(output);
 
             outputFile.write("SPEC", 4);
 
@@ -52,13 +47,13 @@ class Writer {
         }
 
     private:
-        static void writePNG(const std::string & output, const Renderer & renderer, Float * const buffer) {
+        static void writePNG(const std::string & output, const Renderer & renderer) {
             std::vector<unsigned char> pixels(renderer.getTotalPixels() * 3);
 
             Random state(0, 0);
 
             for (int i = 0; i < renderer.getTotalPixels(); i++) {
-                Vector<Float> color = transform(toRGBMatrix(ColorSpace::SRGB), Vector<Float>(buffer[i * 3 + 0], buffer[i * 3 + 1], buffer[i * 3 + 2]));
+                Vector<Float> color = transform(toRGBMatrix(ColorSpace::SRGB), Vector<Float>(renderer.getChannel(i, 0), renderer.getChannel(i, 1), renderer.getChannel(i, 2)));
 
                 pixels[i * 3 + 0] = quantize(toneMap(color[0]), state);
                 pixels[i * 3 + 1] = quantize(toneMap(color[1]), state);
@@ -67,18 +62,14 @@ class Writer {
 
             if (!stbi_write_png(output.c_str(), renderer.getWidth(), renderer.getHeight(), 3, pixels.data(), renderer.getWidth() * 3)) {
                 std::string error = stbi_failure_reason();
-                throw std::runtime_error("failed to write file (" + error + ")");
+                fileError(output, "failed to write file (" + error + ")");
             }
         }
 
-        static void writePFM(const std::string & output, ColorSpace space, const Renderer & renderer, Float * const buffer) {
+        static void writePFM(const std::string & output, const Renderer & renderer) {
             std::ofstream outputFile(output, std::ios::binary);
 
-            if (!outputFile.is_open()) {
-                std::string error = std::strerror(errno);
-                error[0] = char(std::tolower(error[0]));
-                throw std::runtime_error("failed to open file (" + error + ")");
-            }
+            if (!outputFile.is_open()) failedToOpenFileError(output);
 
             Random state(0, 0);
 
@@ -86,9 +77,9 @@ class Writer {
 
             for (int j = renderer.getHeight() - 1; j >= 0; j--)
                 for (int i = 0; i < renderer.getWidth(); i++) {
-                    int index = (j * renderer.getWidth() + i) * 3;
+                    int index = j * renderer.getWidth() + i;
 
-                    Vector<Float> color = transform(toRGBMatrix(space), Vector<Float>(buffer[index + 0], buffer[index + 1], buffer[index + 2]));
+                    Vector<Float> color = transform(toRGBMatrix(renderer.getSpace()), Vector<Float>(renderer.getChannel(index, 0), renderer.getChannel(index, 1), renderer.getChannel(index, 2)));
 
                     outputFile.write(reinterpret_cast<const char *>(&color[0]), sizeof(float));
                     outputFile.write(reinterpret_cast<const char *>(&color[1]), sizeof(float));
@@ -98,7 +89,7 @@ class Writer {
             outputFile.close();
         }
 
-        static void writeEXR(const std::string & output, ColorSpace space, const Renderer & renderer, Float duration, const Float * const buffer) {
+        static void writeEXR(const std::string & output, const Renderer & renderer, Float duration) {
             EXRHeader header;
             InitEXRHeader(&header);
 
@@ -114,7 +105,7 @@ class Writer {
             std::vector<float> channelR(renderer.getTotalPixels());
 
             for (int i = 0; i < renderer.getTotalPixels(); i++) {
-                Vector<Float> color = transform(toRGBMatrix(space), Vector<Float>(buffer[i * 3 + 0], buffer[i * 3 + 1], buffer[i * 3 + 2]));
+                Vector<Float> color = transform(toRGBMatrix(renderer.getSpace()), Vector<Float>(renderer.getChannel(i, 0), renderer.getChannel(i, 1), renderer.getChannel(i, 2)));
 
                 channelR[i] = float(color[0]);
                 channelG[i] = float(color[1]);
@@ -158,7 +149,7 @@ class Writer {
             float chromaticities[8];
 
             for (int i = 0; i < 8; i++)
-                chromaticities[i] = float(chromaticity(space, i));
+                chromaticities[i] = float(chromaticity(renderer.getSpace(), i));
 
             std::vector<unsigned char> chromaticitiesValue(sizeof(float) * 8);
 
@@ -243,7 +234,7 @@ class Writer {
             if (SaveEXRImageToFile(&image, &header, output.c_str(), &error) != TINYEXR_SUCCESS) {
                 std::string errorMessage = error;
                 FreeEXRErrorMessage(error);
-                throw std::runtime_error("failed to open file (" + errorMessage + ")");
+                fileError(output, "failed to open file (" + errorMessage + ")");
             }
         }
 };

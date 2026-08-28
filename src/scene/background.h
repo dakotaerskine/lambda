@@ -31,7 +31,7 @@ class Background {
             return 0;
         }
 
-        HOST_DEVICE Float average(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures, Float * const images) const {
+        HOST_DEVICE Float average(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const SpectrumTexture * spectrumTextures, const Float * images) const {
             switch (type) {
                 case BackgroundType::EQUIRECTANGULAR: return averageEquirectangular(spectra, scalarTextures, spectrumTextures, images);
             }
@@ -55,7 +55,7 @@ class Background {
             return Vector<Float>();
         }
 
-        HOST_DEVICE SampledSpectrum evaluate(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures, Float * const images, const Ray & r) const {
+        HOST_DEVICE SampledSpectrum evaluate(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const SpectrumTexture * spectrumTextures, const Float * images, const Ray & r) const {
             switch (type) {
                 case BackgroundType::EQUIRECTANGULAR: return evaluateEquirectangular(spectra, scalarTextures, spectrumTextures, images, r);
             }
@@ -72,20 +72,20 @@ class Background {
 
         HOST_DEVICE Float areaEquirectangular(Float radius) const { return 4 * PI * radius * radius; }
 
-        HOST_DEVICE Float averageEquirectangular(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures, Float * const images) const { return spectrumTextures[equirectangular.texture].average(spectra, scalarTextures, images); }
+        HOST_DEVICE Float averageEquirectangular(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const SpectrumTexture * spectrumTextures, const Float * images) const { return spectrumTextures[equirectangular.texture].average(spectra, scalarTextures, images); }
 
         HOST_DEVICE Float pdfEquirectangular() const { return 1 / (4 * PI); }
 
         HOST_DEVICE Vector<Float> sampleEquirectangular(Random & state) const { return randomUnitVector(state); }
 
-        HOST_DEVICE SampledSpectrum evaluateEquirectangular(DenseSpectrum<Float> * const spectra, ScalarTexture * const scalarTextures, SpectrumTexture * const spectrumTextures, Float * const images, const Ray & r) const {
+        HOST_DEVICE SampledSpectrum evaluateEquirectangular(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const SpectrumTexture * spectrumTextures, const Float * images, const Ray & r) const {
             Intersection intersection;
 
             intersection.localPoint = r.getDirection();
             intersection.localNormal = r.getDirection();
 
-            intersection.u = (atan2(r.getDirection()[2], r.getDirection()[0]) + PI) / (2 * PI);
-            intersection.v = acos(r.getDirection()[1]) / PI;
+            intersection.u = (std::atan2(r.getDirection()[2], r.getDirection()[0]) + PI) / (2 * PI);
+            intersection.v = std::acos(r.getDirection()[1]) / PI;
 
             SampledSpectrum attenuation;
 

@@ -42,8 +42,8 @@ class BVHNode {
                     tMax = temp;
                 }
 
-                t1 = fmax(tMin, t1);
-                t2 = fmin(tMax, t2);
+                t1 = std::fmax(tMin, t1);
+                t2 = std::fmin(tMax, t2);
             }
 
             intersection.t = t1;
@@ -109,21 +109,21 @@ class BVH {
 
     private:
         static int makeBVH(const std::vector<Object> & objects, const std::vector<Instance> & instances, std::vector<int> & indices, int start, int end, std::vector<BVHNode> & nodes, int depth) {
-            Vector<Float> min(MAX, MAX, MAX);
-            Vector<Float> max(-MAX, -MAX, -MAX);
+            Vector<Float> minBounds(MAX, MAX, MAX);
+            Vector<Float> maxBounds(-MAX, -MAX, -MAX);
             Vector<Float> minCenter(MAX, MAX, MAX);
             Vector<Float> maxCenter(-MAX, -MAX, -MAX);
 
             for (int i = start; i < end; i++) {
                 if (instances.size() > 0) {
-                    min = minV(min, instances[indices[i]].min(objects.data()));
-                    max = maxV(max, instances[indices[i]].max(objects.data()));
+                    minBounds = minV(minBounds, instances[indices[i]].min(objects.data()));
+                    maxBounds = maxV(maxBounds, instances[indices[i]].max(objects.data()));
                     minCenter = minV(minCenter, instances[indices[i]].center(objects.data()));
                     maxCenter = maxV(maxCenter, instances[indices[i]].center(objects.data()));
                 }
                 else {
-                    min = minV(min, objects[indices[i]].min());
-                    max = maxV(max, objects[indices[i]].max());
+                    minBounds = minV(minBounds, objects[indices[i]].min());
+                    maxBounds = maxV(maxBounds, objects[indices[i]].max());
                     minCenter = minV(minCenter, objects[indices[i]].center());
                     maxCenter = maxV(maxCenter, objects[indices[i]].center());
                 }
@@ -202,7 +202,7 @@ class BVH {
 
                         Vector<Float> leftExtents = leftMax[j] - leftMin[j];
                         Vector<Float> rightExtents = rightMax[j + 1] - rightMin[j + 1];
-                        Vector<Float> totalExtents = max - min;
+                        Vector<Float> totalExtents = maxBounds - minBounds;
 
                         Float leftArea = 2 * (leftExtents[0] * leftExtents[1] + leftExtents[0] * leftExtents[2] + leftExtents[1] * leftExtents[2]);
                         Float rightArea = 2 * (rightExtents[0] * rightExtents[1] + rightExtents[0] * rightExtents[2] + rightExtents[1] * rightExtents[2]);
@@ -219,14 +219,14 @@ class BVH {
             }
 
             if (end - start == 1 || depth >= BVH_MAX_DEPTH || bestCost >= Float(end - start) || bestSplit == -1) {
-                nodes.push_back(BVHNode(min, max, start, end - start));
+                nodes.push_back(BVHNode(minBounds, maxBounds, start, end - start));
 
                 return int(nodes.size()) - 1;
             }
 
             Float splitPlane = minCenter[bestAxis] + Float(bestSplit + 1) * (maxCenter[bestAxis] - minCenter[bestAxis]) / Float(BVH_BIN_COUNT);
 
-            typename std::vector<int>::iterator iterator = std::partition(indices.begin() + start, indices.begin() + end, [&](int i) { return instances.size() > 0 ? instances[i].center(objects.data())[bestAxis] < splitPlane : objects[i].center()[bestAxis] < splitPlane; });
+            auto iterator = std::partition(indices.begin() + start, indices.begin() + end, [&](int i) { return instances.size() > 0 ? instances[i].center(objects.data())[bestAxis] < splitPlane : objects[i].center()[bestAxis] < splitPlane; });
 
             int mid = int(std::distance(indices.begin(), iterator));
 
@@ -234,7 +234,7 @@ class BVH {
 
             int current = int(nodes.size());
 
-            nodes.push_back(BVHNode(min, max, -1));
+            nodes.push_back(BVHNode(minBounds, maxBounds, -1));
 
             makeBVH(objects, instances, indices, start, mid, nodes, depth + 1);
 
