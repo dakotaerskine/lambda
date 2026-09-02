@@ -11,17 +11,17 @@
 class Instance {
     public:
         HOST_DEVICE Instance(int o, int c, int m, const Vector<Float> & translation, const Vector<Float> & rotation, const Vector<Float> & scale) : object(o), count(c), material(m) {
-            Matrix4<Float> translateMatrix = Matrix4<Float>(Float(1), Float(0), Float(0), translation[0], Float(0), Float(1), Float(0), translation[1], Float(0), Float(0), Float(1), translation[2], Float(0), Float(0), Float(0), Float(1));
+            Matrix<Float, 4> translateMatrix = Matrix<Float, 4>(Float(1), Float(0), Float(0), translation[0], Float(0), Float(1), Float(0), translation[1], Float(0), Float(0), Float(1), translation[2], Float(0), Float(0), Float(0), Float(1));
 
             Float sinX = std::sin(rotation[0]), cosX = std::cos(rotation[0]);
             Float sinY = std::sin(rotation[1]), cosY = std::cos(rotation[1]);
             Float sinZ = std::sin(rotation[2]), cosZ = std::cos(rotation[2]);
 
-            Matrix4<Float> rotateMatrixX = Matrix4<Float>(Float(1), Float(0), Float(0), Float(0), Float(0), cosX, -sinX, Float(0), Float(0), sinX, cosX, Float(0), Float(0), Float(0), Float(0), Float(1));
-            Matrix4<Float> rotateMatrixY = Matrix4<Float>(cosY, Float(0), sinY, Float(0), Float(0), 1, Float(0), Float(0), -sinY, Float(0), cosY, Float(0), Float(0), Float(0), Float(0), Float(1));
-            Matrix4<Float> rotateMatrixZ = Matrix4<Float>(cosZ, -sinZ, Float(0), Float(0), sinZ, cosZ, Float(0), Float(0), Float(0), Float(0), 1, Float(0), Float(0), Float(0), Float(0), Float(1));
+            Matrix<Float, 4> rotateMatrixX = Matrix<Float, 4>(Float(1), Float(0), Float(0), Float(0), Float(0), cosX, -sinX, Float(0), Float(0), sinX, cosX, Float(0), Float(0), Float(0), Float(0), Float(1));
+            Matrix<Float, 4> rotateMatrixY = Matrix<Float, 4>(cosY, Float(0), sinY, Float(0), Float(0), 1, Float(0), Float(0), -sinY, Float(0), cosY, Float(0), Float(0), Float(0), Float(0), Float(1));
+            Matrix<Float, 4> rotateMatrixZ = Matrix<Float, 4>(cosZ, -sinZ, Float(0), Float(0), sinZ, cosZ, Float(0), Float(0), Float(0), Float(0), 1, Float(0), Float(0), Float(0), Float(0), Float(1));
 
-            Matrix4<Float> scaleMatrix = Matrix4<Float>(scale[0], Float(0), Float(0), Float(0), Float(0), scale[1], Float(0), Float(0), Float(0), Float(0), scale[2], Float(0), Float(0), Float(0), Float(0), Float(1));
+            Matrix<Float, 4> scaleMatrix = Matrix<Float, 4>(scale[0], Float(0), Float(0), Float(0), Float(0), scale[1], Float(0), Float(0), Float(0), Float(0), scale[2], Float(0), Float(0), Float(0), Float(0), Float(1));
 
             transformMatrix = translateMatrix * rotateMatrixZ * rotateMatrixY * rotateMatrixX * scaleMatrix;
             inverseTransformMatrix = inverse(transformMatrix);
@@ -121,5 +121,5 @@ class Instance {
 
     private:
         int object, count, node, material;
-        Matrix4<Float> transformMatrix, inverseTransformMatrix, normalMatrix;
+        Matrix<Float, 4> transformMatrix, inverseTransformMatrix, normalMatrix;
 };

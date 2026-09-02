@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cassert>
-
 #include "core/constants.h"
 #include "core/platform.h"
 #include "math/spectrum.h"

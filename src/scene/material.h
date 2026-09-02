@@ -274,7 +274,7 @@ class Material {
             sinNext *= sinNext * (1 - cosCurrent * cosCurrent);
             Complex cosNext = sqrt(1 - sinNext);
 
-            Matrix2<Complex> matrices[2];
+            Matrix<Complex, 2> matrices[2];
             matrices[0] = interfaceMatrixS(n0, n1, cosCurrent, cosNext);
             matrices[1] = interfaceMatrixP(n0, n1, cosCurrent, cosNext);
 
@@ -290,12 +290,12 @@ class Material {
                 sinNext *= sinNext * sinCurrent;
                 cosNext = sqrt(1 - sinNext);
 
-                Matrix2<Complex> interfaceS = interfaceMatrixS(n0, n1, cosCurrent, cosNext);
-                Matrix2<Complex> interfaceP = interfaceMatrixP(n0, n1, cosCurrent, cosNext);
+                Matrix<Complex, 2> interfaceS = interfaceMatrixS(n0, n1, cosCurrent, cosNext);
+                Matrix<Complex, 2> interfaceP = interfaceMatrixP(n0, n1, cosCurrent, cosNext);
 
                 Complex phi = n0 * 2 * PI / lambda * scalarTextures[materialProperties[thinFilm.d + dIndex]].evaluate(images, i) * cosCurrent;
 
-                Matrix2<Complex> propagation = propagationMatrix(phi);
+                Matrix<Complex, 2> propagation = propagationMatrix(phi);
                 matrices[0] *= propagation * interfaceS;
                 matrices[1] *= propagation * interfaceP;
             }

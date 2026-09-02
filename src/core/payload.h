@@ -18,6 +18,7 @@ class Payload {
         std::vector<DenseSpectrum<Complex>> complexSpectra;
         Background background;
         std::vector<Object> objects;
+        std::vector<int> objectOffsets;
         std::vector<Instance> instances;
         std::vector<BVHNode> nodes;
         std::vector<int> lightInstances;

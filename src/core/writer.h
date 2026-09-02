@@ -161,7 +161,7 @@ class Writer {
 
             float worldToCamera[16];
 
-            Matrix4<Float> worldToCameraMatrix = renderer.getCamera().getWorldToCamera();
+            Matrix<Float, 4> worldToCameraMatrix = renderer.getCamera().getWorldToCamera();
 
             for (int i = 0; i < 16; i++)
                 worldToCamera[i] = float(worldToCameraMatrix.get(i / 4, i % 4));
@@ -176,7 +176,7 @@ class Writer {
 
             float worldToNDC[16];
 
-            Matrix4<Float> worldToNDCMatrix = renderer.getCamera().getWorldToNDC();
+            Matrix<Float, 4> worldToNDCMatrix = renderer.getCamera().getWorldToNDC();
 
             for (int i = 0; i < 16; i++)
                 worldToNDC[i] = float(worldToNDCMatrix.get(i / 4, i % 4));

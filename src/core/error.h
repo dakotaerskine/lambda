@@ -10,12 +10,13 @@
     throw std::runtime_error(message);
 }
 
-[[noreturn]] inline void fileError(const std::string & file, int lineNumber, const std::string & message) {
-    if (lineNumber > 0) error(file + ":" + std::to_string(lineNumber) + ": " + message);
-    else error(file + ": " + message);
+[[noreturn]] inline void fileError(std::string file, int line, int column, const std::string & message) {
+    if (line > 0) file += ":" + std::to_string(line) + ":" + std::to_string(column);
+
+    error(file + ": " + message);
 }
 
-[[noreturn]] inline void fileError(const std::string & file, const std::string & message) { fileError(file, 0, message); }
+[[noreturn]] inline void fileError(const std::string & file, const std::string & message) { fileError(file, 0, 0, message); }
 
 [[noreturn]] inline void invalidArgumentError(const std::string & function) {
     throw std::invalid_argument(function);
@@ -41,6 +42,6 @@ inline std::string errorMessage(const std::string & program, const std::exceptio
     std::string errorString = e.what();
 
     if (errorString.find(": ") == std::string::npos) errorString = program + ": " + errorString;
-    
+
     return errorString;
 }

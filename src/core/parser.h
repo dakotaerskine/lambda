@@ -30,6 +30,401 @@
 #include "scene/object.h"
 #include "scene/texture.h"
 
+class ParserStream {
+    public:
+        ParserStream(const std::string & _input) : input(_input), lineNumber(0) {}
+
+        void load(const std::string & line) {
+            ss.clear();
+            ss.str(line);
+
+            lineNumber++;
+            columnNumber = 1;
+        }
+
+        void setSkipWhitespace(bool skip) {
+            if (skip) ss >> std::skipws;
+            else ss >> std::noskipws;
+        }
+
+        template <typename T>
+        T next(const std::string & parameter = "", bool useCustom = true) {
+            T value;
+
+            if (!attemptNext<T>(value, true, useCustom)) raiseError("'" + parameter + "' is missing or invalid");
+
+            return value;
+        }
+
+        template <typename T>
+        T peek(bool useCustom = true) {
+            T value = T();
+
+            attemptNext<T>(value, false, useCustom);
+
+            return value;
+        }
+
+        template <typename T>
+        bool hasNext(bool useCustom = true) {
+            T value;
+
+            return attemptNext<T>(value, false, useCustom);
+        }
+
+        template <typename T>
+        bool hasNext(const T & expected, bool useCustom = true) {
+            T value;
+
+            std::streampos current = ss.tellg();
+
+            bool success = attemptNext<T>(value, true, useCustom);
+
+            if (success && value != expected) {
+                ss.clear();
+                ss.seekg(current);
+
+                success = false;
+            }
+
+            return success;
+        }
+
+        [[noreturn]] void raiseError(const std::string & message) const { fileError(input, lineNumber, columnNumber, message); }
+
+    private:
+        std::stringstream ss;
+        std::string input;
+        int lineNumber;
+        int columnNumber;
+
+        template <typename T>
+        bool tryNext(T & value, bool useCustom = true) {
+            bool success = true;
+
+            if constexpr (std::is_same_v<T, std::string>) {
+                if (!useCustom) success = bool(ss >> value);
+                else success = tryNextString(value);
+            }
+            else if constexpr (std::is_same_v<T, Complex>) success = tryNextComplex(value);
+            else if constexpr (std::is_same_v<T, Vector<Float>>) success = tryNextVector(value);
+            else if constexpr (std::is_same_v<T, std::map<double, Float>>) success = tryNextSpectrum<Float>(value);
+            else if constexpr (std::is_same_v<T, std::map<double, Complex>>) success = tryNextSpectrum<Complex>(value);
+            else success = bool(ss >> value);
+
+            return success;
+        }
+
+        template <typename T>
+        bool attemptNext(T & value, bool consumeOnSuccess, bool useCustom = true) {
+            if (ss.flags() & std::ios_base::skipws) ss >> std::ws;
+
+            std::streampos current = ss.tellg();
+
+            bool success = tryNext<T>(value, useCustom);
+
+            if (!success || !consumeOnSuccess) {
+                ss.clear();
+                ss.seekg(current);
+            }
+
+            columnNumber = std::max(int(current) + 1, 1);
+
+            return success;
+        }
+
+        bool tryNextString(std::string & value) {
+            setSkipWhitespace(false);
+
+            while (true) {
+                int i = ss.peek();
+
+                if (i == EOF || std::isspace(i) || i == '(' || i == ')' || i == '[' || i == ']') break;
+
+                char c;
+
+                if (!tryNext<char>(c)) break;
+
+                value += c;
+            }
+
+            setSkipWhitespace(true);
+
+            return !value.empty();
+        }
+
+        bool tryNextComplex(Complex & value) {
+            if (hasNext<char>('i')) value = Complex(0, 1);
+            else {
+                double real = 0, imaginary = 0;
+
+                if (hasNext<double>() && !tryNext<double>(real)) return false;
+
+                setSkipWhitespace(false);
+
+                if (hasNext<char>('i')) value = Complex(0, real);
+                else {
+                    if (hasNext<char>('+')) imaginary = 1;
+                    else if (hasNext<char>('-')) imaginary = -1;
+                    else {
+                        value = Complex(real);
+
+                        setSkipWhitespace(true);
+
+                        return true;
+                    }
+
+                    if (!hasNext<char>('i')) {
+                        double factor;
+
+                        if (!tryNext<double>(factor) || !hasNext<char>('i')) {
+                            setSkipWhitespace(true);
+
+                            return false;
+                        }
+
+                        imaginary *= factor;
+                    }
+
+                    value = Complex(real, imaginary);
+                }
+            }
+
+            setSkipWhitespace(true);
+
+            return true;
+        }
+
+        bool tryNextVector(Vector<Float> & value) {
+            if (!hasNext<char>('(')) return false;
+
+            if (!tryNext<Float>(value[0])) return false;
+            if (!tryNext<Float>(value[1])) return false;
+            if (!tryNext<Float>(value[2])) return false;
+
+            if (!hasNext<char>(')')) return false;
+
+            return true;
+        }
+
+        template <typename T>
+        bool tryNextSpectrum(std::map<double, T> & value) {
+            if (!hasNext<char>('(')) return false;
+
+            while (hasNext<char>()) {
+                if (hasNext<char>(')')) return true;
+
+                double lambda;
+
+                if (!tryNext<double>(lambda)) return false;
+                if (!tryNext<T>(value[lambda])) return false;
+            }
+
+            return false;
+        }
+};
+
+class ParserRegistry {
+    public:
+        ParserRegistry(Payload & p) : payload(p) {}
+
+        template <typename T>
+        int add(const T & value, const std::string & name = "") {
+            if constexpr (std::is_same_v<T, DenseSpectrum<Float>>) return add(value, name, payload.spectra, spectrumIndices);
+            else if constexpr (std::is_same_v<T, DenseSpectrum<Complex>>) return add(value, name, payload.complexSpectra, complexSpectrumIndices);
+            else if constexpr (std::is_same_v<T, Object>) {
+                int index = int(payload.objects.size());
+
+                if (!has<Object>(name)) add(index, name, payload.objectOffsets, objectIndices);
+
+                payload.objects.push_back(value);
+
+                return index;
+            }
+            else if constexpr (std::is_same_v<T, Material>) return add(value, name, payload.materials, materialIndices);
+            else if constexpr (std::is_same_v<T, ScalarTexture>) return add(value, name, payload.scalarTextures, scalarTextureIndices);
+            else if constexpr (std::is_same_v<T, SpectrumTexture>) return add(value, name, payload.spectrumTextures, spectrumTextureIndices);
+            else return -1;
+        }
+
+        int addObjects(const std::vector<Object> & objects, const std::string & name = "") {
+            int index = int(payload.objects.size());
+
+            if (!objects.empty()) {
+                if (!has<Object>(name)) add(index, name, payload.objectOffsets, objectIndices);
+
+                payload.objects.insert(payload.objects.end(), objects.begin(), objects.end());
+            }
+
+            return index;
+        }
+
+        int addImage(std::vector<Float> image, ColorSpace space, int width, int height, int channels, const std::string & name = "") {
+            if (!name.empty()) imageDataIndices[name] = int(imageIndices.size());
+
+            imageSpaces.push_back(space);
+            imageIndices.push_back(int(payload.images.size()));
+            imageWidths.push_back(width);
+            imageHeights.push_back(height);
+            imageChannels.push_back(channels);
+
+            payload.images.insert(payload.images.end(), image.begin(), image.end());
+
+            return imageIndices.back();
+        }
+
+        template <typename T>
+        bool has(const std::string & name) const {
+            if constexpr (std::is_same_v<T, DenseSpectrum<Float>>) return spectrumIndices.contains(name);
+            else if constexpr (std::is_same_v<T, DenseSpectrum<Complex>>) return complexSpectrumIndices.contains(name);
+            else if constexpr (std::is_same_v<T, Object>) return objectIndices.contains(name);
+            else if constexpr (std::is_same_v<T, Material>) return materialIndices.contains(name);
+            else if constexpr (std::is_same_v<T, ScalarTexture>) return scalarTextureIndices.contains(name);
+            else if constexpr (std::is_same_v<T, SpectrumTexture>) return spectrumTextureIndices.contains(name);
+            else return false;
+        }
+
+        template <typename T>
+        bool has(const std::string & name, int & index) const {
+            if constexpr (std::is_same_v<T, DenseSpectrum<Float>>) return has(name, index, spectrumIndices);
+            else if constexpr (std::is_same_v<T, DenseSpectrum<Complex>>) return has(name, index, complexSpectrumIndices);
+            else if constexpr (std::is_same_v<T, Object>) return has(name, index, objectIndices);
+            else if constexpr (std::is_same_v<T, Material>) return has(name, index, materialIndices);
+            else if constexpr (std::is_same_v<T, ScalarTexture>) return has(name, index, scalarTextureIndices);
+            else if constexpr (std::is_same_v<T, SpectrumTexture>) return has(name, index, spectrumTextureIndices);
+            else return false;
+        }
+
+        bool hasImage(const std::string & name, ColorSpace & space, int & index, int & width, int & height, int & channels) const {
+            int dataIndex;
+
+            if (!has(name, dataIndex, imageDataIndices)) return false;
+
+            space = imageSpaces[dataIndex];
+            index = imageIndices[dataIndex];
+            width = imageWidths[dataIndex];
+            height = imageHeights[dataIndex];
+            channels = imageChannels[dataIndex];
+
+            return true;
+        }
+
+    private:
+        Payload & payload;
+
+        std::map<std::string, int> spectrumIndices;
+        std::map<std::string, int> complexSpectrumIndices;
+        std::map<std::string, int> objectIndices;
+        std::map<std::string, int> materialIndices;
+        std::map<std::string, int> scalarTextureIndices;
+        std::map<std::string, int> spectrumTextureIndices;
+
+        std::map<std::string, int> imageDataIndices;
+
+        std::vector<ColorSpace> imageSpaces;
+        std::vector<int> imageIndices, imageWidths, imageHeights, imageChannels;
+
+        template <typename T>
+        int add(const T & value, const std::string & name, std::vector<T> & container, std::map<std::string, int> & indices) {
+            if (!name.empty()) indices[name] = int(container.size());
+
+            container.push_back(value);
+
+            return int(container.size()) - 1;
+        }
+
+        bool has(const std::string & name, int & index, const std::map<std::string, int> & indices) const {
+            auto iterator = indices.find(name);
+
+            if (iterator == indices.end()) return false;
+
+            index = iterator->second;
+
+            return true;
+        }
+};
+
+class ParserValidator {
+    public:
+        ParserValidator(const ParserStream & s) : stream(s) {}
+
+        void validate(bool condition, const std::string & message) const { if (!condition) stream.raiseError(message); }
+
+        [[noreturn]] void valid(const std::string & parameter) const { stream.raiseError(prefix(parameter) + " is missing or invalid"); }
+
+        void valid(const std::string & parameter, bool condition) const { if (!condition) valid(parameter); }
+
+        template <typename T>
+        void positive(const std::string & parameter, T value) const { validate(value > 0, prefix(parameter) + " must be positive" + suffix(std::to_string(value))); }
+
+        template <typename T>
+        void nonNegative(const std::string & parameter, T value) const { validate(value >= 0, prefix(parameter) + " must be non-negative" + suffix(std::to_string(value))); }
+
+        template <typename T>
+        void nonZero(const std::string & parameter, T value) const { validate(std::fabs(value) > EPSILON_SQUARED, prefix(parameter) + " must be non-zero" + suffix(std::to_string(value))); }
+
+        template <typename T>
+        void atLeast(const std::string & parameter, T value, T min) const { validate(value >= min, prefix(parameter) + " must be at least " + std::to_string(min) + suffix(std::to_string(value))); }
+
+        template <typename T>
+        void atMost(const std::string & parameter, T value, T max) const { validate(value <= max, prefix(parameter) + " must be at most " + std::to_string(max) + suffix(std::to_string(value))); }
+
+        template <typename T>
+        void inRange(const std::string & parameter, T value, T min, T max) const {
+            atLeast(parameter, value, min);
+            atMost(parameter, value, max);
+        }
+
+        template <typename... Ts>
+        void defined(const std::string & parameter, const ParserRegistry & registry, const std::string & name, int & index) const { validate((registry.has<Ts>(name, index) || ...), prefix(parameter) + " is not defined"); }
+
+        template <typename... Ts>
+        void notDefined(const std::string & parameter, const ParserRegistry & registry, const std::string & name) const {
+            int index;
+
+            notDefined<Ts...>(parameter, registry, name, index);
+        }
+
+        template <typename... Ts>
+        void notDefined(const std::string & parameter, const ParserRegistry & registry, const std::string & name, int & index) const { validate((!registry.has<Ts>(name, index) && ...), prefix(parameter) + " is already defined"); }
+
+        void expected(const std::string & parameter, const std::string & value, const std::vector<std::string> & expectedValues) const {
+            bool found = false;
+
+            std::string comparisons = "";
+
+            for (int j = 0; j < int(expectedValues.size()); j++) {
+                if (expectedValues[j] == value) {
+                    found = true;
+                    break;
+                }
+
+                std::string comparison = "\"" + expectedValues[j] + "\"";
+
+                if (j != 0) {
+                    if (j == int(expectedValues.size()) - 1) {
+                        if (j == 1) comparison = " or " + comparison;
+                        else comparison = ", or " + comparison;
+                    }
+                    else comparison = ", " + comparison;
+                }
+
+                comparisons += comparison;
+            }
+
+            validate(found, (parameter.empty() ? "expected " : prefix(parameter) + " must be ") + comparisons + suffix("\"" + value + "\""));
+        }
+
+        void unexpected(char token) const { validate(token == '\0', "unexpected token \"" + std::string(1, token) + "\""); }
+
+    private:
+        const ParserStream & stream;
+
+        static std::string prefix(const std::string & parameter) { return "'" + parameter + "'"; }
+
+        static std::string suffix(const std::string & value) { return ", got " + value; }
+};
+
 class Parser {
     public:
         static bool hasValidExtension(const std::string & output) { return hasExtension(output, ".lrd"); }
@@ -56,250 +451,241 @@ class Parser {
             }
         }
 
+        static bool parseUpsamplingTables(const std::string & input, std::vector<float> & scale, std::vector<float> & lut) {
+            std::ifstream inputFile(input, std::ios::binary);
+
+            if (!inputFile) return false;
+
+            char header[4];
+
+            inputFile.read(header, 4);
+
+            if (!inputFile || std::memcmp(header, "SPEC", 4) != 0) return false;
+
+            uint32_t resolution;
+
+            inputFile.read(reinterpret_cast<char *>(&resolution), sizeof(uint32_t));
+
+            if (!inputFile || resolution != UPSAMPLING_RESOLUTION) return false;
+
+            inputFile.read(reinterpret_cast<char *>(scale.data()), sizeof(float) * resolution);
+            inputFile.read(reinterpret_cast<char *>(lut.data()), sizeof(float) * 3 * resolution * resolution * resolution * 3);
+
+            if (!inputFile) return false;
+
+            return true;
+        }
+
         static void parseLRD(const std::string & input, Renderer & renderer, Payload & payload) {
             std::ifstream inputFile(input);
 
             if (!inputFile.is_open()) failedToOpenFileError(input);
 
+            bool render = false;
+
+            ParserRegistry registry(payload);
+
+            registry.add<DenseSpectrum<Float>>(DenseSpectrum<Float>(0));
+            registry.add<SpectrumTexture>(SpectrumTexture::makeConstant(0), "default");
+            registry.add<ScalarTexture>(ScalarTexture::makeConstant(0), "default");
+            registry.add<Material>(Material::makeLambertian(0), "default");
+            registry.add<Object>(Object::makeSphere(0, Vector<Float>(), 1), "default");
+
+            payload.background = Background::makeEquirectangular(0);
+
             std::string line;
-            int lineNumber = 0;
-            bool renderCommandFound = false;
-            bool backgroundCommandFound = false;
-            bool cameraCommandFound = false;
-            bool instanceCommandFound = false;
 
-            std::vector<int> objectOffsets;
-
-            std::map<std::string, int> spectrumIndices;
-            std::map<std::string, int> complexSpectrumIndices;
-            std::map<std::string, int> objectIndices;
-            std::map<std::string, int> materialIndices;
-            std::map<std::string, int> scalarTextureIndices;
-            std::map<std::string, int> spectrumTextureIndices;
-
-            std::map<std::string, int> imageDataIndices;
-
-            std::vector<ColorSpace> imageSpaces;
-            std::vector<int> imageIndices, imageWidths, imageHeights, imageChannels;
-
-            payload.spectra.push_back(DenseSpectrum<Float>(0.5));
-
-            payload.spectrumTextures.push_back(SpectrumTexture::makeConstant(0));
-            spectrumTextureIndices["default"] = 0;
-
-            payload.scalarTextures.push_back(ScalarTexture::makeConstant(0.5));
-            scalarTextureIndices["default"] = 0;
-
-            payload.materials.push_back(Material::makeLambertian(0));
-            materialIndices["default"] = 0;
+            ParserStream stream(input);
+            ParserValidator validator(stream);
 
             while (std::getline(inputFile, line)) {
-                lineNumber++;
+                stream.load(stripComments(line));
 
-                line = preprocess(line);
-                if (line.empty()) continue;
+                if (!stream.hasNext<char>()) continue;
 
-                std::stringstream ss(line);
+                std::string command = stream.next<std::string>();
 
-                std::string command;
-                if (!(ss >> command)) continue;
+                if (!render) validator.expected("", command, {"Render"});
 
-                if (!renderCommandFound && command != "Render") fileError(input, lineNumber, "expected \"Render\", got \"" + command + "\"");
+                validator.expected("", command, {"Background", "Camera", "Instance", "Material", "Render", "Object", "Texture"});
 
                 if (command == "Render") {
-                    renderCommandFound = true;
+                    render = true;
 
-                    std::string spaceString = parseValue<std::string>(ss, input, lineNumber, "space");
+                    std::string spaceString = stream.next<std::string>("space");
 
-                    ColorSpace space;
+                    validator.expected("space", spaceString, {"srgb", "rec2020", "aces2065-1"});
 
-                    if (spaceString == "srgb") space = ColorSpace::SRGB;
-                    else if (spaceString == "rec2020") space = ColorSpace::REC2020;
+                    ColorSpace space = ColorSpace::SRGB;
+
+                    if (spaceString == "rec2020") space = ColorSpace::REC2020;
                     else if (spaceString == "aces2065-1") space = ColorSpace::ACES2065;
-                    else fileError(input, lineNumber, "'space' must be \"aces2065-1\", \"rec2020\", or \"srgb\"");
 
-                    int width = parseValue<int>(ss, input, lineNumber, "width");
-                    if (width <= 0) fileError(input, lineNumber, "'width' must be positive, got " + std::to_string(width));
+                    int width = stream.next<int>("width");
 
-                    int height = parseValue<int>(ss, input, lineNumber, "height");
-                    if (height <= 0) fileError(input, lineNumber, "'height' must be positive, got " + std::to_string(height));
+                    validator.positive("width", width);
 
-                    int samples = parseValue<int>(ss, input, lineNumber, "samples");
-                    if (samples < 1) fileError(input, lineNumber, "'samples' must be at least 1, got " + std::to_string(samples));
+                    int height = stream.next<int>("height");
 
+                    validator.positive("height", height);
+
+                    int samples = stream.next<int>("samples");
                     int sqrtSamples = int(std::sqrt(samples));
-                    if (sqrtSamples * sqrtSamples != samples) fileError(input, lineNumber, "'samples' must be a perfect square, got " + std::to_string(samples));
 
-                    int depth = parseValue<int>(ss, input, lineNumber, "depth");
-                    if (depth < 0) fileError(input, lineNumber, "'depth' must be non-negative, got " + std::to_string(depth));
+                    validator.atLeast("samples", samples, 1);
+                    validator.validate(samples == sqrtSamples * sqrtSamples, "'samples' must be a perfect square");
 
-                    Float lambdaMin = parseValue<Float>(ss, input, lineNumber, "lambdaMin");
-                    if (lambdaMin < 0) fileError(input, lineNumber, "'lambdaMin' must be non-negative, got " + std::to_string(lambdaMin));
-                    if (lambdaMin < CIE_LAMBDA_MIN) fileError(input, lineNumber, "'lambdaMin' must be at least " + std::to_string(CIE_LAMBDA_MIN) + ", got " + std::to_string(lambdaMin));
+                    int depth = stream.next<int>("depth");
 
-                    Float lambdaMax = parseValue<Float>(ss, input, lineNumber, "lambdaMax");
-                    if (lambdaMax < 0) fileError(input, lineNumber, "'lambdaMax' must be non-negative, got " + std::to_string(lambdaMax));
-                    if (lambdaMax > CIE_LAMBDA_MAX) fileError(input, lineNumber, "'lambdaMax' must be at most " + std::to_string(CIE_LAMBDA_MAX) + ", got " + std::to_string(lambdaMax));
+                    validator.nonNegative("depth", depth);
 
-                    if (lambdaMin >= lambdaMax) fileError(input, lineNumber, "'lambdaMin' must be at most 'lambdaMax', got " + std::to_string(lambdaMin) + " and " + std::to_string(lambdaMax));
+                    Float lambdaMin = stream.next<Float>("lambdaMin");
 
-                    uint64_t seed = parseValue<uint64_t>(ss, input, lineNumber, "seed");
+                    validator.inRange("lambdaMin", lambdaMin, Float(CIE_LAMBDA_MIN), Float(CIE_LAMBDA_MAX));
+
+                    Float lambdaMax = stream.next<Float>("lambdaMax");
+
+                    validator.inRange("lambdaMax", lambdaMax, Float(CIE_LAMBDA_MIN), Float(CIE_LAMBDA_MAX));
+                    validator.validate(lambdaMin <= lambdaMax, "'lambdaMin' must be at most 'lambdaMax', got " + std::to_string(lambdaMin) + " and " + std::to_string(lambdaMax));
+
+                    uint64_t seed = stream.next<uint64_t>("seed");
 
                     renderer = Renderer(space, width, height, samples, sqrtSamples, depth, lambdaMin, lambdaMax, seed);
                 }
                 else if (command == "Texture") {
-                    std::string name = parseValue<std::string>(ss, input, lineNumber, "name");
-                    std::string type = parseValue<std::string>(ss, input, lineNumber, "type");
-                    std::string subtype = parseValue<std::string>(ss, input, lineNumber, "subtype");
+                    std::string name = stream.next<std::string>("name");
 
-                    if (scalarTextureIndices.contains(name) || spectrumTextureIndices.contains(name)) fileError(input, lineNumber, "'name' is already defined");
+                    validator.notDefined<ScalarTexture, SpectrumTexture>("name", registry, name);
+
+                    std::string type = stream.next<std::string>("type");
+
+                    validator.expected("type", type, {"scalar", "spectrum"});
 
                     if (type == "scalar") {
-                        if (subtype == "constant") payload.scalarTextures.push_back(ScalarTexture::makeConstant(parseValue<Float>(ss, input, lineNumber, "value")));
+                        ScalarTexture texture;
+
+                        std::string subtype = stream.next<std::string>("subtype");
+
+                        validator.expected("subtype", subtype, {"constant", "image", "perlin", "worley"});
+
+                        if (subtype == "constant") texture = ScalarTexture::makeConstant(stream.next<Float>("value"));
                         else if (subtype == "perlin" || subtype == "worley") {
-                            Float min = parseValue<Float>(ss, input, lineNumber, "min");
-                            Float max = parseValue<Float>(ss, input, lineNumber, "max");
-                            Float frequency = parseValue<Float>(ss, input, lineNumber, "frequency");
+                            Float min = stream.next<Float>("min");
+                            Float max = stream.next<Float>("max");
 
-                            if (min > max) fileError(input, lineNumber, "'min' must be at most 'max', got " + std::to_string(min) + " and " + std::to_string(max));
+                            validator.validate(min <= max, "'min' must be at most 'max', got " + std::to_string(min) + " and " + std::to_string(max));
 
-                            if (subtype == "perlin") payload.scalarTextures.push_back(ScalarTexture::makePerlin(min, max, frequency));
-                            else if (subtype == "worley") payload.scalarTextures.push_back(ScalarTexture::makeWorley(min, max, frequency));
+                            Float frequency = stream.next<Float>("frequency");
+
+                            if (subtype == "perlin") texture = ScalarTexture::makePerlin(min, max, frequency);
+                            else if (subtype == "worley") texture = ScalarTexture::makeWorley(min, max, frequency);
                         }
                         else if (subtype == "image") {
-                            std::string imageFile = parseValue<std::string>(ss, input, lineNumber, "file");
+                            std::string file = stream.next<std::string>("file");
 
-                            ColorSpace inputSpace;
-                            int imageIndex = -1, width, height;
+                            ColorSpace space;
+                            int index, width, height, channels;
 
-                            if (imageDataIndices.contains(imageFile)) {
-                                int imageDataIndex = imageDataIndices.at(imageFile);
+                            if (!registry.hasImage(file, space, index, width, height, channels) || channels != 1) {
+                                std::vector<Float> image = parseImage(file, 1, space, width, height);
 
-                                if (imageChannels[imageDataIndex] == 1) {
-                                    inputSpace = imageSpaces[imageDataIndex];
-                                    imageIndex = imageIndices[imageDataIndex];
-                                    width = imageWidths[imageDataIndex];
-                                    height = imageHeights[imageDataIndex];
-                                }
+                                index = registry.addImage(image, space, width, height, 1, file);
                             }
 
-                            if (imageIndex == -1) {
-                                imageIndex = int(payload.images.size());
-
-                                parseImage(imageFile, payload, inputSpace, width, height, 1);
-
-                                imageDataIndices[imageFile] = int(imageIndices.size());
-                                imageSpaces.push_back(inputSpace);
-                                imageIndices.push_back(imageIndex);
-                                imageWidths.push_back(width);
-                                imageHeights.push_back(height);
-                                imageChannels.push_back(1);
-                            }
-
-                            payload.scalarTextures.push_back(ScalarTexture::makeImage(imageIndex, width, height));
+                            texture = ScalarTexture::makeImage(index, width, height);
                         }
-                        else fileError(input, lineNumber, "'subtype' must be \"constant\", \"image\", \"perlin\", or \"worley\"");
 
-                        scalarTextureIndices[name] = int(payload.scalarTextures.size() - 1);
+                        registry.add<ScalarTexture>(texture, name);
                     }
                     else if (type == "spectrum") {
-                        if (subtype == "constant") payload.spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, input, lineNumber, "spectrum", payload, spectrumIndices, complexSpectrumIndices)));
+                        SpectrumTexture texture;
+
+                        std::string subtype = stream.next<std::string>("subtype");
+
+                        validator.expected("subtype", subtype, {"constant", "checker", "image", "scalar"});
+
+                        if (subtype == "constant") texture = SpectrumTexture::makeConstant(parseSpectrum<Float>("value", stream, validator, registry));
                         else if (subtype == "checker") {
-                            int value1 = parseSpectrum<Float>(ss, input, lineNumber, "value1", payload, spectrumIndices, complexSpectrumIndices);
-                            int value2 = parseSpectrum<Float>(ss, input, lineNumber, "value2", payload, spectrumIndices, complexSpectrumIndices);
+                            int value1 = parseSpectrum<Float>("value1", stream, validator, registry);
+                            int value2 = parseSpectrum<Float>("value2", stream, validator, registry);
 
-                            Float scale = parseValue<Float>(ss, input, lineNumber, "scale");
+                            Float scale = stream.next<Float>("scale");
 
-                            if (std::fabs(scale) < EPSILON_SQUARED) fileError(input, lineNumber, "'scale' must be non-zero, got " + std::to_string(scale));
+                            validator.nonZero("scale", scale);
 
-                            payload.spectrumTextures.push_back(SpectrumTexture::makeChecker(value1, value2, scale));
+                            texture = SpectrumTexture::makeChecker(value1, value2, scale);
                         }
                         else if (subtype == "scalar") {
-                            std::string scalarTextureName = parseValue<std::string>(ss, input, lineNumber, "texture");
+                            std::string scalarTextureName = stream.next<std::string>("texture");
 
                             int scalarTextureIndex;
 
-                            if (scalarTextureIndices.contains(scalarTextureName)) scalarTextureIndex = scalarTextureIndices.at(scalarTextureName);
-                            else fileError(input, lineNumber, "'texture' is not defined");
+                            validator.defined<ScalarTexture>("texture", registry, scalarTextureName, scalarTextureIndex);
 
-                            payload.spectrumTextures.push_back(SpectrumTexture::makeScalar(scalarTextureIndex));
+                            texture = SpectrumTexture::makeScalar(scalarTextureIndex);
                         }
                         else if (subtype == "image") {
-                            std::string imageFile = parseValue<std::string>(ss, input, lineNumber, "file");
+                            std::string file = stream.next<std::string>("file");
 
-                            ColorSpace inputSpace;
-                            int imageIndex = -1, width, height;
+                            ColorSpace space;
+                            int index, width, height, channels;
 
-                            if (imageDataIndices.contains(imageFile)) {
-                                int imageDataIndex = imageDataIndices.at(imageFile);
+                            if (!registry.hasImage(file, space, index, width, height, channels) || channels != 3) {
+                                std::vector<Float> image = parseImage(file, 3, space, width, height);
 
-                                if (imageChannels[imageDataIndex] == 3) {
-                                    inputSpace = imageSpaces[imageDataIndex];
-                                    imageIndex = imageIndices[imageDataIndex];
-                                    width = imageWidths[imageDataIndex];
-                                    height = imageHeights[imageDataIndex];
-                                }
+                                index = registry.addImage(image, space, width, height, 3, file);
                             }
 
-                            if (imageIndex == -1) {
-                                imageIndex = int(payload.images.size());
-
-                                parseImage(imageFile, payload, inputSpace, width, height, 3);
-
-                                imageDataIndices[imageFile] = int(imageIndices.size());
-                                imageSpaces.push_back(inputSpace);
-                                imageIndices.push_back(imageIndex);
-                                imageWidths.push_back(width);
-                                imageHeights.push_back(height);
-                                imageChannels.push_back(3);
-                            }
-
-                            payload.spectrumTextures.push_back(SpectrumTexture::makeImage(inputSpace, imageIndex, width, height));
+                            texture = SpectrumTexture::makeImage(space, index, width, height);
                         }
-                        else fileError(input, lineNumber, "'subtype' must be \"constant\", \"checker\", \"image\", or \"scalar\"");
 
-                        spectrumTextureIndices[name] = int(payload.spectrumTextures.size() - 1);
+                        registry.add<SpectrumTexture>(texture, name);
                     }
-                    else fileError(input, lineNumber, "'type' must be \"scalar\" or \"spectrum\"");
                 }
                 else if (command == "Material") {
-                    std::string name = parseValue<std::string>(ss, input, lineNumber, "name");
-                    std::string type = parseValue<std::string>(ss, input, lineNumber, "type");
+                    Material material;
 
-                    if (materialIndices.contains(name)) fileError(input, lineNumber, "'name' is already defined");
+                    std::string name = stream.next<std::string>("name");
+
+                    validator.notDefined<Material>("name", registry, name);
+
+                    std::string type = stream.next<std::string>("type");
+
+                    validator.expected("type", type, {"dielectric", "emissive", "lambertian", "mirror", "thinfilm"});
 
                     if (type == "lambertian" || type == "mirror") {
-                        int albedo = parseSpectrumTexture(ss, input, lineNumber, "albedo", payload, spectrumIndices, complexSpectrumIndices, scalarTextureIndices, spectrumTextureIndices);
+                        int albedo = parseSpectrumTexture("albedo", stream, validator, registry);
 
-                        Float minAlbedo = payload.spectrumTextures[albedo].min(payload.spectra.data(), payload.scalarTextures.data(), payload.images.data());
-                        Float maxAlbedo = payload.spectrumTextures[albedo].max(payload.spectra.data(), payload.scalarTextures.data(), payload.images.data());
+                        const SpectrumTexture & albedoTexture = payload.spectrumTextures[albedo];
 
-                        if (minAlbedo < 0) fileError(input, lineNumber, "'albedo' must be positive, got " + std::to_string(minAlbedo));
-                        else if (maxAlbedo > 1) fileError(input, lineNumber, "'albedo' must be at most 1, got " + std::to_string(maxAlbedo));
+                        validator.atLeast("albedo", albedoTexture.min(payload.spectra.data(), payload.scalarTextures.data(), payload.images.data()), Float(0));
+                        validator.atMost("albedo", albedoTexture.max(payload.spectra.data(), payload.scalarTextures.data(), payload.images.data()), Float(1));
 
-                        if (type == "lambertian") payload.materials.push_back(Material::makeLambertian(albedo));
-                        else if (type == "mirror") payload.materials.push_back(Material::makeMirror(albedo));
+                        if (type == "lambertian") material = Material::makeLambertian(albedo);
+                        else if (type == "mirror") material = Material::makeMirror(albedo);
                     }
                     else if (type == "dielectric") {
-                        int n0 = parseSpectrum<Float>(ss, input, lineNumber, "n0", payload, spectrumIndices, complexSpectrumIndices);
-                        int n1 = parseSpectrum<Float>(ss, input, lineNumber, "n1", payload, spectrumIndices, complexSpectrumIndices);
+                        int n0 = parseSpectrum<Float>("n0", stream, validator, registry);
 
-                        for (int i = 0; i < CIE_LAMBDA_BINS; i++) {
-                            if (payload.spectra[n0][i] <= 0) fileError(input, lineNumber, "'n0' must be positive, got " + std::to_string(payload.spectra[n0][i]));
-                            if (payload.spectra[n1][i] <= 0) fileError(input, lineNumber, "'n1' must be positive, got " + std::to_string(payload.spectra[n1][i]));
-                        }
+                        for (int i = 0; i < CIE_LAMBDA_BINS; i++)
+                            validator.positive("n0", payload.spectra[n0][i]);
 
-                        payload.materials.push_back(Material::makeDielectric(n0, n1));
+                        int n1 = parseSpectrum<Float>("n1", stream, validator, registry);
+
+                        for (int i = 0; i < CIE_LAMBDA_BINS; i++)
+                            validator.positive("n1", payload.spectra[n1][i]);
+
+                        material = Material::makeDielectric(n0, n1);
                     }
-                    else if (type == "emissive") payload.materials.push_back(Material::makeEmissive(parseSpectrumTexture(ss, input, lineNumber, "emission", payload, spectrumIndices, complexSpectrumIndices, scalarTextureIndices, spectrumTextureIndices)));
+                    else if (type == "emissive") material = Material::makeEmissive(parseSpectrumTexture("emission", stream, validator, registry));
                     else if (type == "thinfilm") {
-                        std::vector<int> n = parseSpectrumArray(ss, input, lineNumber, "n", payload, spectrumIndices, complexSpectrumIndices);
+                        std::vector<int> n = parseArray<DenseSpectrum<Complex>>("n", stream, validator, registry);
 
-                        if (n.size() < 2) fileError(input, lineNumber, "'n' must have at least 2 entries, got " + std::to_string(n.size()));
+                        validator.validate(n.size() >= 2, "'n' must have at least 2 entries, got " + std::to_string(n.size()));
 
                         for (int i = 0; i < int(n.size()); i++)
                             for (int j = 0; j < CIE_LAMBDA_BINS; j++)
-                                if (payload.complexSpectra[n[i]][j].real() <= 0) fileError(input, lineNumber, "'n' must be positive, got " + std::to_string(payload.complexSpectra[n[i]][j].real()) + " + " + std::to_string(payload.complexSpectra[n[i]][j].imag()) + "i");
+                                validator.positive("n", payload.complexSpectra[n[i]][j].real());
 
                         int nOffset = int(payload.materialProperties.size());
 
@@ -307,152 +693,131 @@ class Parser {
 
                         int numLayers = int(n.size() - 2);
 
-                        std::vector<std::string> dNames = parseArray<std::string>(ss, input, lineNumber, "d");
-                        if ((int)dNames.size() != numLayers) fileError(input, lineNumber, "'d' must have " + std::to_string(numLayers) + " entries, got " + std::to_string(dNames.size()));
+                        std::vector<int> d = parseArray<ScalarTexture>("d", stream, validator, registry);
+
+                        validator.validate(int(d.size()) == numLayers, "'d' must have " + std::to_string(numLayers) + " entries, got " + std::to_string(d.size()));
 
                         int dOffset = int(payload.materialProperties.size());
 
-                        for (int i = 0; i < numLayers; i++) {
-                            try {
-                                payload.scalarTextures.push_back(ScalarTexture::makeConstant(stoF(dNames[i])));
+                        payload.materialProperties.insert(payload.materialProperties.end(), d.begin(), d.end());
 
-                                payload.materialProperties.push_back(int(payload.scalarTextures.size() - 1));
-                            }
-                            catch (const std::exception &) {
-                                if (scalarTextureIndices.contains(dNames[i])) payload.materialProperties.push_back(scalarTextureIndices.at(dNames[i]));
-                                else fileError(input, lineNumber, "'d' is not defined");
-                            }
+                        for (int i = 0; i < numLayers; i++)
+                            validator.positive("d", payload.scalarTextures[payload.materialProperties[dOffset + i]].min(payload.images.data()));
 
-                            if (payload.scalarTextures[payload.materialProperties[dOffset + i]].min(payload.images.data()) <= 0) fileError(input, lineNumber, "'d' must be positive, got " + std::to_string(payload.scalarTextures[payload.materialProperties[dOffset + i]].min(payload.images.data())));
-                        }
-
-                        payload.materials.push_back(Material::makeThinFilm(numLayers, nOffset, dOffset));
+                        material = Material::makeThinFilm(numLayers, nOffset, dOffset);
                     }
-                    else fileError(input, lineNumber, "'type' must be \"dielectric\", \"emissive\", \"lambertian\", \"mirror\", or \"thinfilm\"");
 
-                    materialIndices[name] = int(payload.materials.size()) - 1;
+                    registry.add<Material>(material, name);
                 }
                 else if (command == "Object") {
-                    std::string name = parseValue<std::string>(ss, input, lineNumber, "name");
-                    std::string type = parseValue<std::string>(ss, input, lineNumber, "type");
-                    std::string materialName = parseValue<std::string>(ss, input, lineNumber, "material");
+                    Object object;
 
-                    if (name == "default") fileError(input, lineNumber, "'name' is already defined");
-                    else if (objectIndices.contains(name)) {
-                        if (objectIndices.at(name) != int(objectOffsets.size()) - 1) fileError(input, lineNumber, "'name' is already defined");
-                    }
-                    else {
-                        objectIndices[name] = int(objectOffsets.size());
-                        objectOffsets.push_back(int(payload.objects.size()));
-                    }
+                    std::string name = stream.next<std::string>("name");
+
+                    int index;
+
+                    validator.validate(!registry.has<Object>(name, index) || index == int(payload.objectOffsets.size()) - 1, "'name' is already defined");
+
+                    std::string type = stream.next<std::string>("type");
+
+                    validator.expected("type", type, {"mesh", "quad", "sphere", "tri"});
+
+                    std::string materialName = stream.next<std::string>("material");
 
                     int material;
 
-                    if (materialIndices.contains(materialName)) material = materialIndices.at(materialName);
-                    else fileError(input, lineNumber, "'material' is not defined");
+                    validator.defined<Material>("material", registry, materialName, material);
 
                     if (type == "sphere") {
-                        Vector<Float> center = parseVector(ss, input, lineNumber, "center");
-                        Float radius = parseValue<Float>(ss, input, lineNumber, "radius");
+                        Vector<Float> center = stream.next<Vector<Float>>("center");
+                        Float radius = stream.next<Float>("radius");
 
-                        if (radius <= 0) fileError(input, lineNumber, "'radius' must be positive, got " + std::to_string(radius));
+                        validator.positive("radius", radius);
 
-                        payload.objects.push_back(Object::makeSphere(material, center, radius));
+                        registry.add<Object>(Object::makeSphere(material, center, radius), name);
                     }
                     else if (type == "quad" || type == "tri") {
-                        Vector<Float> corner = parseVector(ss, input, lineNumber, "corner");
-                        Vector<Float> horizontal = parseVector(ss, input, lineNumber, "horizontal");
-                        Vector<Float> vertical = parseVector(ss, input, lineNumber, "vertical");
+                        Vector<Float> corner = stream.next<Vector<Float>>("corner");
+                        Vector<Float> horizontal = stream.next<Vector<Float>>("horizontal");
 
-                        if (horizontal.length() < EPSILON_SQUARED) fileError(input, lineNumber, "'horizontal' must be non-zero");
-                        if (vertical.length() < EPSILON_SQUARED) fileError(input, lineNumber, "'vertical' must be non-zero");
-                        if (cross(horizontal, vertical).length() < EPSILON_SQUARED) fileError(input, lineNumber, "'horizontal' and 'vertical' must be non-parallel");
+                        validator.nonZero("horizontal", horizontal.length());
 
-                        if (type == "quad") payload.objects.push_back(Object::makeQuad(material, corner, horizontal, vertical));
-                        else if (type == "tri") payload.objects.push_back(Object::makeTri(material, corner, horizontal, vertical));
+                        Vector<Float> vertical = stream.next<Vector<Float>>("vertical");
+
+                        validator.nonZero("vertical", vertical.length());
+                        validator.validate(cross(horizontal, vertical).length() > EPSILON_SQUARED, "'horizontal' and 'vertical' must be non-parallel");
+
+                        if (type == "quad") registry.add<Object>(Object::makeQuad(material, corner, horizontal, vertical), name);
+                        else if (type == "tri") registry.add<Object>(Object::makeTri(material, corner, horizontal, vertical), name);
                     }
                     else if (type == "mesh") {
-                        std::string objFile = parseValue<std::string>(ss, input, lineNumber, "file");
+                        std::string file = stream.next<std::string>("file");
 
-                        if (hasExtension(objFile, ".obj")) parseOBJ(objFile, payload, material);
-                        else fileError(objFile, "invalid file extension");
+                        registry.addObjects(parseOBJ(file, material), name);
                     }
-                    else fileError(input, lineNumber, "'type' must be \"quad\", \"sphere\", or \"tri\"");
                 }
                 else if (command == "Instance") {
-                    instanceCommandFound = true;
+                    std::string objectName = stream.next<std::string>("object");
 
-                    std::string objectName = parseValue<std::string>(ss, input, lineNumber, "object");
-                    std::string materialName = parseValue<std::string>(ss, input, lineNumber, "material");
+                    int objectIndex;
 
-                    int objectIndex, object, count;
+                    validator.defined<Object>("object", registry, objectName, objectIndex);
 
-                    if (objectIndices.contains(objectName)) {
-                        objectIndex = objectIndices.at(objectName);
+                    std::string materialName = stream.next<std::string>("material");
 
-                        object = objectOffsets[objectIndex];
-                        count = objectIndex < int(objectOffsets.size()) - 1 ? objectOffsets[objectIndex + 1] - object : int(payload.objects.size()) - object;
-                    }
-                    else fileError(input, lineNumber, "'object' is not defined");
+                    int object, count, material = -1;
 
-                    int material = -1;
+                    if (materialName != "default") validator.defined<Material>("material", registry, materialName, material);
 
-                    if (materialName != "default") {
-                        if (materialIndices.contains(materialName)) material = materialIndices.at(materialName);
-                        else fileError(input, lineNumber, "'material' is not defined");
-                    }
+                    object = payload.objectOffsets[objectIndex];
+                    count = objectIndex < int(payload.objectOffsets.size()) - 1 ? payload.objectOffsets[objectIndex + 1] - object : int(payload.objects.size()) - object;
 
-                    Vector<Float> translation = parseVector(ss, input, lineNumber, "translation");
-                    Vector<Float> rotation = parseVector(ss, input, lineNumber, "rotation");
-                    Vector<Float> scale = parseVector(ss, input, lineNumber, "scale");
+                    Vector<Float> translation = stream.next<Vector<Float>>("translation");
+                    Vector<Float> rotation = stream.next<Vector<Float>>("rotation");
+                    Vector<Float> scale = stream.next<Vector<Float>>("scale");
 
-                    if (std::fabs(scale[0]) < EPSILON_SQUARED || std::fabs(scale[1]) < EPSILON_SQUARED || std::fabs(scale[2]) < EPSILON_SQUARED) fileError(input, lineNumber, "'scale' must be non-zero");
+                    validator.nonZero("scale", scale[0]);
+                    validator.nonZero("scale", scale[1]);
+                    validator.nonZero("scale", scale[2]);
 
                     Instance instance(object, count, material, translation, rotation, scale);
 
                     if (std::fabs(scale[0] - scale[1]) > EPSILON_SQUARED || std::fabs(scale[1] - scale[2]) > EPSILON_SQUARED)
                         for (int i = 0; i < count; i++)
-                            if (payload.materials[instance.getMaterial(payload.objects.data(), i)].isEmissive()) fileError(input, lineNumber, "'scale' must be uniform for emissive objects");
+                            validator.validate(!payload.materials[instance.getMaterial(payload.objects.data(), i)].isEmissive(), "'scale' must be uniform for emissive objects");
 
                     payload.instances.push_back(instance);
                 }
                 else if (command == "Background") {
-                    backgroundCommandFound = true;
+                    std::string type = stream.next<std::string>("type");
 
-                    std::string type = parseValue<std::string>(ss, input, lineNumber, "type");
+                    validator.expected("type", type, {"equirectangular"});
 
-                    if (type == "equirectangular") payload.background = Background::makeEquirectangular(parseSpectrumTexture(ss, input, lineNumber, "background", payload, spectrumIndices, complexSpectrumIndices, scalarTextureIndices, spectrumTextureIndices));
-                    else fileError(input, lineNumber, "'type' must be \"equirectangular\"");
+                    if (type == "equirectangular") payload.background = Background::makeEquirectangular(parseSpectrumTexture("background", stream, validator, registry));
                 }
                 else if (command == "Camera") {
-                    cameraCommandFound = true;
+                    Vector<Float> position = stream.next<Vector<Float>>("position");
+                    Vector<Float> corner = stream.next<Vector<Float>>("corner");
+                    Vector<Float> horizontal = stream.next<Vector<Float>>("horizontal");
 
-                    Vector<Float> position = parseVector(ss, input, lineNumber, "position");
-                    Vector<Float> corner = parseVector(ss, input, lineNumber, "corner");
-                    Vector<Float> horizontal = parseVector(ss, input, lineNumber, "horizontal");
-                    Vector<Float> vertical = parseVector(ss, input, lineNumber, "vertical");
+                    validator.nonZero("horizontal", horizontal.length());
 
-                    if (horizontal.length() < EPSILON_SQUARED) fileError(input, lineNumber, "'horizontal' must be non-zero");
-                    if (vertical.length() < EPSILON_SQUARED) fileError(input, lineNumber, "'vertical' must be non-zero");
-                    if (cross(horizontal, vertical).length() < EPSILON_SQUARED) fileError(input, lineNumber, "'horizontal' and 'vertical' must be non-parallel");
+                    Vector<Float> vertical = stream.next<Vector<Float>>("vertical");
+
+                    validator.nonZero("vertical", vertical.length());
+                    validator.validate(cross(horizontal, vertical).length() > EPSILON_SQUARED, "'horizontal' and 'vertical' must be non-parallel");
 
                     renderer.setCamera(position, corner, horizontal, vertical);
                 }
-                else fileError(input, lineNumber, "expected \"Background\", \"Camera\", \"Instance\", \"Material\", \"Render\", \"Object\", or \"Texture\", got \"" + command + "\"");
 
-                if (ss >> command) fileError(input, lineNumber, "unexpected token \"" + command + "\"");
+                validator.unexpected(stream.peek<char>());
             }
 
             inputFile.close();
 
-            if (!renderCommandFound) fileError(input, "expected \"Render\"");
-            if (!backgroundCommandFound) fileError(input, "expected \"Background\"");
-            if (!cameraCommandFound) fileError(input, "expected \"Camera\"");
-            if (!instanceCommandFound) fileError(input, "expected \"Instance\"");
+            payload.objectOffsets.push_back(int(payload.objects.size()));
 
-            objectOffsets.push_back(int(payload.objects.size()));
-
-            payload.nodes = BVH::makeBVH(payload.objects, payload.instances, objectOffsets);
+            payload.nodes = BVH::makeBVH(payload.objects, payload.instances, payload.objectOffsets);
 
             Vector<Float> sceneCenter;
             Float sceneRadius = 0;
@@ -498,204 +863,35 @@ class Parser {
 
             payload.lightPowers.push_back(backgroundLightPower);
             payload.totalLightPower += backgroundLightPower;
-        }
 
-        static bool parseUpsamplingTables(const std::string & input, std::vector<float> & scale, std::vector<float> & lut) {
-            std::ifstream inputFile(input, std::ios::binary);
-
-            if (!inputFile) return false;
-
-            char header[4];
-
-            inputFile.read(header, 4);
-
-            if (!inputFile || std::memcmp(header, "SPEC", 4) != 0) return false;
-
-            uint32_t resolution;
-
-            inputFile.read(reinterpret_cast<char *>(&resolution), sizeof(uint32_t));
-
-            if (!inputFile || resolution != UPSAMPLING_RESOLUTION) return false;
-
-            inputFile.read(reinterpret_cast<char *>(scale.data()), sizeof(float) * resolution);
-            inputFile.read(reinterpret_cast<char *>(lut.data()), sizeof(float) * 3 * resolution * resolution * resolution * 3);
-
-            if (!inputFile) return false;
-
-            return true;
+            if (payload.totalLightPower < EPSILON_SQUARED) payload.totalLightPower = 1;
         }
 
     private:
-        static std::string preprocess(const std::string & s) {
+        static std::string stripComments(const std::string & s) {
             size_t commentPos = s.find('#');
-            std::string stripped = commentPos == std::string::npos ? s : s.substr(0, commentPos);
 
-            std::string result;
-
-            for (char c : stripped) {
-                if (c == '(' || c == ')' || c == '[' || c == ']') {
-                    result += ' ';
-                    result += c;
-                    result += ' ';
-                }
-                else result += c;
-            }
-
-            return result;
-        }
-
-        static Float stoF(const std::string & s, size_t * index = nullptr) {
-            size_t localIndex = 0;
-
-            Float result = Float((sizeof(Float) == sizeof(float)) ? std::stof(s, &localIndex) : std::stod(s, &localIndex));
-
-            if (localIndex < s.length()) invalidArgumentError("stoF");
-
-            if (index) *index = localIndex;
-
-            return result;
+            return commentPos == std::string::npos ? s : s.substr(0, commentPos);
         }
 
         template <typename T>
-        static T parseValue(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter) {
-            T value;
-
-            if (!(ss >> value)) fileError(input, lineNumber, "'" + parameter + "' is missing or invalid");
-
-            return value;
-        }
-
-        static Complex parseComplex(std::string & token, const std::string & input, int lineNumber, const std::string & parameter) {
-            std::string message = "'" + parameter + "' is missing or invalid";
-
-            size_t index = 0;
-
-            double real = 0, imaginary = 0;
-
-            if (token == "i") {
-                imaginary = 1;
-                return Complex(real, imaginary);
-            }
-            else if (token == "-i") {
-                imaginary = -1;
-                return Complex(real, imaginary);
-            }
-
-            try {
-                real = std::stod(token, &index);
-
-                if (index < token.length()) {
-                    token = token.substr(index);
-
-                    if (token.back() == 'i') token.pop_back();
-                    else fileError(input, lineNumber, message);
-
-                    if (token == "+") imaginary = 1;
-                    else if (token == "-") imaginary = -1;
-                    else if (token.empty()) {
-                        imaginary = real;
-                        real = 0;
-                    }
-                    else imaginary = std::stod(token);
-                }
-            }
-            catch (const std::exception &) {
-                fileError(input, lineNumber, message);
-            }
-
-            return Complex(real, imaginary);
-        }
-
-        static Vector<Float> parseVector(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter) {
-            std::string message = "'" + parameter + "' is missing or invalid";
-
-            std::string token;
-
-            if (!(ss >> token) || token != "(") fileError(input, lineNumber, message);
-
-            Vector<Float> vector;
-
-            if (!(ss >> vector[0])) fileError(input, lineNumber, message);
-            if (!(ss >> vector[1])) fileError(input, lineNumber, message);
-            if (!(ss >> vector[2])) fileError(input, lineNumber, message);
-
-            if (!(ss >> token) || token != ")") fileError(input, lineNumber, message);
-
-            return vector;
-        }
-
-        template <typename T>
-        static int parseSpectrum(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, Payload & payload, std::map<std::string, int> & spectrumIndices, std::map<std::string, int> & complexSpectrumIndices) {
-            std::string message = "'" + parameter + "' is missing or invalid";
-
-            std::string token;
-
-            if (!(ss >> token)) fileError(input, lineNumber, message);
-
-            if (token != "(" && !hasExtension(token, ".spd")) {
-                if constexpr (std::is_same_v<T, Float>) {
-                    try {
-                        payload.spectra.push_back(DenseSpectrum<Float>(stoF(token)));
-
-                        return int(payload.spectra.size() - 1);
-                    } catch (const std::exception &) {
-                        fileError(input, lineNumber, message);
-                    }
-                }
-                else if constexpr (std::is_same_v<T, Complex>) {
-                    payload.complexSpectra.push_back(DenseSpectrum<Complex>(parseComplex(token, input, lineNumber, parameter)));
-
-                    return int(payload.complexSpectra.size() - 1);
-                }
-                else fileError(input, lineNumber, message);
-            }
+        static int parseSpectrum(const std::string & parameter, ParserStream & stream, const ParserValidator & validator, ParserRegistry & registry) {
+            if (stream.hasNext<T>()) return registry.add<DenseSpectrum<T>>(DenseSpectrum<T>(stream.next<T>(parameter)));
 
             std::map<double, T> samples;
 
-            if (token != "(") {
-                if (hasExtension(token, ".spd")) {
-                    if constexpr (std::is_same_v<T, Float>) {
-                        if (spectrumIndices.contains(token)) return spectrumIndices.at(token);
-                        else spectrumIndices[token] = int(payload.spectra.size());
-                    }
-                    else if constexpr (std::is_same_v<T, Complex>) {
-                        if (complexSpectrumIndices.contains(token)) return complexSpectrumIndices.at(token);
-                        else complexSpectrumIndices[token] = int(payload.complexSpectra.size());
-                    }
+            if (hasExtension(stream.peek<std::string>(), ".spd")) {
+                std::string file = stream.next<std::string>(parameter);
 
-                    parseSPD(token, samples);
-                }
-                else fileError(token, "invalid file extension");
+                int index;
+
+                if (registry.has<DenseSpectrum<T>>(file, index)) return index;
+
+                samples = parseSPD<T>(file);
             }
-            else {
-                while (ss >> token) {
-                    if (token == ")") break;
+            else samples = stream.next<std::map<double, T>>(parameter);
 
-                    double lambda;
-
-                    try {
-                        lambda = std::stod(token);
-                    } catch (const std::exception &) {
-                        fileError(input, lineNumber, message);
-                    }
-
-                    if (!(ss >> token)) fileError(input, lineNumber, message);
-
-                    if constexpr (std::is_same_v<T, Float>) {
-                        try {
-                            samples[lambda] = stoF(token);
-                        } catch (const std::exception &) {
-                            fileError(input, lineNumber, message);
-                        }
-                    }
-                    else if constexpr (std::is_same_v<T, Complex>) samples[lambda] = parseComplex(token, input, lineNumber, parameter);
-                    else fileError(input, lineNumber, message);
-                }
-
-                if (token != ")") fileError(input, lineNumber, message);
-            }
-
-            if (samples.empty()) fileError(input, lineNumber, message);
+            validator.valid("samples", !samples.empty());
 
             DenseSpectrum<T> spectrum;
 
@@ -719,96 +915,54 @@ class Parser {
                 }
             }
 
-            if constexpr (std::is_same_v<T, Float>) {
-                payload.spectra.push_back(spectrum);
+            return registry.add<DenseSpectrum<T>>(spectrum);
+        }
 
-                return int(payload.spectra.size() - 1);
-            }
-            else if constexpr (std::is_same_v<T, Complex>) {
-                payload.complexSpectra.push_back(spectrum);
+        static int parseScalarTexture(const std::string & parameter, ParserStream & stream, const ParserValidator & validator, ParserRegistry & registry) {
+            if (stream.hasNext<Float>()) return registry.add<ScalarTexture>(ScalarTexture::makeConstant(stream.next<Float>()));
 
-                return int(payload.complexSpectra.size() - 1);
+            int index;
+
+            validator.defined<ScalarTexture>(parameter, registry, stream.next<std::string>(parameter), index);
+
+            return index;
+        }
+
+        static int parseSpectrumTexture(const std::string & parameter, ParserStream & stream, const ParserValidator & validator, ParserRegistry & registry) {
+            if (stream.hasNext<Float>() || stream.peek<char>() == '(' || hasExtension(stream.peek<std::string>(), ".spd")) return registry.add<SpectrumTexture>(SpectrumTexture::makeConstant(parseSpectrum<Float>(parameter, stream, validator, registry)));
+            else {
+                std::string name = stream.next<std::string>(parameter);
+
+                int index;
+
+                if (registry.has<SpectrumTexture>(name, index)) return index;
+
+                validator.defined<ScalarTexture>(parameter, registry, name, index);
+
+                return registry.add<SpectrumTexture>(SpectrumTexture::makeScalar(index));
             }
-            else fileError(input, lineNumber, message);
         }
 
         template <typename T>
-        static std::vector<T> parseArray(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter) {
-            std::string message = "'" + parameter + "' is missing or invalid";
-
-            std::string token;
-
-            if (!(ss >> token) || token != "[") fileError(input, lineNumber, message);
-
-            std::vector<T> values;
-
-            while (ss >> token) {
-                if (token == "]") return values;
-
-                if constexpr (std::is_same_v<T, Float>) {
-                    try {
-                        values.push_back(stoF(token));
-                    } catch (const std::exception &) {
-                        fileError(input, lineNumber, message);
-                    }
-                }
-                else if constexpr (std::is_same_v<T, std::string>) values.push_back(token);
-                else fileError(input, lineNumber, message);
-            }
-
-            fileError(input, lineNumber, message);
-        }
-
-        static std::vector<int> parseSpectrumArray(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, Payload & payload, std::map<std::string, int> & spectrumIndices, std::map<std::string, int> & complexSpectrumIndices) {
-            std::string message = "'" + parameter + "' is missing or invalid";
-
-            std::string token;
-
-            if (!(ss >> token) || token != "[") fileError(input, lineNumber, message);
-
-            std::streampos pos = ss.tellg();
+        static std::vector<int> parseArray(const std::string & parameter, ParserStream & stream, const ParserValidator & validator, ParserRegistry & registry) {
+            validator.valid(parameter, stream.hasNext<char>('['));
 
             std::vector<int> values;
 
-            while (ss >> token) {
-                if (token == "]") return values;
+            while (stream.hasNext<char>()) {
+                if (stream.hasNext<char>(']')) return values;
 
-                ss.seekg(pos);
-
-                values.push_back(parseSpectrum<Complex>(ss, input, lineNumber, parameter, payload, spectrumIndices, complexSpectrumIndices));
-
-                pos = ss.tellg();
+                if constexpr (std::is_same_v<T, DenseSpectrum<Float>>) values.push_back(parseSpectrum<Float>(parameter, stream, validator, registry));
+                else if constexpr (std::is_same_v<T, DenseSpectrum<Complex>>) values.push_back(parseSpectrum<Complex>(parameter, stream, validator, registry));
+                else if constexpr (std::is_same_v<T, ScalarTexture>) values.push_back(parseScalarTexture(parameter, stream, validator, registry));
+                else if constexpr (std::is_same_v<T, SpectrumTexture>) values.push_back(parseSpectrumTexture(parameter, stream, validator, registry));
+                else values.push_back(-1);
             }
 
-            fileError(input, lineNumber, message);
+            validator.valid(parameter);
         }
 
-        static int parseSpectrumTexture(std::stringstream & ss, const std::string & input, int lineNumber, const std::string & parameter, Payload & payload, std::map<std::string, int> & spectrumIndices, std::map<std::string, int> & complexSpectrumIndices, const std::map<std::string, int> & scalarTextureIndices, std::map<std::string, int> & spectrumTextureIndices) {
-            std::streampos pos = ss.tellg();
-
-            try {
-                payload.spectrumTextures.push_back(SpectrumTexture::makeConstant(parseSpectrum<Float>(ss, input, lineNumber, parameter, payload, spectrumIndices, complexSpectrumIndices)));
-
-                return int(payload.spectrumTextures.size() - 1);
-            }
-            catch (const std::exception &) {
-                ss.seekg(pos);
-
-                std::string name = parseValue<std::string>(ss, input, lineNumber, parameter);
-
-                if (spectrumTextureIndices.contains(name)) return spectrumTextureIndices.at(name);
-                else if (scalarTextureIndices.contains(name)) {
-                    int scalarTextureIndex = scalarTextureIndices.at(name);
-
-                    payload.spectrumTextures.push_back(SpectrumTexture::makeScalar(scalarTextureIndex));
-
-                    return int(payload.spectrumTextures.size()) - 1;
-                }
-                else fileError(input, lineNumber, "'" + parameter + "' is not defined");
-            }
-        }
-
-        static void parseImage(const std::string & input, Payload & payload, ColorSpace & space, int & width, int & height, int channels) {
+        static std::vector<Float> parseImage(const std::string & input, int channels, ColorSpace & space, int & width, int & height) {
             bool is16Bit = stbi_is_16_bit(input.c_str());
             bool is32Bit = stbi_is_hdr(input.c_str());
             bool isEXR = IsEXR(input.c_str()) == TINYEXR_SUCCESS;
@@ -879,160 +1033,141 @@ class Parser {
 
             space = ColorSpace::SRGB;
 
-            Matrix3<double> colorTransform(1, 0, 0, 0, 1, 0, 0, 0, 1);
+            Matrix<double, 3> colorTransform(1, 0, 0, 0, 1, 0, 0, 0, 1);
+
+            bool needsTransform = false;
 
             if (channels == 3) {
                 if (colorSpaceContains(ColorSpace::SRGB, rx, ry, gx, gy, bx, by, wx, wy)) space = ColorSpace::SRGB;
                 else if (colorSpaceContains(ColorSpace::REC2020, rx, ry, gx, gy, bx, by, wx, wy)) space = ColorSpace::REC2020;
                 else space = ColorSpace::ACES2065;
 
-                if (std::fabs(rx - chromaticity(space, 0)) > EPSILON_SQUARED || std::fabs(ry - chromaticity(space, 1)) > EPSILON_SQUARED || std::fabs(gx - chromaticity(space, 2)) > EPSILON_SQUARED || std::fabs(gy - chromaticity(space, 3)) > EPSILON_SQUARED || std::fabs(bx - chromaticity(space, 4)) > EPSILON_SQUARED || std::fabs(by - chromaticity(space, 5)) > EPSILON_SQUARED || std::fabs(wx - chromaticity(space, 6)) > EPSILON_SQUARED || std::fabs(wy - chromaticity(space, 7)) > EPSILON_SQUARED)  colorTransform = toRGBMatrix(space) * bradfordAdapt(wx, wy, chromaticity(space, 6), chromaticity(space, 7)) * toXYZMatrix(rx, ry, gx, gy, bx, by, wx, wy);
+                needsTransform = std::fabs(rx - chromaticity(space, 0)) > EPSILON_SQUARED || std::fabs(ry - chromaticity(space, 1)) > EPSILON_SQUARED || std::fabs(gx - chromaticity(space, 2)) > EPSILON_SQUARED || std::fabs(gy - chromaticity(space, 3)) > EPSILON_SQUARED || std::fabs(bx - chromaticity(space, 4)) > EPSILON_SQUARED || std::fabs(by - chromaticity(space, 5)) > EPSILON_SQUARED || std::fabs(wx - chromaticity(space, 6)) > EPSILON_SQUARED || std::fabs(wy - chromaticity(space, 7)) > EPSILON_SQUARED;
+
+                if (needsTransform) colorTransform = toRGBMatrix(space) * bradfordAdapt(wx, wy, chromaticity(space, 6), chromaticity(space, 7)) * toXYZMatrix(rx, ry, gx, gy, bx, by, wx, wy);
             }
 
             size_t totalElements = width * height * channels;
 
-            payload.images.reserve(payload.images.size() + totalElements);
+            std::vector<Float> image(totalElements);
 
-            for (size_t i = 0, j = 0; i < totalElements; i++, j += i % channels == 0 ? 4 - channels + 1 : 1) {
-                Float value = isEXR ? (std::isfinite(dataEXR[j]) ? Float(dataEXR[j]) : Float(0)) : is32Bit ? (std::isfinite(data32[i]) ? Float(data32[i]) : Float(0)) : is16Bit ? Float(data16[i]) / Float(65535) : Float(data8[i]) / Float(255);
+            Vector<Float> color;
 
-                if (sRGB) value = sRGBToLinear(value);
+            for (size_t i = 0, j = 0; i < totalElements; i += channels, j += 4) {
+                for (int k = 0; k < channels; k++) {
+                    color[k] = isEXR ? (std::isfinite(dataEXR[j + k]) ? Float(dataEXR[j + k]) : Float(0)) : is32Bit ? (std::isfinite(data32[i + k]) ? Float(data32[i + k]) : Float(0)) : is16Bit ? Float(data16[i + k]) / Float(65535) : Float(data8[i + k]) / Float(255);
 
-                payload.images.push_back(value);
-
-                if (channels == 3 && i % 3 == 2) {
-                    Vector<Float> color(payload.images[payload.images.size() - 3], payload.images[payload.images.size() - 2], payload.images[payload.images.size() - 1]);
-
-                    color = transform(colorTransform, color);
-
-                    payload.images[payload.images.size() - 3] = color[0];
-                    payload.images[payload.images.size() - 2] = color[1];
-                    payload.images[payload.images.size() - 1] = color[2];
+                    if (sRGB) color[k] = sRGBToLinear(color[k]);
                 }
+
+                if (needsTransform && channels == 3) color = transform(colorTransform, color);
+
+                for (int k = 0; k < channels; k++)
+                    image[i + k] = color[k];
             }
 
             if (data8) stbi_image_free(data8);
             if (data16) stbi_image_free(data16);
             if (data32) stbi_image_free(data32);
             if (dataEXR) free(dataEXR);
+
+            return image;
         }
 
-        static void parseOBJ(const std::string & input, Payload & payload, int material) {
+        static std::vector<Object> parseOBJ(const std::string & input, int material) {
+            if (!hasExtension(input, ".obj")) fileError(input, "invalid file extension");
+
             std::ifstream inputFile(input);
 
             if (!inputFile.is_open()) failedToOpenFileError(input);
 
-            std::string line;
-            int lineNumber = 0;
-            bool fTagFound = false;
-
             std::vector<Vector<Float>> vertices;
-            std::vector<Float> u;
-            std::vector<Float> v;
+            std::vector<Float> u, v;
             std::vector<Vector<Float>> normals;
 
+            std::vector<int> vertexIndices, textureIndices, normalIndices;
+
+            std::vector<Object> objects;
+
+            std::string line;
+
+            ParserStream stream(input);
+            ParserValidator validator(stream);
+
             while (std::getline(inputFile, line)) {
-                lineNumber++;
+                stream.load(stripComments(line));
 
-                if (line.empty()) continue;
+                if (!stream.hasNext<char>()) continue;
 
-                std::stringstream ss(line);
-
-                std::string tag;
-                if (!(ss >> tag)) continue;
+                std::string tag = stream.next<std::string>("", false);
 
                 if (tag == "v") {
-                    Vector<Float> vertex;
+                    Float x = stream.next<Float>("x");
+                    Float y = stream.next<Float>("y");
+                    Float z = stream.next<Float>("z");
 
-                    if (!(ss >> vertex[0])) fileError(input, lineNumber, "'x' is missing or invalid");
-                    if (!(ss >> vertex[1])) fileError(input, lineNumber, "'y' is missing or invalid");
-                    if (!(ss >> vertex[2])) fileError(input, lineNumber, "'z' is missing or invalid");
-
-                    vertices.push_back(vertex);
+                    vertices.push_back(Vector<Float>(x, y, z));
                 }
                 else if (tag == "vt") {
-                    Float uValue, vValue;
-
-                    if (!(ss >> uValue)) fileError(input, lineNumber, "'u' is missing or invalid");
-                    if (!(ss >> vValue)) fileError(input, lineNumber, "'v' is missing or invalid");
-
-                    u.push_back(uValue);
-                    v.push_back(vValue);
+                    u.push_back(stream.next<Float>("u"));
+                    v.push_back(stream.next<Float>("v"));
                 }
                 else if (tag == "vn") {
-                    Vector<Float> normal;
+                    Float x = stream.next<Float>("x");
+                    Float y = stream.next<Float>("y");
+                    Float z = stream.next<Float>("z");
 
-                    if (!(ss >> normal[0])) fileError(input, lineNumber, "'x' is missing or invalid");
-                    if (!(ss >> normal[1])) fileError(input, lineNumber, "'y' is missing or invalid");
-                    if (!(ss >> normal[2])) fileError(input, lineNumber, "'z' is missing or invalid");
-
-                    normals.push_back(normal);
+                    normals.push_back(Vector<Float>(x, y, z));
                 }
                 else if (tag == "f") {
-                    fTagFound = true;
+                    vertexIndices.clear();
+                    textureIndices.clear();
+                    normalIndices.clear();
 
-                    std::string token;
+                    while (stream.hasNext<char>()) {
+                        int vertexIndex = stream.next<int>("v");
 
-                    std::vector<int> vertexIndices, textureIndices, normalIndices;
+                        if (vertexIndex < 0) vertexIndex += int(vertices.size());
+                        else if (vertexIndex > 0) vertexIndex--;
 
-                    while (ss >> token) {
-                        std::stringstream tokenStream(token);
-
-                        std::string vertexIndexString, textureIndexString, normalIndexString;
-
-                        if (!std::getline(tokenStream, vertexIndexString, '/')) fileError(input, lineNumber, "'v' is missing or invalid");
-                        std::getline(tokenStream, textureIndexString, '/');
-                        std::getline(tokenStream, normalIndexString, '/');
-
-                        int vertexIndex, textureIndex, normalIndex;
-
-                        try {
-                            vertexIndex = std::stoi(vertexIndexString);
-                        } catch (const std::exception &) {
-                            fileError(input, lineNumber, "'v' is missing or invalid");
-                        }
-
-                        if (vertexIndex < 0 && int(vertices.size()) + vertexIndex >= 0) vertexIndex = int(vertices.size()) + vertexIndex;
-                        else if (vertexIndex < 0) fileError(input, lineNumber, "'v' must be positive, got " + std::to_string(vertexIndex));
-                        else if (vertexIndex > int(vertices.size())) fileError(input, lineNumber, "'v' must be at most " + std::to_string(int(vertices.size()) - 1) + ", got " + std::to_string(vertexIndex));
-                        else vertexIndex--;
+                        validator.inRange("v", vertexIndex + 1, 1, int(vertices.size()));
 
                         vertexIndices.push_back(vertexIndex);
 
-                        if (!textureIndexString.empty()) {
-                            try {
-                                textureIndex = std::stoi(textureIndexString);
-                            } catch (const std::exception &) {
-                                fileError(input, lineNumber, "'vt' is missing or invalid");
+                        int textureIndex = -1, normalIndex = -1;
+
+                        stream.setSkipWhitespace(false);
+
+                        if (stream.hasNext<char>('/')) {
+                            if (!stream.hasNext<char>('/')) {
+                                textureIndex = stream.next<int>("vt");
+
+                                if (textureIndex < 0) textureIndex += int(u.size());
+                                else if (textureIndex >= 0) textureIndex--;
+
+                                validator.inRange("vt", textureIndex + 1, 1, int(u.size()));
+
+                                stream.hasNext<char>('/');
                             }
 
-                            if (textureIndex < 0 && int(u.size()) + textureIndex >= 0) textureIndex = int(u.size()) + textureIndex;
-                            else if (textureIndex < 0) fileError(input, lineNumber, "'vt' must be positive, got " + std::to_string(textureIndex));
-                            else if (textureIndex > int(u.size())) fileError(input, lineNumber, "'vt' must be at most " + std::to_string(int(u.size()) - 1) + ", got " + std::to_string(textureIndex));
-                            else textureIndex--;
+                            if (stream.hasNext<char>() && !std::isspace(stream.peek<char>())) {
+                                normalIndex = stream.next<int>("vn");
+
+                                if (normalIndex < 0) normalIndex += int(normals.size());
+                                else if (normalIndex >= 0) normalIndex--;
+
+                                validator.inRange("vn", normalIndex + 1, 1, int(normals.size()));
+                                validator.valid("vn", !stream.hasNext<char>() || std::isspace(stream.peek<char>()));
+                            }
                         }
-                        else textureIndex = -1;
+
+                        stream.setSkipWhitespace(true);
 
                         textureIndices.push_back(textureIndex);
-
-                        if (!normalIndexString.empty()) {
-                            try {
-                                normalIndex = std::stoi(normalIndexString);
-                            } catch (const std::exception &) {
-                                fileError(input, lineNumber, "'vn' is missing or invalid");
-                            }
-
-                            if (normalIndex < 0 && int(normals.size()) + normalIndex >= 0) normalIndex = int(normals.size()) + normalIndex;
-                            else if (normalIndex < 0) fileError(input, lineNumber, "'vn' must be positive, got " + std::to_string(normalIndex));
-                            else if (normalIndex > int(normals.size())) fileError(input, lineNumber, "'vn' must be at most " + std::to_string(int(normals.size()) - 1) + ", got " + std::to_string(normalIndex));
-                            else normalIndex--;
-                        }
-                        else normalIndex = -1;
-
                         normalIndices.push_back(normalIndex);
                     }
 
-                    if (vertexIndices.size() < 3) fileError(input, lineNumber, "'f' must have at least 3 vertices");
+                    validator.validate(vertexIndices.size() >= 3, "'f' must have at least 3 vertices");
 
                     Vector<Float> vertex0 = vertices[vertexIndices[0]];
                     Vector<Float> normal0 = normalIndices[0] >= 0 ? normals[normalIndices[0]] : Vector<Float>(0, 0, 0);
@@ -1050,62 +1185,47 @@ class Parser {
                         Float u2 = textureIndices[i + 1] >= 0 ? u[textureIndices[i + 1]] : 0;
                         Float v2 = textureIndices[i + 1] >= 0 ? v[textureIndices[i + 1]] : 1;
 
-                        if ((vertex1 - vertex0).length() < EPSILON_SQUARED) fileError(input, lineNumber, "'f' must be non-degenerate");
-                        if ((vertex2 - vertex0).length() < EPSILON_SQUARED) fileError(input, lineNumber, "'f' must be non-degenerate");
-                        if (cross(vertex1 - vertex0, vertex2 - vertex0).length() < EPSILON_SQUARED) fileError(input, lineNumber, "'f' must be non-degenerate");
+                        validator.validate((vertex1 - vertex0).length() > EPSILON_SQUARED && (vertex2 - vertex0).length() > EPSILON_SQUARED && cross(vertex1 - vertex0, vertex2 - vertex0).length() > EPSILON_SQUARED, "'f' must be non-degenerate");
 
-                        payload.objects.push_back(Object::makeTri(material, vertex0, vertex1 - vertex0, vertex2 - vertex0, normal0, normal1, normal2, u0, u1, u2, v0, v1, v2));
+                        objects.push_back(Object::makeTri(material, vertex0, vertex1 - vertex0, vertex2 - vertex0, normal0, normal1, normal2, u0, u1, u2, v0, v1, v2));
                     }
                 }
                 else continue;
 
-                if (ss >> tag) fileError(input, lineNumber, "unexpected token \"" + tag + "\"");
+                validator.unexpected(stream.peek<char>());
             }
 
-            if (!fTagFound) fileError(input, lineNumber, "expected \"f\"");
-
             inputFile.close();
+
+            return objects;
         }
 
         template <typename T>
-        static void parseSPD(const std::string & input, std::map<double, T> & samples) {
+        static std::map<double, T> parseSPD(const std::string & input) {
             std::ifstream inputFile(input);
 
             if (!inputFile.is_open()) failedToOpenFileError(input);
 
-            std::string line, token;
-            int lineNumber = 0;
+            std::map<double, T> samples;
+
+            std::string line;
+
+            ParserStream stream(input);
+            ParserValidator validator(stream);
 
             while (std::getline(inputFile, line)) {
-                lineNumber++;
+                stream.load(stripComments(line));
 
-                std::stringstream ss(preprocess(line));
+                if (!stream.hasNext<char>()) continue;
 
-                if (!(ss >> token)) continue;
+                double lambda = stream.next<double>("lambda");
+                samples[lambda] = stream.next<T>("value");
 
-                double lambda;
-
-                try {
-                    lambda = std::stod(token);
-                } catch (const std::exception &) {
-                    fileError(input, lineNumber, "'lambda' is missing or invalid");
-                }
-
-                if (!(ss >> token)) fileError(input, lineNumber, "'value' is missing or invalid");
-
-                if constexpr (std::is_same_v<T, Float>) {
-                    try {
-                        samples[lambda] = stoF(token);
-                    } catch (const std::exception &) {
-                        fileError(input, lineNumber, "'value' is missing or invalid");
-                    }
-                }
-                else if constexpr (std::is_same_v<T, Complex>) samples[lambda] = parseComplex(token, input, lineNumber, "value");
-                else fileError(input, lineNumber, "'value' is missing or invalid");
-
-                if (ss >> token) fileError(input, lineNumber, "unexpected token \"" + token + "\"");
+                validator.unexpected(stream.peek<char>());
             }
 
             inputFile.close();
+
+            return samples;
         }
 };

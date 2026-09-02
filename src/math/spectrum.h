@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cassert>
-
 #include "core/constants.h"
 #include "core/platform.h"
 
@@ -14,15 +12,9 @@ class SampledSpectrum {
                 data[i] = d;
         }
 
-        HOST_DEVICE Float & operator[](int i) {
-            assert(i >= 0 && i < HERO_COUNT);
-            return data[i];
-        }
+        HOST_DEVICE Float & operator[](int i) { return data[i]; }
 
-        HOST_DEVICE const Float & operator[](int i) const {
-            assert(i >= 0 && i < HERO_COUNT);
-            return data[i];
-        }
+        HOST_DEVICE const Float & operator[](int i) const { return data[i]; }
 
         HOST_DEVICE bool operator==(const SampledSpectrum & s) const {
             for (int i = 0; i < HERO_COUNT; i++)
@@ -67,8 +59,6 @@ class SampledSpectrum {
         }
 
         HOST_DEVICE SampledSpectrum & operator/=(Float d) {
-            assert(std::fabs(d) > EPSILON);
-
             for (int i = 0; i < HERO_COUNT; i++)
                 data[i] /= d;
 
@@ -123,8 +113,6 @@ class SampledSpectrum {
         }
 
         HOST_DEVICE friend SampledSpectrum operator/(const SampledSpectrum & s1, Float d) {
-            assert(std::fabs(d) > EPSILON);
-
             SampledSpectrum s2;
 
             for (int i = 0; i < HERO_COUNT; i++)
@@ -156,6 +144,7 @@ class SampledSpectrum {
 };
 
 template <typename T>
+requires (std::is_same_v<T, Float> || std::is_same_v<T, Complex>)
 class DenseSpectrum {
     public:
         HOST_DEVICE DenseSpectrum() {
@@ -168,14 +157,9 @@ class DenseSpectrum {
                 data[i] = d;
         }
 
-        HOST_DEVICE T & operator[](int i) {
-            assert(i >= 0 && i < CIE_LAMBDA_BINS);
-            return data[i];
-        }
+        HOST_DEVICE T & operator[](int i) { return data[i]; }
 
         HOST_DEVICE T operator()(Float lambda) const {
-            assert(lambda >= CIE_LAMBDA_MIN && lambda < CIE_LAMBDA_MAX);
-
             Float index = lambda - CIE_LAMBDA_MIN;
 
             int min = int(index);

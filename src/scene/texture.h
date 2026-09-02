@@ -363,6 +363,6 @@ class SpectrumTexture {
 
             Vector<Float> coefficients = upsampleRGB(image.space, color);
 
-            return sigmoidF((coefficients[0] * lambda + coefficients[1]) * lambda + coefficients[2]) * scale;
+            return sigmoid((coefficients[0] * lambda + coefficients[1]) * lambda + coefficients[2]) * scale;
         }
 };

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cassert>
-
 #include "core/constants.h"
 #include "core/platform.h"
 
@@ -40,8 +38,6 @@ class Complex {
         HOST_DEVICE Complex & operator/=(const Complex & c) {
             double denominator = c.re * c.re + c.im * c.im;
 
-            assert(std::fabs(denominator) > EPSILON);
-
             double r = (re * c.re + im * c.im) / denominator;
             double i = (im * c.re - re * c.im) / denominator;
 
@@ -58,8 +54,6 @@ class Complex {
 
         HOST_DEVICE friend Complex operator/(const Complex & c1, const Complex & c2) {
             double denominator = c2.re * c2.re + c2.im * c2.im;
-
-            assert(std::fabs(denominator) > EPSILON);
 
             double r = (c1.re * c2.re + c1.im * c2.im) / denominator;
             double i = (c1.im * c2.re - c1.re * c2.im) / denominator;
