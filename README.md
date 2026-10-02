@@ -1,7 +1,7 @@
 # Lambda
 A physically-based spectral path tracer implemented in C++ and CUDA built around wave-optical material appearance.
 
-<div style="text-align: center"><img src="https://dakotaerskine.github.io/images/lambda.png" alt="Lambda" width="350" height="350"></div>
+<p align="center"><img src="https://dakotaerskine.github.io/images/lambda.png" alt="Lambda" width="350" height="350"></p>
 
 ## Building
 Lambda requires CMake 3.24 or later and a C++20 compiler. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DCPU=ON`.

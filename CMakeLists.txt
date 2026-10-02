@@ -43,7 +43,7 @@ if(CMAKE_CUDA_COMPILER AND NOT CPU)
 else()
     set_target_properties(lambda PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
-    target_compile_options(lambda PRIVATE -g -Wall -Wextra -Wshadow -Wconversion)
+    target_compile_options(lambda PRIVATE -Wall -Wextra -Wshadow -Wconversion)
 endif()
 
 target_compile_definitions(lambda PRIVATE STB_IMAGE_IMPLEMENTATION STB_IMAGE_WRITE_IMPLEMENTATION TINYEXR_IMPLEMENTATION TINYEXR_USE_MINIZ=0 TINYEXR_USE_STB_ZLIB=1)
