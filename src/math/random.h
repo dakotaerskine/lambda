@@ -4,29 +4,28 @@
 
 #include "core/platform.h"
 
-class Random {
-    public:
-        HOST_DEVICE Random(uint64_t seed, uint64_t stream) {
-            state = 0;
-            inc = (stream << 1) | 1;
-            step();
-            state += seed;
-            step();
-        }
+namespace lambda {
+    class Random {
+        public:
+            LAMBDA_HOST_DEVICE Random(uint64_t seed, uint64_t stream) {
+                state = 0;
+                inc = (stream << 1) | 1;
+                step();
+                state += seed;
+                step();
+            }
 
-        HOST_DEVICE Float next() {
-            uint32_t x = step();
-            return Float(x) / Float(4294967296.0);
-        }
+            LAMBDA_HOST_DEVICE Float next() { return Float(step() >> 8) * Float(0x1p-24); }
 
-    private:
-        uint64_t state, inc;
+        private:
+            uint64_t state, inc;
 
-        HOST_DEVICE uint32_t step() {
-            uint64_t old = state;
-            state = old * 6364136223846793005ULL + inc;
-            uint32_t xorshifted = uint32_t(((old >> 18u) ^ old) >> 27u);
-            uint32_t rot = uint32_t(old >> 59u);
-            return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
-        }
-};
+            LAMBDA_HOST_DEVICE uint32_t step() {
+                uint64_t old = state;
+                state = old * 6364136223846793005ULL + inc;
+                uint32_t xorshifted = uint32_t(((old >> 18u) ^ old) >> 27u);
+                uint32_t rot = uint32_t(old >> 59u);
+                return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
+            }
+    };
+}

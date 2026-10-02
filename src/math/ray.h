@@ -5,21 +5,30 @@
 #include "math/spectrum.h"
 #include "math/vector.h"
 
-class Ray {
-    public:
-        HOST_DEVICE Ray() {}
-        HOST_DEVICE Ray(const Vector<Float> & o, const Vector<Float> & d, const SampledSpectrum & l) : origin(o), direction(d) {
-            for (int i = 0; i < HERO_COUNT; i++)
-                lambdas[i] = l[i];
-        }
+namespace lambda {
+    class Medium;
 
-        HOST_DEVICE const Vector<Float> & getOrigin() const { return origin; }
-        HOST_DEVICE const Vector<Float> & getDirection() const { return direction; }
-        HOST_DEVICE const SampledSpectrum & getLambdas() const { return lambdas; }
+    class Ray {
+        public:
+            LAMBDA_HOST_DEVICE Ray() : direction(0, 1, 0) {}
 
-        HOST_DEVICE Vector<Float> at(Float t) const { return origin + t * direction; }
+            LAMBDA_HOST_DEVICE Ray(const Vector<Float, 3> & o, const Vector<Float, 3> & d, const SampledSpectrum & l, const Medium * m = nullptr) : origin(o), direction(d), lambdas(l), medium(m) {}
 
-    private:
-        Vector<Float> origin, direction;
-        SampledSpectrum lambdas;
-};
+            LAMBDA_HOST_DEVICE void setMedium(const Medium * m) { medium = m; }
+
+            LAMBDA_HOST_DEVICE const Vector<Float, 3> & getOrigin() const { return origin; }
+
+            LAMBDA_HOST_DEVICE const Vector<Float, 3> & getDirection() const { return direction; }
+
+            LAMBDA_HOST_DEVICE const SampledSpectrum & getLambdas() const { return lambdas; }
+
+            LAMBDA_HOST_DEVICE const Medium * getMedium() const { return medium; }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> at(Float t) const { return origin + t * direction; }
+
+        private:
+            Vector<Float, 3> origin, direction;
+            SampledSpectrum lambdas;
+            const Medium * medium;
+    };
+}

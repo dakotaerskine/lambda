@@ -7,362 +7,614 @@
 #include "math/intersection.h"
 #include "math/spectrum.h"
 
-enum class ScalarTextureType { SCALAR_CONSTANT, PERLIN, WORLEY, IMAGE };
-enum class SpectrumTextureType { SPECTRUM_CONSTANT, CHECKER, SCALAR, IMAGE };
+namespace lambda {
+    class ScalarTexture {
+        public:
+            ScalarTexture() : type(Type::CONSTANT) {}
 
-class ScalarTexture {
-    public:
-        HOST_DEVICE ScalarTexture() : type(ScalarTextureType::SCALAR_CONSTANT) {}
+            static ScalarTexture makeConstant(Float v) {
+                ScalarTexture texture;
 
-        HOST_DEVICE static ScalarTexture makeConstant(Float v) {
-            ScalarTexture texture;
+                texture.type = Type::CONSTANT;
+                texture.isConstant = true;
+                texture.width = 1;
+                texture.height = 1;
+                texture.min = v;
+                texture.max = v;
+                texture.average = v;
+                texture.constant.value = v;
 
-            texture.type = ScalarTextureType::SCALAR_CONSTANT;
-            texture.constant.value = v;
-
-            return texture;
-        }
-
-        HOST_DEVICE static ScalarTexture makePerlin(Float min, Float max, Float frequency) {
-            ScalarTexture texture;
-
-            texture.type = ScalarTextureType::PERLIN;
-            texture.perlin.min = min;
-            texture.perlin.max = max;
-            texture.perlin.frequency = frequency;
-
-            return texture;
-        }
-
-        HOST_DEVICE static ScalarTexture makeWorley(Float min, Float max, Float frequency) {
-            ScalarTexture texture;
-
-            texture.type = ScalarTextureType::WORLEY;
-            texture.worley.min = min;
-            texture.worley.max = max;
-            texture.worley.frequency = frequency;
-
-            return texture;
-        }
-
-        HOST_DEVICE static ScalarTexture makeImage(int index, int width, int height) {
-            ScalarTexture texture;
-
-            texture.type = ScalarTextureType::IMAGE;
-            texture.image.index = index;
-            texture.image.width = width;
-            texture.image.height = height;
-
-            return texture;
-        }
-
-        HOST_DEVICE Float min(const Float * images) const {
-            switch (type) {
-                case ScalarTextureType::SCALAR_CONSTANT: return constant.value;
-                case ScalarTextureType::PERLIN: return perlin.min;
-                case ScalarTextureType::WORLEY: return worley.min;
-                case ScalarTextureType::IMAGE: return minImage(images);
+                return texture;
             }
 
-            return 0;
-        }
+            static ScalarTexture makeScale(ScalarTexture * t1, ScalarTexture * t2) {
+                ScalarTexture texture;
 
-        HOST_DEVICE Float max(const Float * images) const {
-            switch (type) {
-                case ScalarTextureType::SCALAR_CONSTANT: return constant.value;
-                case ScalarTextureType::PERLIN: return perlin.max;
-                case ScalarTextureType::WORLEY: return worley.max;
-                case ScalarTextureType::IMAGE: return maxImage(images);
+                texture.type = Type::SCALE;
+                texture.isConstant = t1->isConstant && t2->isConstant;
+
+                int width1 = t1->width;
+                int width2 = t2->width;
+
+                int height1 = t1->height;
+                int height2 = t2->height;
+
+                int maxHeight = std::max(height1, height2);
+                int maxWidth = std::max(width1, width2);
+
+                if (t1->isConstant) width1 = maxWidth;
+                if (t2->isConstant) width2 = maxWidth;
+
+                if (t1->isConstant) height1 = maxHeight;
+                if (t2->isConstant) height2 = maxHeight;
+
+                texture.width = width1 == width2 ? width1 : 1;
+                texture.height = height1 == height2 ? height1 : 1;
+
+                texture.min = std::fmin(t1->min * t2->min, std::fmin(t1->min * t2->max, std::fmin(t1->max * t2->min, t1->max * t2->max)));
+                texture.max = std::fmax(t1->min * t2->min, std::fmax(t1->min * t2->max, std::fmax(t1->max * t2->min, t1->max * t2->max)));
+                texture.average = t1->average * t2->average;
+                texture.scale.texture1 = t1;
+                texture.scale.texture2 = t2;
+
+                return texture;
             }
 
-            return 0;
-        }
+            static ScalarTexture makeMix(ScalarTexture * t1, ScalarTexture * t2, ScalarTexture * factor) {
+                ScalarTexture texture;
 
-        HOST_DEVICE Float average(const Float * images) const {
-            switch (type) {
-                case ScalarTextureType::SCALAR_CONSTANT: return averageConstant();
-                case ScalarTextureType::PERLIN: return averagePerlin();
-                case ScalarTextureType::WORLEY: return averageWorley();
-                case ScalarTextureType::IMAGE: return averageImage(images);
+                texture.type = Type::MIX;
+                texture.isConstant = t1->isConstant && t2->isConstant && factor->isConstant;
+
+                int width1 = t1->width;
+                int width2 = t2->width;
+                int width3 = factor->width;
+
+                int height1 = t1->height;
+                int height2 = t2->height;
+                int height3 = factor->height;
+
+                int maxWidth = std::max(width1, std::max(width2, width3));
+                int maxHeight = std::max(height1, std::max(height2, height3));
+
+                if (t1->isConstant) width1 = maxWidth;
+                if (t2->isConstant) width2 = maxWidth;
+                if (factor->isConstant) width3 = maxWidth;
+
+                if (t1->isConstant) height1 = maxHeight;
+                if (t2->isConstant) height2 = maxHeight;
+                if (factor->isConstant) height3 = maxHeight;
+
+                texture.width = (width1 == width2 && width2 == width3) ? width1 : 1;
+                texture.height = (height1 == height2 && height2 == height3) ? height1 : 1;
+
+                texture.min = std::fmin(t1->min, t2->min);
+                texture.max = std::fmax(t1->max, t2->max);
+                texture.average = utils::interpolate(t1->average, t2->average, factor->average);
+                texture.mix.texture1 = t1;
+                texture.mix.texture2 = t2;
+                texture.mix.factor = factor;
+
+                return texture;
             }
 
-            return 0;
-        }
+            static ScalarTexture makeChecker(Float v1, Float v2, Float uScale, Float vScale, Float uOffset, Float vOffset) {
+                ScalarTexture texture;
 
-        HOST_DEVICE Float evaluate(const Float * images, const Intersection & i) const {
-            switch (type) {
-                case ScalarTextureType::SCALAR_CONSTANT: return evaluateConstant();
-                case ScalarTextureType::PERLIN: return evaluatePerlin(i);
-                case ScalarTextureType::WORLEY: return evaluateWorley(i);
-                case ScalarTextureType::IMAGE: return evaluateImage(images, i);
+                texture.type = Type::CHECKER;
+                texture.isConstant = false;
+                texture.width = 1;
+                texture.height = 1;
+                texture.min = std::fmin(v1, v2);
+                texture.max = std::fmax(v1, v2);
+                texture.average = Float(0.5) * (v1 + v2);
+                texture.checker.value1 = v1;
+                texture.checker.value2 = v2;
+                texture.checker.uScale = uScale;
+                texture.checker.vScale = vScale;
+                texture.checker.uOffset = uOffset;
+                texture.checker.vOffset = vOffset;
+
+                return texture;
             }
 
-            return 0;
-        }
+            static ScalarTexture makePerlin(Float frequency, Float roughness, int octaves) {
+                ScalarTexture texture;
 
-    private:
-        ScalarTextureType type;
+                texture.type = Type::PERLIN;
+                texture.isConstant = false;
+                texture.width = 1;
+                texture.height = 1;
+                texture.min = 0;
+                texture.max = 1;
+                texture.average = 0.5;
+                texture.perlin.frequency = frequency;
+                texture.perlin.roughness = roughness;
+                texture.perlin.octaves = octaves;
 
-        union {
-            struct { Float value; } constant;
-            struct { Float min, max, frequency; } perlin;
-            struct { Float min, max, frequency; } worley;
-            struct { int index, width, height; } image;
-        };
-
-        HOST_DEVICE Float minImage(const Float * images) const {
-            Float min = MAX;
-
-            for (int i = 0; i < image.width * image.height; i++)
-                min = std::fmin(min, images[image.index + i]);
-
-            return min;
-        }
-
-        HOST_DEVICE Float maxImage(const Float * images) const {
-            Float max = -MAX;
-
-            for (int i = 0; i < image.width * image.height; i++)
-                max = std::fmax(max, images[image.index + i]);
-
-            return max;
-        }
-
-        HOST_DEVICE Float averageConstant() const { return constant.value; }
-        HOST_DEVICE Float averagePerlin() const { return (perlin.min + perlin.max) / 2; }
-        HOST_DEVICE Float averageWorley() const { return (worley.min + worley.max) / 2; }
-
-        HOST_DEVICE Float averageImage(const Float * images) const {
-            Float sum = 0;
-
-            for (int i = 0; i < image.width * image.height; i++)
-                sum += images[image.index + i];
-
-            return sum / Float(image.width * image.height);
-        }
-
-        HOST_DEVICE Float evaluateConstant() const {
-            return constant.value;
-        }
-
-        HOST_DEVICE Float evaluatePerlin(const Intersection & i) const {
-            return perlin.min + (perlin.max - perlin.min) * perlinNoise(i.localPoint * perlin.frequency);
-        }
-
-        HOST_DEVICE Float evaluateWorley(const Intersection & i) const {
-            return worley.min + (worley.max - worley.min) * worleyNoise(i.localPoint * worley.frequency);
-        }
-
-        HOST_DEVICE Float evaluateImage(const Float * images, const Intersection & i) const {
-            Float u = i.u - std::floor(i.u);
-            Float v = i.v - std::floor(i.v);
-
-            Float x = u * Float(image.width) - Float(0.5);
-            Float y = v * Float(image.height) - Float(0.5);
-
-            int x0 = int(std::floor(x));
-            int y0 = int(std::floor(y));
-
-            int x1 = x0 + 1;
-            int y1 = y0 + 1;
-
-            Float tx = x - Float(x0);
-            Float ty = y - Float(y0);
-
-            x0 = ((x0 % image.width) + image.width) % image.width;
-            y0 = ((y0 % image.height) + image.height) % image.height;
-            x1 = ((x1 % image.width) + image.width) % image.width;
-            y1 = ((y1 % image.height) + image.height) % image.height;
-
-            Float c00 = images[image.index + (y0 * image.width + x0) * 3];
-            Float c10 = images[image.index + (y0 * image.width + x1) * 3];
-            Float c01 = images[image.index + (y1 * image.width + x0) * 3];
-            Float c11 = images[image.index + (y1 * image.width + x1) * 3];
-
-            return interpolate(interpolate(c00, c10, tx), interpolate(c01, c11, tx), ty);
-        }
-};
-
-class SpectrumTexture {
-    public:
-        HOST_DEVICE SpectrumTexture() : type(SpectrumTextureType::SPECTRUM_CONSTANT) {}
-
-        HOST_DEVICE static SpectrumTexture makeConstant(int v) {
-            SpectrumTexture texture;
-
-            texture.type = SpectrumTextureType::SPECTRUM_CONSTANT;
-            texture.constant.value = v;
-
-            return texture;
-        }
-
-        HOST_DEVICE static SpectrumTexture makeChecker(int v1, int v2, Float scale) {
-            SpectrumTexture texture;
-
-            texture.type = SpectrumTextureType::CHECKER;
-            texture.checker.value1 = v1;
-            texture.checker.value2 = v2;
-            texture.checker.scale = scale;
-
-            return texture;
-        }
-
-        HOST_DEVICE static SpectrumTexture makeScalar(int index) {
-            SpectrumTexture texture;
-
-            texture.type = SpectrumTextureType::SCALAR;
-            texture.scalar.index = index;
-
-            return texture;
-        }
-
-        HOST_DEVICE static SpectrumTexture makeImage(ColorSpace space, int index, int width, int height) {
-            SpectrumTexture texture;
-
-            texture.type = SpectrumTextureType::IMAGE;
-            texture.image.space = space;
-            texture.image.index = index;
-            texture.image.width = width;
-            texture.image.height = height;
-
-            return texture;
-        }
-
-        HOST_DEVICE Float min(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const Float * images) const {
-            switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT: return spectra[constant.value].min();
-                case SpectrumTextureType::CHECKER: return std::fmin(spectra[checker.value1].min(), spectra[checker.value2].min());
-                case SpectrumTextureType::SCALAR: return scalarTextures[scalar.index].min(images);
-                case SpectrumTextureType::IMAGE: return minImage(images);
+                return texture;
             }
 
-            return 0;
-        }
+            static ScalarTexture makeWorley(Float frequency, Float roughness, int octaves) {
+                ScalarTexture texture;
 
-        HOST_DEVICE Float max(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const Float * images) const {
-            switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT: return spectra[constant.value].max();
-                case SpectrumTextureType::CHECKER: return std::fmax(spectra[checker.value1].max(), spectra[checker.value2].max());
-                case SpectrumTextureType::SCALAR: return scalarTextures[scalar.index].max(images);
-                case SpectrumTextureType::IMAGE: return maxImage(images);
+                texture.type = Type::WORLEY;
+                texture.isConstant = false;
+                texture.width = 1;
+                texture.height = 1;
+                texture.min = 0;
+                texture.max = 1;
+                texture.average = 0.5;
+                texture.worley.frequency = frequency;
+                texture.worley.roughness = roughness;
+                texture.worley.octaves = octaves;
+
+                return texture;
             }
 
-            return 0;
-        }
+            static ScalarTexture makeImage(Float * image, int width, int height, Float uScale, Float vScale, Float uOffset, Float vOffset) {
+                ScalarTexture texture;
 
-        HOST_DEVICE Float average(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const Float * images) const {
-            switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT: return averageConstant(spectra);
-                case SpectrumTextureType::CHECKER: return averageChecker(spectra);
-                case SpectrumTextureType::SCALAR: return averageScalar(scalarTextures, images);
-                case SpectrumTextureType::IMAGE: return averageImage(images);
+                texture.type = Type::IMAGE;
+                texture.isConstant = false;
+                texture.width = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? width : 1;
+                texture.height = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? height : 1;
+
+                texture.min = constants::MAX;
+                texture.max = -constants::MAX;
+                texture.average = 0;
+
+                for (int i = 0; i < height; i++) {
+                    Float rowSum = 0;
+
+                    for (int j = 0; j < width; j++) {
+                        texture.min = std::fmin(texture.min, image[i * width + j]);
+                        texture.max = std::fmax(texture.max, image[i * width + j]);
+
+                        rowSum += image[i * width + j];
+                    }
+
+                    texture.average += rowSum / Float(width);
+                }
+
+                texture.average /= Float(height);
+
+                texture.image.image = image;
+                texture.image.width = width;
+                texture.image.height = height;
+                texture.image.uScale = uScale;
+                texture.image.vScale = vScale;
+                texture.image.uOffset = uOffset;
+                texture.image.vOffset = vOffset;
+
+                return texture;
             }
 
-            return 0;
-        }
+            LAMBDA_HOST_DEVICE int getWidth() const { return width; }
 
-        HOST_DEVICE Float evaluate(const DenseSpectrum<Float> * spectra, const ScalarTexture * scalarTextures, const Float * images, const Intersection & i, Float lambda) const {
-            switch (type) {
-                case SpectrumTextureType::SPECTRUM_CONSTANT: return evaluateConstant(spectra, lambda);
-                case SpectrumTextureType::CHECKER: return evaluateChecker(spectra, i, lambda);
-                case SpectrumTextureType::SCALAR: return evaluateScalar(scalarTextures, images, i);
-                case SpectrumTextureType::IMAGE: return evaluateImage(images, i, lambda);
+            LAMBDA_HOST_DEVICE int getHeight() const { return height; }
+
+            LAMBDA_HOST_DEVICE Float getMin() const { return min; }
+
+            LAMBDA_HOST_DEVICE Float getMax() const { return max; }
+
+            LAMBDA_HOST_DEVICE Float getAverage() const { return average; }
+
+            LAMBDA_HOST_DEVICE Float getAverage(int x, int y) const {
+                switch (type) {
+                    case Type::CONSTANT: return average;
+                    case Type::SCALE: return scale.texture1->getAverage(x, y) * scale.texture2->getAverage(x, y);
+                    case Type::MIX: return utils::interpolate(mix.texture1->getAverage(x, y), mix.texture2->getAverage(x, y), mix.factor->getAverage(x, y));
+                    case Type::CHECKER: return average;
+                    case Type::PERLIN: return average;
+                    case Type::WORLEY: return average;
+                    case Type::IMAGE: return getAverageImage(x, y);
+                }
+
+                return 0;
             }
 
-            return 0;
-        }
+            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & i) const {
+                switch (type) {
+                    case Type::CONSTANT: return constant.value;
+                    case Type::SCALE: return scale.texture1->evaluate(i) * scale.texture2->evaluate(i);
+                    case Type::MIX: return utils::interpolate(mix.texture1->evaluate(i), mix.texture2->evaluate(i), mix.factor->evaluate(i));
+                    case Type::CHECKER: return evaluateChecker(i);
+                    case Type::PERLIN: return evaluatePerlin(i);
+                    case Type::WORLEY: return evaluateWorley(i);
+                    case Type::IMAGE: return evaluateImage(i);
+                }
 
-    private:
-        SpectrumTextureType type;
-
-        union {
-            struct { int value; } constant;
-            struct { int value1, value2; Float scale; } checker;
-            struct { int index; } scalar;
-            struct { ColorSpace space; int index, width, height; } image;
-        };
-
-        HOST_DEVICE Float minImage(const Float * images) const {
-            Float min = MAX;
-
-            for (int i = 0; i < image.width * image.height * 3; i++)
-                min = std::fmin(min, images[image.index + i]);
-
-            return min;
-        }
-
-        HOST_DEVICE Float maxImage(const Float * images) const {
-            Float max = -MAX;
-
-            for (int i = 0; i < image.width * image.height * 3; i++)
-                max = std::fmax(max, images[image.index + i]);
-
-            return max;
-        }
-
-        HOST_DEVICE Float averageConstant(const DenseSpectrum<Float> * spectra) const { return spectra[constant.value].average(); }
-        HOST_DEVICE Float averageChecker(const DenseSpectrum<Float> * spectra) const { return Float(0.5) * (spectra[checker.value1].average() + spectra[checker.value2].average()); }
-        HOST_DEVICE Float averageScalar(const ScalarTexture * scalarTextures, const Float * images) const { return scalarTextures[scalar.index].average(images); }
-
-        HOST_DEVICE Float averageImage(const Float * images) const {
-            Float sum = 0;
-
-            for (int i = 0; i < image.width * image.height * 3; i++)
-                sum += images[image.index + i];
-
-            return sum / Float(image.width * image.height * 3);
-        }
-
-        HOST_DEVICE Float evaluateConstant(const DenseSpectrum<Float> * spectra, Float lambda) const { return spectra[constant.value](lambda); }
-
-        HOST_DEVICE Float evaluateChecker(const DenseSpectrum<Float> * spectra, const Intersection & i, Float lambda) const {
-            int x = int(std::floor(i.u / checker.scale));
-            int y = int(std::floor(i.v / checker.scale));
-
-            return abs(x + y) % 2 == 0 ? spectra[checker.value1](lambda) : spectra[checker.value2](lambda);
-        }
-
-        HOST_DEVICE Float evaluateScalar(const ScalarTexture * scalarTextures, const Float * images, const Intersection & i) const { return scalarTextures[scalar.index].evaluate(images, i); }
-
-        HOST_DEVICE Float evaluateImage(const Float * images, const Intersection & i, Float lambda) const {
-            Float u = i.u - std::floor(i.u);
-            Float v = i.v - std::floor(i.v);
-
-            Float x = u * Float(image.width) - Float(0.5);
-            Float y = v * Float(image.height) - Float(0.5);
-
-            int x0 = int(std::floor(x));
-            int y0 = int(std::floor(y));
-
-            int x1 = x0 + 1;
-            int y1 = y0 + 1;
-
-            Float tx = x - Float(x0);
-            Float ty = y - Float(y0);
-
-            x0 = ((x0 % image.width) + image.width) % image.width;
-            y0 = ((y0 % image.height) + image.height) % image.height;
-            x1 = ((x1 % image.width) + image.width) % image.width;
-            y1 = ((y1 % image.height) + image.height) % image.height;
-
-            Vector<Float> color;
-
-            for (int j = 0; j < 3; j++) {
-                Float c00 = images[image.index + (y0 * image.width + x0) * 3 + j];
-                Float c10 = images[image.index + (y0 * image.width + x1) * 3 + j];
-                Float c01 = images[image.index + (y1 * image.width + x0) * 3 + j];
-                Float c11 = images[image.index + (y1 * image.width + x1) * 3 + j];
-
-                color[j] = interpolate(interpolate(c00, c10, tx), interpolate(c01, c11, tx), ty);
+                return 0;
             }
 
-            Float scale = std::fmax(color[0], std::fmax(color[1], color[2]));
+        private:
+            friend class SpectrumTexture;
 
-            if (scale <= 1) scale = 1;
-            else color /= scale;
+            enum class Type { CONSTANT, SCALE, MIX, CHECKER, PERLIN, WORLEY, IMAGE };
 
-            Vector<Float> coefficients = upsampleRGB(image.space, color);
+            Type type;
+            bool isConstant;
+            int width, height;
+            Float min, max, average;
 
-            return sigmoid((coefficients[0] * lambda + coefficients[1]) * lambda + coefficients[2]) * scale;
-        }
-};
+            union {
+                struct { Float value; } constant;
+                struct { ScalarTexture * texture1, * texture2; } scale;
+                struct { ScalarTexture * texture1, * texture2, * factor; } mix;
+                struct { Float value1, value2, uScale, vScale, uOffset, vOffset; } checker;
+                struct { Float frequency, roughness; int octaves; } perlin;
+                struct { Float frequency, roughness; int octaves; } worley;
+                struct { Float * image; int width, height; Float uScale, vScale, uOffset, vOffset; } image;
+            };
+
+            LAMBDA_HOST_DEVICE Float getAverageImage(int x, int y) const {
+                if (std::fabs(image.uScale - 1) > constants::EPSILON || std::fabs(image.vScale - 1) > constants::EPSILON || std::fabs(image.uOffset) > constants::EPSILON || std::fabs(image.vOffset) > constants::EPSILON) return average;
+
+                x = ((x % image.width) + image.width) % image.width;
+                y = ((y % image.height) + image.height) % image.height;
+
+                return image.image[y * image.width + x];
+            }
+
+            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & i) const {
+                int x = int(std::floor(i.textureCoordinate[0] * checker.uScale + checker.uOffset));
+                int y = int(std::floor(i.textureCoordinate[1] * checker.vScale + checker.vOffset));
+
+                return abs(x + y) % 2 == 0 ? checker.value1 : checker.value2;
+            }
+
+            LAMBDA_HOST_DEVICE Float evaluatePerlin(const Intersection & i) const {
+                Float value = 0, amplitude = 1, factor = 0;
+
+                Vector<Float, 3> point = i.useTransformed ? i.transformedPoint : i.point;
+
+                point *= perlin.frequency;
+
+                for (int j = 0; j < perlin.octaves; j++) {
+                    value += utils::perlinNoise(point) * amplitude;
+                    factor += amplitude;
+
+                    amplitude *= perlin.roughness;
+                    point *= 2;
+                }
+
+                return value / factor;
+            }
+
+            LAMBDA_HOST_DEVICE Float evaluateWorley(const Intersection & i) const {
+                Float value = 0, amplitude = 1, factor = 0;
+
+                Vector<Float, 3> point = i.useTransformed ? i.transformedPoint : i.point;
+
+                point *= worley.frequency;
+
+                for (int j = 0; j < worley.octaves; j++) {
+                    value += utils::worleyNoise(point) * amplitude;
+                    factor += amplitude;
+
+                    amplitude *= worley.roughness;
+                    point *= 2;
+                }
+
+                return value / factor;
+            }
+
+            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & i) const {
+                Float u = i.textureCoordinate[0] * image.uScale + image.uOffset;
+                Float v = i.textureCoordinate[1] * image.vScale + image.vOffset;
+
+                u = u - std::floor(u);
+                v = v - std::floor(v);
+
+                Float x = u * Float(image.width) - Float(0.5);
+                Float y = v * Float(image.height) - Float(0.5);
+
+                int x0 = int(std::floor(x));
+                int y0 = int(std::floor(y));
+
+                int x1 = x0 + 1;
+                int y1 = y0 + 1;
+
+                Float tx = x - Float(x0);
+                Float ty = y - Float(y0);
+
+                x0 = ((x0 % image.width) + image.width) % image.width;
+                y0 = ((y0 % image.height) + image.height) % image.height;
+                x1 = ((x1 % image.width) + image.width) % image.width;
+                y1 = ((y1 % image.height) + image.height) % image.height;
+
+
+                Float c00 = image.image[y0 * image.width + x0];
+                Float c10 = image.image[y0 * image.width + x1];
+                Float c01 = image.image[y1 * image.width + x0];
+                Float c11 = image.image[y1 * image.width + x1];
+
+                return utils::interpolate(utils::interpolate(c00, c10, tx), utils::interpolate(c01, c11, tx), ty);
+            }
+    };
+
+    class SpectrumTexture {
+        public:
+            SpectrumTexture() : type(Type::CONSTANT) {}
+
+            static SpectrumTexture makeConstant(DenseSpectrum<Float> * v) {
+                SpectrumTexture texture;
+
+                texture.type = Type::CONSTANT;
+                texture.isConstant = true;
+                texture.width = 1;
+                texture.height = 1;
+                texture.min = v->min();
+                texture.max = v->max();
+                texture.average = v->average();
+                texture.constant.value = v;
+
+                return texture;
+            }
+
+            static SpectrumTexture makeScalar(ScalarTexture * t) {
+                SpectrumTexture texture;
+
+                texture.type = Type::SCALAR;
+                texture.isConstant = t->isConstant;
+                texture.width = t->width;
+                texture.height = t->height;
+                texture.min = t->min;
+                texture.max = t->max;
+                texture.average = t->average;
+                texture.scalar.texture = t;
+
+                return texture;
+            }
+
+            static SpectrumTexture makeScale(SpectrumTexture * t1, SpectrumTexture * t2) {
+                SpectrumTexture texture;
+
+                texture.type = Type::SCALE;
+                texture.isConstant = t1->isConstant && t2->isConstant;
+
+                int width1 = t1->width;
+                int width2 = t2->width;
+
+                int height1 = t1->height;
+                int height2 = t2->height;
+
+                int maxWidth = std::max(width1, width2);
+                int maxHeight = std::max(height1, height2);
+
+                if (t1->isConstant) width1 = maxWidth;
+                if (t2->isConstant) width2 = maxWidth;
+
+                if (t1->isConstant) height1 = maxHeight;
+                if (t2->isConstant) height2 = maxHeight;
+
+                texture.width = width1 == width2 ? width1 : 1;
+                texture.height = height1 == height2 ? height1 : 1;
+
+                texture.min = std::fmin(t1->min * t2->min, std::fmin(t1->min * t2->max, std::fmin(t1->max * t2->min, t1->max * t2->max)));
+                texture.max = std::fmax(t1->min * t2->min, std::fmax(t1->min * t2->max, std::fmax(t1->max * t2->min, t1->max * t2->max)));
+                texture.average = t1->average * t2->average;
+                texture.scale.texture1 = t1;
+                texture.scale.texture2 = t2;
+
+                return texture;
+            }
+
+            static SpectrumTexture makeMix(SpectrumTexture * t1, SpectrumTexture * t2, ScalarTexture * factor) {
+                SpectrumTexture texture;
+
+                texture.type = Type::MIX;
+                texture.isConstant = t1->isConstant && t2->isConstant && factor->isConstant;
+
+                int width1 = t1->width;
+                int width2 = t2->width;
+                int width3 = factor->width;
+
+                int height1 = t1->height;
+                int height2 = t2->height;
+                int height3 = factor->height;
+
+                int maxWidth = std::max(width1, std::max(width2, width3));
+                int maxHeight = std::max(height1, std::max(height2, height3));
+
+                if (t1->isConstant) width1 = maxWidth;
+                if (t2->isConstant) width2 = maxWidth;
+                if (factor->isConstant) width3 = maxWidth;
+
+                if (t1->isConstant) height1 = maxHeight;
+                if (t2->isConstant) height2 = maxHeight;
+                if (factor->isConstant) height3 = maxHeight;
+
+                texture.width = width1 == width2 && width2 == width3 ? width1 : 1;
+                texture.height = height1 == height2 && height2 == height3 ? height1 : 1;
+
+                texture.min = std::fmin(t1->min, t2->min);
+                texture.max = std::fmax(t1->max, t2->max);
+                texture.average = utils::interpolate(t1->average, t2->average, factor->average);
+                texture.mix.texture1 = t1;
+                texture.mix.texture2 = t2;
+                texture.mix.factor = factor;
+
+                return texture;
+            }
+
+            static SpectrumTexture makeChecker(DenseSpectrum<Float> * v1, DenseSpectrum<Float> * v2, Float uScale, Float vScale, Float uOffset, Float vOffset) {
+                SpectrumTexture texture;
+
+                texture.type = Type::CHECKER;
+                texture.isConstant = false;
+                texture.width = 1;
+                texture.height = 1;
+                texture.min = std::fmin(v1->min(), v2->min());
+                texture.max = std::fmax(v1->max(), v2->max());
+                texture.average = Float(0.5) * (v1->average() + v2->average());
+                texture.checker.value1 = v1;
+                texture.checker.value2 = v2;
+                texture.checker.uScale = uScale;
+                texture.checker.vScale = vScale;
+                texture.checker.uOffset = uOffset;
+                texture.checker.vOffset = vOffset;
+
+                return texture;
+            }
+
+            static SpectrumTexture makeImage(Float * image, ColorSpace space, int width, int height, Float uScale, Float vScale, Float uOffset, Float vOffset) {
+                SpectrumTexture texture;
+
+                texture.type = Type::IMAGE;
+                texture.isConstant = false;
+                texture.width = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? width : 1;
+                texture.height = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? height : 1;
+
+                texture.min = constants::MAX;
+                texture.max = -constants::MAX;
+                texture.average = 0;
+
+                for (int i = 0; i < height; i++) {
+                    Float rowSum = 0;
+
+                    for (int j = 0; j < width; j++)
+                        for (int k = 0; k < 3; k++) {
+                            texture.min = std::fmin(texture.min, image[(i * width + j) * 3 + k]);
+                            texture.max = std::fmax(texture.max, image[(i * width + j) * 3 + k]);
+
+                            rowSum += image[(i * width + j) * 3 + k];
+                        }
+
+                    texture.average += rowSum / Float(width);
+                }
+
+                texture.average /= Float(height);
+
+                texture.image.image = image;
+                texture.image.space = space;
+                texture.image.width = width;
+                texture.image.height = height;
+                texture.image.uScale = uScale;
+                texture.image.vScale = vScale;
+                texture.image.uOffset = uOffset;
+                texture.image.vOffset = vOffset;
+
+                return texture;
+            }
+
+            LAMBDA_HOST_DEVICE int getWidth() const { return width; }
+
+            LAMBDA_HOST_DEVICE int getHeight() const { return height; }
+
+            LAMBDA_HOST_DEVICE Float getMin() const { return min; }
+
+            LAMBDA_HOST_DEVICE Float getMax() const { return max; }
+
+            LAMBDA_HOST_DEVICE Float getAverage() const { return average; }
+
+            LAMBDA_HOST_DEVICE Float getAverage(int x, int y) const {
+                switch (type) {
+                    case Type::CONSTANT: return average;
+                    case Type::SCALAR: return scalar.texture->getAverage(x, y);
+                    case Type::SCALE: return scale.texture1->getAverage(x, y) * scale.texture2->getAverage(x, y);
+                    case Type::MIX: return utils::interpolate(mix.texture1->getAverage(x, y), mix.texture2->getAverage(x, y), mix.factor->getAverage(x, y));
+                    case Type::CHECKER: return average;
+                    case Type::IMAGE: return getAverageImage(x, y);
+                }
+
+                return 0;
+            }
+
+            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & i, Float lambda) const {
+                switch (type) {
+                    case Type::CONSTANT: return constant.value->get(lambda);
+                    case Type::SCALAR: return scalar.texture->evaluate(i);
+                    case Type::SCALE: return scale.texture1->evaluate(i, lambda) * scale.texture2->evaluate(i, lambda);
+                    case Type::MIX: return utils::interpolate(mix.texture1->evaluate(i, lambda), mix.texture2->evaluate(i, lambda), mix.factor->evaluate(i));
+                    case Type::CHECKER: return evaluateChecker(i, lambda);
+                    case Type::IMAGE: return evaluateImage(i, lambda);
+                }
+
+                return 0;
+            }
+
+        private:
+            enum class Type { CONSTANT, SCALAR, SCALE, MIX, CHECKER, IMAGE };
+
+            Type type;
+            bool isConstant;
+            int width, height;
+            Float min, max, average;
+
+            union {
+                struct { DenseSpectrum<Float> * value; } constant;
+                struct { SpectrumTexture * texture1, * texture2; } scale;
+                struct { ScalarTexture * texture; } scalar;
+                struct { SpectrumTexture * texture1, * texture2; ScalarTexture * factor; } mix;
+                struct { DenseSpectrum<Float> * value1, * value2; Float uScale, vScale, uOffset, vOffset; } checker;
+                struct { Float * image; ColorSpace space; int width, height; Float uScale, vScale, uOffset, vOffset; } image;
+            };
+
+            LAMBDA_HOST_DEVICE Float getAverageImage(int x, int y) const {
+                if (std::fabs(image.uScale - 1) > constants::EPSILON || std::fabs(image.vScale - 1) > constants::EPSILON || std::fabs(image.uOffset) > constants::EPSILON || std::fabs(image.vOffset) > constants::EPSILON) return average;
+
+                x = ((x % image.width) + image.width) % image.width;
+                y = ((y % image.height) + image.height) % image.height;
+
+                Float sum = 0;
+
+                for (int j = 0; j < 3; j++) sum += image.image[(y * image.width + x) * 3 + j];
+
+                return sum / 3;
+            }
+
+            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & i, Float lambda) const {
+                int x = int(std::floor(i.textureCoordinate[0] * checker.uScale + checker.uOffset));
+                int y = int(std::floor(i.textureCoordinate[1] * checker.vScale + checker.vOffset));
+
+                return abs(x + y) % 2 == 0 ? checker.value1->get(lambda) : checker.value2->get(lambda);
+            }
+
+            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & i, Float lambda) const {
+                Float u = i.textureCoordinate[0] * image.uScale + image.uOffset;
+                Float v = i.textureCoordinate[1] * image.vScale + image.vOffset;
+
+                u = u - std::floor(u);
+                v = v - std::floor(v);
+
+                Float x = u * Float(image.width) - Float(0.5);
+                Float y = v * Float(image.height) - Float(0.5);
+
+                int x0 = int(std::floor(x));
+                int y0 = int(std::floor(y));
+
+                int x1 = x0 + 1;
+                int y1 = y0 + 1;
+
+                Float tx = x - Float(x0);
+                Float ty = y - Float(y0);
+
+                x0 = ((x0 % image.width) + image.width) % image.width;
+                y0 = ((y0 % image.height) + image.height) % image.height;
+                x1 = ((x1 % image.width) + image.width) % image.width;
+                y1 = ((y1 % image.height) + image.height) % image.height;
+
+                Vector<Float, 3> color;
+
+                for (int j = 0; j < 3; j++) {
+                    Float c00 = image.image[(y0 * image.width + x0) * 3 + j];
+                    Float c10 = image.image[(y0 * image.width + x1) * 3 + j];
+                    Float c01 = image.image[(y1 * image.width + x0) * 3 + j];
+                    Float c11 = image.image[(y1 * image.width + x1) * 3 + j];
+
+                    color[j] = utils::interpolate(utils::interpolate(c00, c10, tx), utils::interpolate(c01, c11, tx), ty);
+                }
+
+                Float upsamplingScale = std::fmax(color[0], std::fmax(color[1], color[2]));
+
+                if (upsamplingScale <= 1) upsamplingScale = 1;
+                else color /= upsamplingScale;
+
+                Vector<Float, 3> coefficients = utils::upsampleRGB(image.space, color);
+
+                return utils::sigmoid((coefficients[0] * lambda + coefficients[1]) * lambda + coefficients[2]) * upsamplingScale;
+            }
+    };
+}

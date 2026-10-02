@@ -6,120 +6,126 @@
 #include "math/random.h"
 #include "math/ray.h"
 #include "math/vector.h"
+#include "scene/bvh.h"
 #include "scene/object.h"
 
-class Instance {
-    public:
-        HOST_DEVICE Instance(int o, int c, int m, const Vector<Float> & translation, const Vector<Float> & rotation, const Vector<Float> & scale) : object(o), count(c), material(m) {
-            Matrix<Float, 4> translateMatrix = Matrix<Float, 4>(Float(1), Float(0), Float(0), translation[0], Float(0), Float(1), Float(0), translation[1], Float(0), Float(0), Float(1), translation[2], Float(0), Float(0), Float(0), Float(1));
+namespace lambda {
+    class Material;
+    class Medium;
 
-            Float sinX = std::sin(rotation[0]), cosX = std::cos(rotation[0]);
-            Float sinY = std::sin(rotation[1]), cosY = std::cos(rotation[1]);
-            Float sinZ = std::sin(rotation[2]), cosZ = std::cos(rotation[2]);
+    class Instance {
+        public:
+            Instance() : objects(nullptr), count(0), node(nullptr), lightNode(nullptr), material(nullptr), medium0(nullptr), medium1(nullptr) {}
 
-            Matrix<Float, 4> rotateMatrixX = Matrix<Float, 4>(Float(1), Float(0), Float(0), Float(0), Float(0), cosX, -sinX, Float(0), Float(0), sinX, cosX, Float(0), Float(0), Float(0), Float(0), Float(1));
-            Matrix<Float, 4> rotateMatrixY = Matrix<Float, 4>(cosY, Float(0), sinY, Float(0), Float(0), 1, Float(0), Float(0), -sinY, Float(0), cosY, Float(0), Float(0), Float(0), Float(0), Float(1));
-            Matrix<Float, 4> rotateMatrixZ = Matrix<Float, 4>(cosZ, -sinZ, Float(0), Float(0), sinZ, cosZ, Float(0), Float(0), Float(0), Float(0), 1, Float(0), Float(0), Float(0), Float(0), Float(1));
+            Instance(Object * o, int c, Material * m, Medium * m0, Medium * m1, const Vector<Float, 3> & translation, const Vector<Float, 3> & rotation, const Vector<Float, 3> & scale) : objects(o), count(c), node(nullptr), lightNode(nullptr), material(m), medium0(m0), medium1(m1) {
+                Matrix<Float, 4> rotationMatrix = utils::rotationMatrix(rotation);
 
-            Matrix<Float, 4> scaleMatrix = Matrix<Float, 4>(scale[0], Float(0), Float(0), Float(0), Float(0), scale[1], Float(0), Float(0), Float(0), Float(0), scale[2], Float(0), Float(0), Float(0), Float(0), Float(1));
-
-            transformMatrix = translateMatrix * rotateMatrixZ * rotateMatrixY * rotateMatrixX * scaleMatrix;
-            inverseTransformMatrix = inverse(transformMatrix);
-            normalMatrix = transpose(inverseTransformMatrix);
-
-            normalMatrix.get(0, 3) = Float(0);
-            normalMatrix.get(1, 3) = Float(0);
-            normalMatrix.get(2, 3) = Float(0);
-            normalMatrix.get(3, 0) = Float(0);
-            normalMatrix.get(3, 1) = Float(0);
-            normalMatrix.get(3, 2) = Float(0);
-            normalMatrix.get(3, 3) = Float(1);
-        }
-
-        HOST_DEVICE void setNode(int n) { node = n; }
-
-        HOST_DEVICE int getObject() const { return object; }
-
-        HOST_DEVICE int getCount() const { return count; }
-
-        HOST_DEVICE int getNode() const { return node; }
-
-        HOST_DEVICE int getMaterial(const Object * objects, int i) const { return material >= 0 ? material : objects[object + i].getMaterial(); }
-
-        HOST_DEVICE Vector<Float> transformPointToLocal(const Vector<Float> & p) const { return transform(inverseTransformMatrix, p, Float(1)); }
-
-        HOST_DEVICE Vector<Float> transformPointToWorld(const Vector<Float> & p) const { return transform(transformMatrix, p, Float(1)); }
-
-        HOST_DEVICE Vector<Float> transformVectorToLocal(const Vector<Float> & n) const { return transform(inverseTransformMatrix, n, Float(0)); }
-
-        HOST_DEVICE Vector<Float> transformVectorToWorld(const Vector<Float> & n) const { return transform(transformMatrix, n, Float(0)); }
-
-        HOST_DEVICE Vector<Float> transformNormalToWorld(const Vector<Float> & n) const { return normalize(transform(normalMatrix, n, Float(0))); }
-
-        HOST_DEVICE Ray transformRayToLocal(const Ray & r) const {
-            return Ray(transformPointToLocal(r.getOrigin()), transformVectorToLocal(r.getDirection()), r.getLambdas());
-        }
-
-        HOST_DEVICE Vector<Float> min(const Object * objects) const {
-            Vector<Float> minBounds(MAX, MAX, MAX);
-
-            for (int i = 0; i < count; i++) {
-                Vector<Float> corner1 = objects[object + i].min();
-                Vector<Float> corner2 = objects[object + i].max();
-
-                minBounds = minV(minBounds, transformPointToWorld(corner1));
-                minBounds = minV(minBounds, transformPointToWorld(corner2));
-                minBounds = minV(minBounds, transformPointToWorld(Vector<Float>(corner1[0], corner1[1], corner2[2])));
-                minBounds = minV(minBounds, transformPointToWorld(Vector<Float>(corner1[0], corner2[1], corner1[2])));
-                minBounds = minV(minBounds, transformPointToWorld(Vector<Float>(corner1[0], corner2[1], corner2[2])));
-                minBounds = minV(minBounds, transformPointToWorld(Vector<Float>(corner2[0], corner1[1], corner1[2])));
-                minBounds = minV(minBounds, transformPointToWorld(Vector<Float>(corner2[0], corner1[1], corner2[2])));
-                minBounds = minV(minBounds, transformPointToWorld(Vector<Float>(corner2[0], corner2[1], corner1[2])));
+                transformMatrix = utils::translationMatrix(translation) * rotationMatrix * utils::scaleMatrix(scale);
+                inverseTransformMatrix = utils::scaleMatrix(Vector<Float, 3>(1 / scale[0], 1 / scale[1], 1 / scale[2])) * transpose(rotationMatrix) * utils::translationMatrix(Vector<Float, 3>(-translation));
+                normalMatrix = Matrix<Float, 3>(transpose(inverseTransformMatrix));
             }
 
-            return minBounds;
-        }
+            void setNode(BVHNode<Object> * n) { node = n; }
 
-        HOST_DEVICE Vector<Float> max(const Object * objects) const {
-            Vector<Float> maxBounds(-MAX, -MAX, -MAX);
+            void setLightNode(BVHNode<Object> * n) { lightNode = n; }
 
-            for (int i = 0; i < count; i++) {
-                Vector<Float> corner1 = objects[object + i].min();
-                Vector<Float> corner2 = objects[object + i].max();
+            LAMBDA_HOST_DEVICE const Object * getObject(int i) const { return objects + i; }
 
-                maxBounds = maxV(maxBounds, transformPointToWorld(corner1));
-                maxBounds = maxV(maxBounds, transformPointToWorld(corner2));
-                maxBounds = maxV(maxBounds, transformPointToWorld(Vector<Float>(corner1[0], corner1[1], corner2[2])));
-                maxBounds = maxV(maxBounds, transformPointToWorld(Vector<Float>(corner1[0], corner2[1], corner1[2])));
-                maxBounds = maxV(maxBounds, transformPointToWorld(Vector<Float>(corner1[0], corner2[1], corner2[2])));
-                maxBounds = maxV(maxBounds, transformPointToWorld(Vector<Float>(corner2[0], corner1[1], corner1[2])));
-                maxBounds = maxV(maxBounds, transformPointToWorld(Vector<Float>(corner2[0], corner1[1], corner2[2])));
-                maxBounds = maxV(maxBounds, transformPointToWorld(Vector<Float>(corner2[0], corner2[1], corner1[2])));
+            LAMBDA_HOST_DEVICE int getCount() const { return count; }
+
+            LAMBDA_HOST_DEVICE const BVHNode<Object> * getNode() const { return node; }
+
+            LAMBDA_HOST_DEVICE const BVHNode<Object> * getLightNode() const { return lightNode; }
+
+            LAMBDA_HOST_DEVICE const Material * getMaterial(int i) const { return material != nullptr ? material : objects[i].getMaterial(); }
+
+            LAMBDA_HOST_DEVICE const Medium * getMedium0(int i) const { return medium0 != nullptr ? medium0 : objects[i].getMedium0(); }
+
+            LAMBDA_HOST_DEVICE const Medium * getMedium1(int i) const { return medium1 != nullptr ? medium1 : objects[i].getMedium1(); }
+
+            LAMBDA_HOST_DEVICE bool hasMaterial() const { return material != nullptr; }
+
+            LAMBDA_HOST_DEVICE Float getScale(int i) const { return Vector<Float, 3>(transformMatrix.get(0, i), transformMatrix.get(1, i), transformMatrix.get(2, i)).length(); }
+
+            LAMBDA_HOST_DEVICE Float getScaleSquared(int i) const { return Vector<Float, 3>(transformMatrix.get(0, i), transformMatrix.get(1, i), transformMatrix.get(2, i)).lengthSquared();}
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> transformPointToLocal(const Vector<Float, 3> & p) const { return Vector<Float, 3>(inverseTransformMatrix * Vector<Float, 4>(p, 1)); }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> transformPointToWorld(const Vector<Float, 3> & p) const { return Vector<Float, 3>(transformMatrix * Vector<Float, 4>(p, 1)); }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> transformVectorToLocal(const Vector<Float, 3> & v) const { return Vector<Float, 3>(inverseTransformMatrix * Vector<Float, 4>(v, 0)); }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> transformVectorToWorld(const Vector<Float, 3> & v) const { return Vector<Float, 3>(transformMatrix * Vector<Float, 4>(v, 0)); }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> transformNormalToWorld(const Vector<Float, 3> & n) const { return normalize(normalMatrix * n); }
+
+            LAMBDA_HOST_DEVICE Ray transformRayToLocal(const Ray & r) const { return Ray(transformPointToLocal(r.getOrigin()), transformVectorToLocal(r.getDirection()), r.getLambdas(), r.getMedium()); }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> minBounds() const {
+                Vector<Float, 3> bounds(constants::MAX, constants::MAX, constants::MAX);
+
+                for (int i = 0; i < count; i++) {
+                    Vector<Float, 3> corner1 = objects[i].minBounds();
+                    Vector<Float, 3> corner2 = objects[i].maxBounds();
+
+                    bounds = min(bounds, transformPointToWorld(corner1));
+                    bounds = min(bounds, transformPointToWorld(corner2));
+                    bounds = min(bounds, transformPointToWorld(Vector<Float, 3>(corner1[0], corner1[1], corner2[2])));
+                    bounds = min(bounds, transformPointToWorld(Vector<Float, 3>(corner1[0], corner2[1], corner1[2])));
+                    bounds = min(bounds, transformPointToWorld(Vector<Float, 3>(corner1[0], corner2[1], corner2[2])));
+                    bounds = min(bounds, transformPointToWorld(Vector<Float, 3>(corner2[0], corner1[1], corner1[2])));
+                    bounds = min(bounds, transformPointToWorld(Vector<Float, 3>(corner2[0], corner1[1], corner2[2])));
+                    bounds = min(bounds, transformPointToWorld(Vector<Float, 3>(corner2[0], corner2[1], corner1[2])));
+                }
+
+                return bounds;
             }
 
-            return maxBounds;
-        }
+            LAMBDA_HOST_DEVICE Vector<Float, 3> maxBounds() const {
+                Vector<Float, 3> bounds(-constants::MAX, -constants::MAX, -constants::MAX);
 
-        HOST_DEVICE Vector<Float> center(const Object * objects) const {
-            Vector<Float> center(0, 0, 0);
+                for (int i = 0; i < count; i++) {
+                    Vector<Float, 3> corner1 = objects[i].minBounds();
+                    Vector<Float, 3> corner2 = objects[i].maxBounds();
 
-            for (int i = 0; i < count; i++)
-                center += transformPointToWorld(objects[object + i].center());
+                    bounds = max(bounds, transformPointToWorld(corner1));
+                    bounds = max(bounds, transformPointToWorld(corner2));
+                    bounds = max(bounds, transformPointToWorld(Vector<Float, 3>(corner1[0], corner1[1], corner2[2])));
+                    bounds = max(bounds, transformPointToWorld(Vector<Float, 3>(corner1[0], corner2[1], corner1[2])));
+                    bounds = max(bounds, transformPointToWorld(Vector<Float, 3>(corner1[0], corner2[1], corner2[2])));
+                    bounds = max(bounds, transformPointToWorld(Vector<Float, 3>(corner2[0], corner1[1], corner1[2])));
+                    bounds = max(bounds, transformPointToWorld(Vector<Float, 3>(corner2[0], corner1[1], corner2[2])));
+                    bounds = max(bounds, transformPointToWorld(Vector<Float, 3>(corner2[0], corner2[1], corner1[2])));
+                }
 
-            return center / Float(count);
-        }
+                return bounds;
+            }
 
-        HOST_DEVICE Vector<Float> center(const Object * objects, int i) const { return transformPointToWorld(objects[object + i].center()); }
+            LAMBDA_HOST_DEVICE Vector<Float, 3> center() const {
+                Vector<Float, 3> center(0, 0, 0);
 
-        HOST_DEVICE Float radius(const Object * objects, int i) const { return objects[object + i].radius() * Vector<Float>(transformMatrix.get(0, 0), transformMatrix.get(1, 0), transformMatrix.get(2, 0)).length(); }
+                for (int i = 0; i < count; i++) center += transformPointToWorld(objects[i].center());
 
-        HOST_DEVICE Float area(const Object * objects, int i) const { return objects[object + i].area() * Vector<Float>(transformMatrix.get(0, 0), transformMatrix.get(1, 0), transformMatrix.get(2, 0)).lengthSquared(); }
+                return center / Float(count);
+            }
 
-        HOST_DEVICE Float pdf(const Object * objects, int i, const Vector<Float> & point, const Vector<Float> & direction) const { return objects[object + i].pdf(transformPointToLocal(point), normalize(transformVectorToLocal(direction))); }
+            LAMBDA_HOST_DEVICE Vector<Float, 3> center(int i) const { return transformPointToWorld(objects[i].center()); }
 
-        HOST_DEVICE Vector<Float> sample(const Object * objects, int i, const Vector<Float> & point, Random & state) const { return normalize(transformVectorToWorld(objects[object + i].sample(transformPointToLocal(point), state))); }
+            LAMBDA_HOST_DEVICE Float radius(int i) const { return objects[i].radius() * std::fmax(getScale(0), std::fmax(getScale(1), getScale(2))); }
 
-    private:
-        int object, count, node, material;
-        Matrix<Float, 4> transformMatrix, inverseTransformMatrix, normalMatrix;
-};
+            LAMBDA_HOST_DEVICE Float area(int i) const { return objects[i].getArea() * getScaleSquared(0); }
+
+            LAMBDA_HOST_DEVICE Float pdf(int i, const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const { return objects[i].pdf(transformPointToLocal(point), normalize(transformVectorToLocal(direction))); }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> sample(int i, const Vector<Float, 3> & point, Random & state) const { return normalize(transformVectorToWorld(objects[i].sample(transformPointToLocal(point), state))); }
+
+        private:
+            Object * objects;
+            int count;
+            BVHNode<Object> * node, * lightNode;
+            Material * material;
+            Medium * medium0, * medium1;
+            Matrix<Float, 4> transformMatrix, inverseTransformMatrix;
+            Matrix<Float, 3> normalMatrix;
+    };
+}

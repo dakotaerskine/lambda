@@ -5,14 +5,20 @@
 #include "math/ray.h"
 #include "math/vector.h"
 
-class Intersection {
-    public:
-        HOST_DEVICE Intersection() : instance(-1), object(-1), t(MAX), frontFacing(false) {}
+namespace lambda {
+    class Object;
+    class Instance;
 
-        int instance, object;
-        Float t;
-        Vector<Float> point, normal;
-        Vector<Float> localPoint, localNormal;
-        Float u, v;
-        bool frontFacing;
-};
+    class Intersection {
+        public:
+            LAMBDA_HOST_DEVICE Intersection() : object(nullptr), instance(nullptr), t(constants::MAX), frontFacing(true), useTransformed(false), isSurface(true) {}
+
+            const Object * object;
+            const Instance * instance;
+            Float t;
+            Vector<Float, 3> point, normal, tangent;
+            Vector<Float, 3> transformedPoint, transformedNormal, transformedTangent;
+            Vector<Float, 2> textureCoordinate;
+            bool frontFacing, useTransformed, isSurface;
+    };
+}

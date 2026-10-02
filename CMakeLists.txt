@@ -27,6 +27,8 @@ target_include_directories(lambda SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/data")
 
+target_compile_definitions(lambda PRIVATE LAMBDA_DATA_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}/data")
+
 find_package(OpenMP REQUIRED)
 target_link_libraries(lambda PRIVATE OpenMP::OpenMP_CXX)
 
@@ -35,17 +37,17 @@ if(CMAKE_CUDA_COMPILER AND NOT CPU)
 
     set_target_properties(lambda PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_SEPARABLE_COMPILATION ON)
 
-    target_compile_options(lambda PRIVATE -lineinfo -Xcompiler=-Wall,-Wextra,-Wshadow,-Wconversion,-Wfloat-equal,${OpenMP_CXX_FLAGS})
+    target_compile_options(lambda PRIVATE -lineinfo -Xcompiler=-Wall,-Wextra,-Wshadow,-Wconversion,${OpenMP_CXX_FLAGS})
 
     target_link_options(lambda PRIVATE "$<DEVICE_LINK:SHELL:-Xnvlink -w>")
 else()
     set_target_properties(lambda PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
-    target_compile_options(lambda PRIVATE -Wall -Wextra -Wshadow -Wconversion -Wfloat-equal)
+    target_compile_options(lambda PRIVATE -g -Wall -Wextra -Wshadow -Wconversion)
 endif()
 
-target_compile_definitions(lambda PRIVATE TINYEXR_USE_MINIZ=0 TINYEXR_USE_STB_ZLIB=1)
+target_compile_definitions(lambda PRIVATE STB_IMAGE_IMPLEMENTATION STB_IMAGE_WRITE_IMPLEMENTATION TINYEXR_IMPLEMENTATION TINYEXR_USE_MINIZ=0 TINYEXR_USE_STB_ZLIB=1)
 
 if (DOUBLE_PRECISION)
-    target_compile_definitions(lambda PRIVATE DOUBLE_PRECISION)
+    target_compile_definitions(lambda PRIVATE LAMBDA_DOUBLE_PRECISION)
 endif()
