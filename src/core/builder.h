@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cmath>
-#include <unordered_map>
 
 #include "core/platform.h"
 #include "math/vector.h"
