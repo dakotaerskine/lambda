@@ -3,11 +3,8 @@
 #include <cmath>
 #include <unordered_map>
 
-#include "core/buffer.h"
-#include "core/context.h"
 #include "core/platform.h"
 #include "math/vector.h"
-#include "render/renderer.h"
 #include "scene/bvh.h"
 #include "scene/background.h"
 #include "scene/instance.h"
@@ -19,43 +16,14 @@
 namespace lambda {
     class Builder {
         public:
-            static void buildContext(Context & context) {
-                Background * background = context.getBackground();
+            static Float computeSceneRadius(const std::vector<Instance *> & instances) {
+                Vector<Float, 3> sceneCenter = instances.empty() ? Vector<Float, 3>() : instances[0]->center(0);
+                Float sceneRadius = instances.empty() ? 1 : instances[0]->radius(0);
 
-                background->setRadius(computeSceneRadius(context));
-
-                std::vector<Float> conditionalCDF, marginalCDF;
-
-                buildCDF(background, conditionalCDF, marginalCDF);
-
-
-                background->setConditionalCDF(context.addConditionalCDF(conditionalCDF.data(), int(std::ssize(conditionalCDF))));
-                background->setMarginalCDF(context.addMarginalCDF(marginalCDF.data(), int(std::ssize(marginalCDF))));
-
-                Scene * scene = context.getScene();
-
-                scene->setBackground(background);
-                scene->setNode(buildGeometryBVH(context));
-                scene->setLightNode(buildLightBVH(context));
-
-                Renderer * renderer = context.getRenderer();
-
-                renderer->setScene(scene);
-                renderer->setCamera(context.getCamera());
-                renderer->setBuffer(context.addOutput(renderer->getTotalPixels() * 3));
-            }
-
-        private:
-            static Float computeSceneRadius(Context & context) {
-                Vector<Float, 3> sceneCenter;
-                Float sceneRadius = 0;
-
-                for (int i = 0; i < context.getInstanceCount(); i++) {
-                    Instance * instance = context.getInstance(i);
-
-                    for (int j = 0; j < instance->getCount(); j++) {
-                        Vector<Float, 3> objectCenter = instance->center(j);
-                        Float objectRadius = instance->radius(j);
+                for (int i = 0; i < std::ssize(instances); i++) {
+                    for (int j = 0; j < instances[i]->getCount(); j++) {
+                        Vector<Float, 3> objectCenter = instances[i]->center(j);
+                        Float objectRadius = instances[i]->radius(j);
 
                         Vector<Float, 3> sceneToObject = objectCenter - sceneCenter;
                         Float distance = sceneToObject.length();
@@ -76,8 +44,8 @@ namespace lambda {
                 return sceneRadius;
             }
 
-            static void buildCDF(const Background * background, std::vector<Float> & conditionalCDF, std::vector<Float> & marginalCDF) {
-                const SpectrumTexture * backgroundEmission = background->getEmission();
+            static void buildCDF(const Background & background, std::vector<Float> & conditionalCDF, std::vector<Float> & marginalCDF) {
+                const SpectrumTexture * backgroundEmission = background.getEmission();
 
                 int width = backgroundEmission->getWidth();
                 int height = backgroundEmission->getHeight();
@@ -101,7 +69,7 @@ namespace lambda {
                     else
                         for (int x = 0; x < width; x++) conditionalCDF[y * width + x] = (Float(x) + Float(1)) / Float(width);
 
-                    rowWeight *= background->jacobian((Float(y) + Float(0.5)) / Float(height));
+                    rowWeight *= background.jacobian((Float(y) + Float(0.5)) / Float(height));
 
                     totalWeight += rowWeight;
                     marginalCDF[y] = totalWeight;
@@ -115,155 +83,20 @@ namespace lambda {
                 }
             }
 
-            static BVHNode<Instance> * buildGeometryBVH(Context & context) {
-                std::vector<Object *> orderedObjects;
-                std::vector<Instance *> orderedInstances;
+            template <typename T, bool light>
+            requires (std::is_same_v<T, Object> || std::is_same_v<T, Instance>)
+            static std::vector<BVHNode<T>> buildBVH(T ** elements, int n, bool materialBlind = false) {
+                if (n <= 0) return std::vector<BVHNode<T>>();
 
-                for (int i = 0; i < context.getObjectCount(); i++)
-                    orderedObjects.push_back(context.getObject(i));
-
-                for (int i = 0; i < context.getInstanceCount(); i++)
-                    orderedInstances.push_back(context.getInstance(i));
-
-                context.addOrderedObjects(orderedObjects.data(), int(std::ssize(orderedObjects)));
-                context.addOrderedInstances(orderedInstances.data(), int(std::ssize(orderedInstances)));
-
-                BVHNode<Instance> * root = nullptr;
-
-                if (context.hasObjects() && context.hasInstances()) {
-                    context.reserveNodes<Object>(2 * context.getObjectCount() - 1);
-                    context.reserveNodes<Instance>(2 * context.getInstanceCount() - 1);
-
-                    root = buildBVH<Instance>(context, 0, context.getInstanceCount(), 1);
-
-                    std::unordered_map<const Object *, BVHNode<Object> *> objectsToNodes;
-
-                    for (int i = 0; i < context.getObjectIndex(); i++) {
-                        int start = context.getOffset(i);
-                        int end = context.getOffset(i + 1);
-
-                        if (start == end) continue;
-
-                        objectsToNodes[context.getObject(start)] = buildBVH<Object>(context, start, end, 1);
-                    }
-
-                    for (int i = 0; i < context.getInstanceCount(); i++) {
-                        Instance * instance = context.getInstance(i);
-
-                        instance->setNode(objectsToNodes.at(instance->getObject(0)));
-                    }
-                }
-
-                return root;
+                return buildBVH<T, light>(elements, n, 1, materialBlind);
             }
 
+        private:
+            template <typename T, bool light>
+            requires (std::is_same_v<T, Object> || std::is_same_v<T, Instance>)
+            static std::vector<BVHNode<T>> buildBVH(T ** elements, int n, int depth, bool materialBlind) {
+                std::vector<BVHNode<T>> nodes;
 
-            static BVHNode<Instance> * buildLightBVH(Context & context) {
-                BVHNode<Instance> * root = nullptr;
-
-                std::vector<Instance *> lightInstances;
-
-                std::unordered_map<const Object *, Object *> objectsToLightObjects;
-
-                for (int i = 0; i < context.getObjectIndex(); i++) {
-                    int start = context.getOffset(i);
-                    int end = context.getOffset(i + 1);
-
-                    bool hasEmissive = false;
-
-                    for (int j = start; j < end; j++) {
-                        Object * object = context.getObject(j);
-                        const Material * material = object->getMaterial();
-
-                        if (material && material->isEmissive()) {
-                            context.addLightObject(object);
-
-                            if (!hasEmissive) objectsToLightObjects[context.getObject(start)] = object;
-
-                            hasEmissive = true;
-                        }
-                    }
-
-                    context.flushLightObjects();
-                }
-
-                int lightObjectOffset = context.getLightObjectIndex();
-
-                std::vector<const Object *> lightInstanceObjects;
-
-                for (int i = 0; i < context.getInstanceCount(); i++) {
-                    Instance * instance = context.getInstance(i);
-
-                    if (instance->hasMaterial()) {
-                        const Material * material = instance->getMaterial(0);
-
-                        if (material && material->isEmissive()) {
-                            lightInstances.push_back(instance);
-
-                            if (std::find(lightInstanceObjects.begin(), lightInstanceObjects.end(), instance->getObject(0)) == lightInstanceObjects.end()) {
-                                lightInstanceObjects.push_back(instance->getObject(0));
-
-                                for (int j = 0; j < instance->getCount(); j++)
-                                    context.addLightObject(const_cast<Object *>(instance->getObject(j)));
-
-                                context.flushLightObjects();
-                            }
-                        }
-                    }
-                    else {
-                        for (int j = 0; j < instance->getCount(); j++) {
-                            const Material * material = instance->getObject(j)->getMaterial();
-
-                            if (material && material->isEmissive()) {
-                                lightInstances.push_back(instance);
-
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                context.addLightInstances(lightInstances.data(), int(std::ssize(lightInstances)));
-
-                if (context.hasLightObjects() && context.hasLightInstances()) {
-                    context.reserveNodes<Object>(2 * context.getLightObjectCount() - 1, true);
-                    context.reserveNodes<Instance>(2 * context.getLightInstanceCount() - 1, true);
-
-                    root = buildBVH<Instance>(context, 0, context.getLightInstanceCount(), 1, true);
-
-                    std::unordered_map<Object *, BVHNode<Object> *> objectsToLightNodes;
-                    std::unordered_map<const Object *, BVHNode<Object> *> instancedObjectsToLightNodes;
-
-                    for (int i = 0; i < context.getLightObjectIndex(); i++) {
-                        int start = context.getLightOffset(i);
-                        int end = context.getLightOffset(i + 1);
-
-                        if (start == end) continue;
-
-                        Object * object = context.getOrdered<Object>(start, true);
-
-                        bool materialBlind = i >= lightObjectOffset;
-
-                        BVHNode<Object> * node = buildBVH<Object>(context, start, end, 1, true, materialBlind);
-
-                        if (materialBlind) instancedObjectsToLightNodes[object] = node;
-                        else objectsToLightNodes[object] = node;
-                    }
-
-                    for (int i = 0; i < context.getLightInstanceCount(); i++) {
-                        Instance * instance = context.getOrdered<Instance>(i, true);
-
-                        BVHNode<Object> * node = instance->hasMaterial() ? instancedObjectsToLightNodes.at(instance->getObject(0)) : objectsToLightNodes.at(objectsToLightObjects.at(instance->getObject(0)));
-
-                        instance->setLightNode(node);
-                    }
-                }
-
-                return root;
-            }
-
-            template <typename T>
-            static BVHNode<T> * buildBVH(Context & context, int start, int end, int depth, bool light = false, bool materialBlind = false) {
                 Vector<Float, 3> minBounds(constants::MAX, constants::MAX, constants::MAX);
                 Vector<Float, 3> maxBounds(-constants::MAX, -constants::MAX, -constants::MAX);
                 Vector<Float, 3> minCenter(constants::MAX, constants::MAX, constants::MAX);
@@ -271,29 +104,13 @@ namespace lambda {
 
                 Float totalPower = 0;
 
-                for (int i = start; i < end; i++) {
-                    minBounds = min(minBounds, context.getOrdered<T>(i, light)->minBounds());
-                    maxBounds = max(maxBounds, context.getOrdered<T>(i, light)->maxBounds());
-                    minCenter = min(minCenter, context.getOrdered<T>(i, light)->center());
-                    maxCenter = max(maxCenter, context.getOrdered<T>(i, light)->center());
+                for (int i = 0; i < n; i++) {
+                    minBounds = min(minBounds, elements[i]->minBounds());
+                    maxBounds = max(maxBounds, elements[i]->maxBounds());
+                    minCenter = min(minCenter, elements[i]->center());
+                    maxCenter = max(maxCenter, elements[i]->center());
 
-                    if (light) {
-                        if constexpr (std::is_same_v<T, Instance>) {
-                            Instance * instance = context.getOrdered<Instance>(i, light);
-
-                            for (int j = 0; j < instance->getCount(); j++)
-                                totalPower += instance->area(j) * instance->getMaterial(j)->averageEmission();
-                        }
-                        else {
-                            Object * object = context.getOrdered<Object>(i, light);
-
-                            Float averageEmission = 1;
-
-                            if (!materialBlind) averageEmission = object->getMaterial()->averageEmission();
-
-                            totalPower += object->getArea() * averageEmission;
-                        }
-                    }
+                    if constexpr (light) totalPower += elementPower(elements[i], materialBlind);
                 }
 
                 Float bestCost = constants::MAX;
@@ -301,7 +118,7 @@ namespace lambda {
                 int bestSplit = -1;
 
                 for (int i = 0; i < 3; i++)
-                    if (maxCenter[i] - minCenter[i] >= constants::EPSILON) {
+                    if (maxCenter[i] - minCenter[i] > constants::EPSILON) {
                         Vector<Float, 3> binMin[constants::BVH_BIN_COUNT];
                         Vector<Float, 3> binMax[constants::BVH_BIN_COUNT];
                         Float binCount[constants::BVH_BIN_COUNT];
@@ -312,30 +129,14 @@ namespace lambda {
                             binCount[j] = 0;
                         }
 
-                        for (int j = start; j < end; j++) {
-                            Vector<Float, 3> center = context.getOrdered<T>(j, light)->center();
+                        for (int j = 0; j < n; j++) {
+                            Vector<Float, 3> center = elements[j]->center();
                             int bin = std::clamp(int(constants::BVH_BIN_COUNT * (center[i] - minCenter[i]) / (maxCenter[i] - minCenter[i])), 0, constants::BVH_BIN_COUNT - 1);
 
-                            binMin[bin] = min(binMin[bin], context.getOrdered<T>(j, light)->minBounds());
-                            binMax[bin] = max(binMax[bin], context.getOrdered<T>(j, light)->maxBounds());
+                            binMin[bin] = min(binMin[bin], elements[j]->minBounds());
+                            binMax[bin] = max(binMax[bin], elements[j]->maxBounds());
 
-                            if (light) {
-                                if constexpr (std::is_same_v<T, Instance>) {
-                                    Instance * instance = context.getOrdered<Instance>(j, light);
-
-                                    for (int k = 0; k < instance->getCount(); k++)
-                                        binCount[bin] += instance->area(k) * instance->getMaterial(k)->averageEmission();
-                                }
-                                else {
-                                    Object * object = context.getOrdered<Object>(j, light);
-
-                                    Float averageEmission = 1;
-
-                                    if (!materialBlind) averageEmission = object->getMaterial()->averageEmission();
-
-                                    binCount[bin] += object->getArea() * averageEmission;
-                                }
-                            }
+                            if constexpr (light) binCount[bin] += elementPower(elements[j], materialBlind);
                             else binCount[bin]++;
                         }
 
@@ -376,7 +177,7 @@ namespace lambda {
                         }
 
                         for (int j = 0; j < constants::BVH_BIN_COUNT - 1; j++) {
-                            if (leftCount[j] < constants::EPSILON || rightCount[j + 1] < constants::EPSILON) continue;
+                            if (leftCount[j] <= constants::EPSILON || rightCount[j + 1] <= constants::EPSILON) continue;
 
                             Vector<Float, 3> leftExtents = leftMax[j] - leftMin[j];
                             Vector<Float, 3> rightExtents = rightMax[j + 1] - rightMin[j + 1];
@@ -396,44 +197,58 @@ namespace lambda {
                         }
                 }
 
-                if (end - start == 1 || depth >= constants::BVH_MAX_DEPTH || (!light && bestCost >= Float(end - start)) || bestSplit == -1) {
-                    BVHNode<T> * node = context.addNode(BVHNode<T>(minBounds, maxBounds, context.getOrderedBase<T>(start, light), end - start), light);
+                if (n == 1 || depth >= constants::BVH_MAX_DEPTH || (!light && bestCost >= Float(n)) || bestSplit == -1) {
+                    nodes.push_back(BVHNode<T>(minBounds, maxBounds, elements, n, totalPower));
 
-                    if (light) node->setPower(totalPower);
-
-                    return node;
+                    return nodes;
                 }
 
                 Float splitPlane = minCenter[bestAxis] + Float(bestSplit + 1) * (maxCenter[bestAxis] - minCenter[bestAxis]) / Float(constants::BVH_BIN_COUNT);
 
-                int mid = start;
+                int mid = 0;
 
-                for (int i = start; i < end; i++) {
-                    T * element = context.getOrdered<T>(i, light);
+                for (int i = 0; i < n; i++) {
+                    T * element = elements[i];
 
                     if (element->center()[bestAxis] < splitPlane) {
                         if (i != mid) {
-                            T * temp = context.getOrdered<T>(mid, light);
-                            context.setOrdered<T>(mid, element, light);
-                            context.setOrdered<T>(i, temp, light);
+                            elements[i] = elements[mid];
+                            elements[mid] = element;
                         }
 
                         mid++;
                     }
                 }
 
-                if (mid == start || mid == end) mid = start + (end - start) / 2;
+                if (mid == 0 || mid == n) mid = n / 2;
 
-                BVHNode<T> * node = context.addNode(BVHNode<T>(minBounds, maxBounds), light);
+                std::vector<BVHNode<T>> leftNodes = buildBVH<T, light>(elements, mid, depth + 1, materialBlind);
+                std::vector<BVHNode<T>> rightNodes = buildBVH<T, light>(elements + mid, n - mid, depth + 1, materialBlind);
 
-                buildBVH<T>(context, start, mid, depth + 1, light, materialBlind);
+                nodes.push_back(BVHNode<T>(minBounds, maxBounds, int(std::ssize(leftNodes)) + 1, totalPower));
 
-                BVHNode<T> * right = buildBVH<T>(context, mid, end, depth + 1, light, materialBlind);
+                nodes.insert(nodes.end(), leftNodes.begin(), leftNodes.end());
+                nodes.insert(nodes.end(), rightNodes.begin(), rightNodes.end());
 
-                node->setRight(right);
-                node->setPower(totalPower);
+                return nodes;
+            }
 
-                return node;
+            template <typename T>
+            static Float elementPower(const T * element, bool materialBlind) {
+                if constexpr (std::is_same_v<T, Instance>) {
+                    Float totalPower = 0;
+
+                    for (int i = 0; i < element->getCount(); i++) totalPower += element->getPower(i);
+
+                    return totalPower;
+                }
+                else {
+                    Float averageEmission = 1;
+
+                    if (!materialBlind) averageEmission = element->getMaterial()->averageEmission();
+
+                    return element->getArea() * averageEmission;
+                }
             }
     };
 }

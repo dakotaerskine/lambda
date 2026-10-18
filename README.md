@@ -4,7 +4,7 @@ A physically-based spectral path tracer implemented in C++ and CUDA built around
 <p align="center"><img src="https://dakotaerskine.github.io/images/lambda.png" alt="Lambda" width="350" height="350"></p>
 
 ## Building
-Lambda requires CMake 3.24 or later and a C++20 compiler. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DCPU=ON`.
+Lambda requires CMake 3.24 or later, a C++20 compiler, and OpenMP. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DCPU=ON`.
 
 ```sh
 cmake -S . -B build
@@ -15,7 +15,7 @@ cmake --build build
 Lambda takes in a single `.lrd` scene file as well as an optional output file path and writes an `.exr`, `.pfm`, or `.png` image.
 
 ```sh
-./lambda render.lrd
+./lambda <input> <output>
 ```
 
 ## Lambda Render Description (`.lrd`)
@@ -48,7 +48,7 @@ Texture <name> spectrum image <file> <uScale> <vScale> <uOffset> <vOffset>
 ```
 
 ### `Medium`
-Some medium properties are described by the names of previously defined textures. `name` is a unique identifier used to map media to objects.
+`name` is a unique identifier used to map media to objects.
 
 ```
 Medium <name> homogeneous (sigmaA) (sigmaS) <g>
@@ -60,8 +60,8 @@ Most material properties are described by the names of previously defined textur
 ```
 Material <name> lambertian <albedo>
 Material <name> mirror <albedo>
-Material <name> conductor (n0) (n1) <uAlpha> <vAlpha>
-Material <name> dielectric (n0) (n1) <uAlpha> <vAlpha>
+Material <name> conductor (n0) (n1) <alphaX> <alphaY>
+Material <name> dielectric (n0) (n1) <alphaX> <alphaY>
 Material <name> coated [(n)] [<d>] <substrate>
 Material <name> emissive <emission>
 ```

@@ -1,14 +1,14 @@
 #include <iostream>
 #include <string>
 
-#include "core/builder.h"
-#include "core/context.h"
+#include "core/allocator.h"
 #include "core/dispatcher.h"
 #include "core/error.h"
 #include "core/parser.h"
 #include "core/platform.h"
 #include "core/tables.h"
 #include "core/writer.h"
+#include "render/integrator.h"
 
 using namespace lambda;
 
@@ -18,19 +18,15 @@ int main(int argc, char * argv[]) {
     try {
         Parser::parseArguments(argc, argv, program, input, output);
 
-        Tables::initialize();
+        Allocator allocator;
 
-        Context context;
+        Tables::initialize(allocator);
 
-        Parser::parseLRD(input, context);
+        Integrator * integrator = Parser::parseLRD(input, allocator);
 
-        Builder::buildContext(context);
+        Float duration = Dispatcher::dispatchRender(program, allocator, integrator);
 
-        Renderer * renderer = context.getRenderer();
-
-        Float duration = Dispatcher::dispatchRender(program, renderer);
-
-        Writer::writeImage(output, renderer, duration);
+        Writer::writeImage(output, integrator, duration);
     }
     catch (const std::exception & e) {
         std::cerr << error::message(program, e) << std::endl;

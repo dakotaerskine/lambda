@@ -19,7 +19,14 @@
 
 namespace lambda {
     namespace utils {
-        LAMBDA_HOST_DEVICE inline Float clamp(Float x, Float min, Float max) { return std::fmin(std::fmax(x, min), max); }
+        template <typename T>
+        LAMBDA_HOST_DEVICE inline T min(const T & a, const T & b) { return a < b ? a : b; }
+
+        template <typename T>
+        LAMBDA_HOST_DEVICE inline T max(const T & a, const T & b) { return a > b ? a : b; }
+
+        template <typename T>
+        LAMBDA_HOST_DEVICE inline T clamp(T x, T minValue, T maxValue) { return min(max(x, minValue), maxValue); }
 
         template <typename T>
         LAMBDA_HOST_DEVICE inline T interpolate(T a, T b, Float t) { return (1 - t) * a + t * b; }
@@ -86,13 +93,6 @@ namespace lambda {
             return x * u + y * v + z * w;
         }
 
-        LAMBDA_HOST_DEVICE inline Float powerHeuristic(Float pdfA, Float pdfB) {
-            pdfA *= pdfA;
-            pdfB *= pdfB;
-
-            return pdfA / (pdfA + pdfB);
-        }
-
         LAMBDA_HOST_DEVICE inline Vector<Float, 3> reflected(const Vector<Float, 3> & v, const Vector<Float, 3> & n) {
             return v - 2 * dot(v, n) * n;
         }
@@ -134,7 +134,7 @@ namespace lambda {
         }
 
         LAMBDA_HOST_DEVICE inline Float ggxD(const Vector<Float, 3> & mLocal, Float alphaX, Float alphaY) {
-            if (mLocal[2] < constants::EPSILON) return 0;
+            if (mLocal[2] <= constants::EPSILON) return 0;
 
             Float x2 = mLocal[0] * mLocal[0] / (alphaX * alphaX);
             Float y2 = mLocal[1] * mLocal[1] / (alphaY * alphaY);
@@ -146,7 +146,7 @@ namespace lambda {
         }
 
         LAMBDA_HOST_DEVICE inline Float ggxLambda(const Vector<Float, 3> & vLocal, Float alphaX, Float alphaY) {
-            if (vLocal[2] < constants::EPSILON) return 0;
+            if (vLocal[2] <= constants::EPSILON) return 0;
 
             Float x2 = vLocal[0] * vLocal[0] * (alphaX * alphaX);
             Float y2 = vLocal[1] * vLocal[1] * (alphaY * alphaY);
@@ -255,7 +255,7 @@ namespace lambda {
         LAMBDA_HOST_DEVICE inline Matrix<Complex, 2> interfaceMatrixS(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
         Complex r = (n1 * cos1 - n2 * cos2) / (n1 * cos1 + n2 * cos2);
 
-        Matrix<Complex, 2> interfaceMatrix(1, r, r, 1);
+        Matrix<Complex, 2> interfaceMatrix(Complex(1), r, r, Complex(1));
 
         interfaceMatrix /= Complex(2) * n1 * cos1 / (n1 * cos1 + n2 * cos2);
 
@@ -265,14 +265,14 @@ namespace lambda {
         LAMBDA_HOST_DEVICE inline Matrix<Complex, 2> interfaceMatrixP(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
         Complex r = (n2 * cos1 - n1 * cos2) / (n2 * cos1 + n1 * cos2);
 
-        Matrix<Complex, 2> interfaceMatrix(1, r, r, 1);
+        Matrix<Complex, 2> interfaceMatrix(Complex(1), r, r, Complex(1));
 
         interfaceMatrix /= Complex(2) * n1 * cos1 / (n2 * cos1 + n1 * cos2);
 
         return interfaceMatrix;
         }
 
-        LAMBDA_HOST_DEVICE inline Matrix<Complex, 2> propagationMatrix(const Complex & phi) { return Matrix<Complex, 2>(exp(Complex(0, -1) * phi), 0, 0, exp(Complex(0, 1) * phi)); }
+        LAMBDA_HOST_DEVICE inline Matrix<Complex, 2> propagationMatrix(const Complex & phi) { return Matrix<Complex, 2>(exp(Complex(0, -1) * phi), Complex(0), Complex(0), exp(Complex(0, 1) * phi)); }
 
         LAMBDA_HOST_DEVICE inline double xyz31(int lambda, int i) { return constants::CIE_XYZ_1931[(lambda - constants::CIE_LAMBDA_MIN) * 3 + i]; }
 
@@ -284,14 +284,6 @@ namespace lambda {
             int max = min + 1;
 
             return interpolate(Float(xyz31(min, i)), Float(xyz31(max, i)), lambda - Float(min));
-        }
-
-        inline Matrix<double, 3> toXYZMatrix(ColorSpace space) {
-            if (space == ColorSpace::SRGB) return Matrix<double, 3>(constants::SRGB_TO_XYZ);
-            else if (space == ColorSpace::REC2020) return Matrix<double, 3>(constants::REC2020_TO_XYZ);
-            else if (space == ColorSpace::ACES2065) return Matrix<double, 3>(constants::ACES2065_TO_XYZ);
-
-            return Matrix<double, 3>();
         }
 
         inline Matrix<double, 3> toXYZMatrix(double rx, double ry, double gx, double gy, double bx, double by, double wx, double wy) {
@@ -319,28 +311,15 @@ namespace lambda {
 
         inline Matrix<double, 3> toXYZMatrix(const double chromaticities[8]) { return toXYZMatrix(chromaticities[0], chromaticities[1], chromaticities[2], chromaticities[3], chromaticities[4], chromaticities[5], chromaticities[6], chromaticities[7]); }
 
-        inline Matrix<double, 3> toRGBMatrix(ColorSpace space) {
-            if (space == ColorSpace::SRGB) return Matrix<double, 3>(constants::XYZ_TO_SRGB);
-            else if (space == ColorSpace::REC2020) return Matrix<double, 3>(constants::XYZ_TO_REC2020);
-            else if (space == ColorSpace::ACES2065) return Matrix<double, 3>(constants::XYZ_TO_ACES2065);
+        inline Matrix<double, 3> toXYZMatrix(ColorSpace space) {
+            if (space == ColorSpace::SRGB) return toXYZMatrix(constants::CHROMATICITIES_SRGB);
+            else if (space == ColorSpace::REC2020) return toXYZMatrix(constants::CHROMATICITIES_REC2020);
+            else if (space == ColorSpace::ACES2065) return toXYZMatrix(constants::CHROMATICITIES_ACES2065);
 
             return Matrix<double, 3>();
         }
 
-        LAMBDA_HOST_DEVICE inline Vector<Float, 3> spectrumToXYZ(const SampledSpectrum & s, const SampledSpectrum & lambdas, Float lambdaRange) {
-            Vector<Float, 3> xyz;
-
-            Float weight = lambdaRange / constants::HERO_COUNT;
-
-            for (int i = 0; i < constants::HERO_COUNT; i++) {
-                Float lambda = lambdas[i];
-                Float radiance = s[i];
-
-                xyz += Vector<Float, 3>(xyz31(lambda, 0), xyz31(lambda, 1), xyz31(lambda, 2)) * radiance * weight;
-            }
-
-            return xyz / constants::CIE_Y_INTEGRAL;
-        }
+        inline Matrix<double, 3> toRGBMatrix(ColorSpace space) { return inverse(toXYZMatrix(space)); }
 
         inline Float linearToSRGB(Float r) {
             if (r <= 0.0031308) return Float(12.92) * r;
@@ -352,7 +331,7 @@ namespace lambda {
             else return std::pow((r + Float(0.055)) / Float(1.055), Float(2.4));
         }
 
-        inline Float toneMap(Float value) { return linearToSRGB(clamp(value, 0, 1)); }
+        inline Float toneMap(Float value) { return linearToSRGB(clamp(value, Float(0), Float(1))); }
 
         inline uint8_t quantize(Float value, Random & state) {
             Float dither = randomFloat(state) - Float(0.5);
@@ -450,7 +429,7 @@ namespace lambda {
                 z = r;
             }
 
-            if (x < constants::EPSILON) return Vector<Float, 3>(upsamplingLUT(space, 0, 0, 0, 0, 0), upsamplingLUT(space, 0, 0, 0, 0, 1), upsamplingLUT(space, 0, 0, 0, 0, 2));
+            if (x <= constants::EPSILON) return Vector<Float, 3>(upsamplingLUT(space, 0, 0, 0, 0, 0), upsamplingLUT(space, 0, 0, 0, 0, 1), upsamplingLUT(space, 0, 0, 0, 0, 2));
 
             Float gridScale = (constants::UPSAMPLING_RESOLUTION - 1) / x;
 
@@ -459,9 +438,9 @@ namespace lambda {
 
             int x0 = upsamplingInterval(space, x);
             int x1 = x0 + 1;
-            int y0 = (int)clamp(std::floor(y), Float(0), constants::UPSAMPLING_RESOLUTION - 2);
+            int y0 = (int)clamp(std::floor(y), Float(0), Float(constants::UPSAMPLING_RESOLUTION - 2));
             int y1 = y0 + 1;
-            int z0 = (int)clamp(std::floor(z), Float(0), constants::UPSAMPLING_RESOLUTION - 2);
+            int z0 = (int)clamp(std::floor(z), Float(0), Float(constants::UPSAMPLING_RESOLUTION - 2));
             int z1 = z0 + 1;
 
             Float tx = (x - upsamplingScale(space, x0)) / (upsamplingScale(space, x1) - upsamplingScale(space, x0));
@@ -511,7 +490,7 @@ namespace lambda {
 
         inline Matrix<double, 3> bradfordAdapt(double wx1, double wy1, double wx2, double wy2) {
             Matrix<double, 3> bradford(constants::BRADFORD);
-            Matrix<double, 3> inverseBradford(constants::BRADFORD_INVERSE);
+            Matrix<double, 3> inverseBradford = inverse(bradford);
 
             double wz1 = 1 - wx1 - wy1;
             double wz2 = 1 - wx2 - wy2;

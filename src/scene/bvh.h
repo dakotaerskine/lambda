@@ -7,36 +7,37 @@
 
 #include "core/constants.h"
 #include "core/platform.h"
+#include "math/ray.h"
 #include "math/vector.h"
+#include "scene/intersection.h"
 
 namespace lambda {
+    class Instance;
+    class Object;
+
     template <typename T>
+    requires (std::is_same_v<T, Object> || std::is_same_v<T, Instance>)
     class BVHNode {
         public:
-            BVHNode() : min(Vector<Float, 3>(constants::MAX, constants::MAX, constants::MAX)), max(Vector<Float, 3>(-constants::MAX, -constants::MAX, -constants::MAX)), right(nullptr), elements(nullptr), count(0), power(0) {}
+            BVHNode() : min(Vector<Float, 3>(constants::MAX, constants::MAX, constants::MAX)), max(Vector<Float, 3>(-constants::MAX, -constants::MAX, -constants::MAX)), elements(nullptr), count(0), power(0) {}
 
-            BVHNode(const Vector<Float, 3> & _min, const Vector<Float, 3> & _max) : min(_min), max(_max), right(nullptr), elements(nullptr), count(0), power(0) {}
+            BVHNode(const Vector<Float, 3> & _min, const Vector<Float, 3> & _max, int _count, Float _power) : min(_min), max(_max), elements(nullptr), count(_count), power(_power) {}
 
-            BVHNode(const Vector<Float, 3> & _min, const Vector<Float, 3> & _max, T ** _elements, int _count) : min(_min), max(_max), right(nullptr), elements(_elements), count(_count), power(0) {}
-
-            void setRight(BVHNode<T> * _right) { right = _right; }
-
-            void setPower(Float p) { power = p; }
+            BVHNode(const Vector<Float, 3> & _min, const Vector<Float, 3> & _max, T ** _elements, int _count, Float _power) : min(_min), max(_max), elements(_elements), count(_count), power(_power) {}
 
             LAMBDA_HOST_DEVICE const Vector<Float, 3> & getMin() const { return min; }
+
             LAMBDA_HOST_DEVICE const Vector<Float, 3> & getMax() const { return max; }
 
             LAMBDA_HOST_DEVICE bool isLeaf() const { return elements != nullptr; }
 
             LAMBDA_HOST_DEVICE int getCount() const { return count; }
 
-            LAMBDA_HOST_DEVICE const BVHNode<T> * getRight() const { return right; }
-
             LAMBDA_HOST_DEVICE const T * getElement(int i) const { return isLeaf() ? elements[i] : nullptr; }
 
             LAMBDA_HOST_DEVICE Float getPower() const { return power; }
 
-            LAMBDA_HOST_DEVICE bool intersect(const Ray & r, const Intersection & intersection) const {
+            LAMBDA_HOST_DEVICE bool intersect(const Intersection & intersection, const Ray & r) const {
                 Float t1 = 0, t2 = constants::MAX;
 
                 for (int i = 0; i < 3; i++) {
@@ -62,7 +63,6 @@ namespace lambda {
 
         private:
             Vector<Float, 3> min, max;
-            BVHNode<T> * right;
             T ** elements;
             int count;
             Float power;

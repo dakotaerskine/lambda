@@ -5,15 +5,17 @@
 #include "core/platform.h"
 #include "core/utils.h"
 #include "math/complex.h"
-#include "math/intersection.h"
 #include "math/matrix.h"
 #include "math/random.h"
 #include "math/ray.h"
 #include "math/spectrum.h"
 #include "math/vector.h"
+#include "scene/intersection.h"
 #include "scene/texture.h"
 
 namespace lambda {
+    class Medium;
+
     class Material {
         public:
             Material() : type(Type::LAMBERTIAN) {}
@@ -81,13 +83,13 @@ namespace lambda {
                 return material;
             }
 
-            LAMBDA_HOST_DEVICE bool isSpecular() const {
+            LAMBDA_HOST_DEVICE bool isSpecular(const Intersection & intersection) const {
                 switch (type) {
                     case Type::LAMBERTIAN: return false;
                     case Type::MIRROR: return true;
-                    case Type::CONDUCTOR: return conductor.alphaX->getMax() < constants::EPSILON && conductor.alphaY->getMax() < constants::EPSILON;
-                    case Type::DIELECTRIC: return dielectric.alphaX->getMax() < constants::EPSILON && dielectric.alphaY->getMax() < constants::EPSILON;
-                    case Type::COATED: return isSpecularCoated();
+                    case Type::CONDUCTOR: return conductor.alphaX->evaluate(intersection) <= constants::EPSILON && conductor.alphaY->evaluate(intersection) <= constants::EPSILON;
+                    case Type::DIELECTRIC: return dielectric.alphaX->evaluate(intersection) <= constants::EPSILON && dielectric.alphaY->evaluate(intersection) <= constants::EPSILON;
+                    case Type::COATED: return isSpecularCoated(intersection);
                     case Type::EMISSIVE: return false;
                 }
 
@@ -120,14 +122,14 @@ namespace lambda {
                 return false;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum emission(const Intersection & i, const SampledSpectrum & lambdas) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum emission(const Intersection & intersection, const SampledSpectrum & lambdas) const {
                 switch (type) {
                     case Type::LAMBERTIAN: return SampledSpectrum(0);
                     case Type::MIRROR: return SampledSpectrum(0);
                     case Type::CONDUCTOR: return SampledSpectrum(0);
                     case Type::DIELECTRIC: return SampledSpectrum(0);
                     case Type::COATED: return SampledSpectrum(0);
-                    case Type::EMISSIVE: return emissionEmissive(i, lambdas);
+                    case Type::EMISSIVE: return emissionEmissive(intersection, lambdas);
                 }
 
                 return SampledSpectrum(0);
@@ -146,39 +148,26 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum pdf(const Intersection & i, const Ray & rIn, const Ray & rOut) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 switch (type) {
-                    case Type::LAMBERTIAN: return pdfLambertian(i, rOut);
+                    case Type::LAMBERTIAN: return evaluateLambertian(intersection, rOut, probabilityDensity, collapsed);
                     case Type::MIRROR: return SampledSpectrum(0);
-                    case Type::CONDUCTOR: return pdfConductor(i, rIn, rOut);
-                    case Type::DIELECTRIC: return pdfDielectric(i, rIn, rOut);
-                    case Type::COATED: return pdfCoated(i, rIn, rOut);
+                    case Type::CONDUCTOR: return evaluateConductor(nullptr, intersection, rIn, rOut, probabilityDensity, collapsed);
+                    case Type::DIELECTRIC: return evaluateDielectric(nullptr, intersection, rIn, rOut, probabilityDensity, collapsed);
+                    case Type::COATED: return evaluateCoated(intersection, rIn, rOut, probabilityDensity, collapsed);
                     case Type::EMISSIVE: return SampledSpectrum(0);
                 }
 
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Intersection & i, const Ray & rIn, const Ray & rOut) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, const Medium * medium0, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
                 switch (type) {
-                    case Type::LAMBERTIAN: return evaluateLambertian(i, rOut);
-                    case Type::MIRROR: return SampledSpectrum(0);
-                    case Type::CONDUCTOR: return evaluateConductor(i, rIn, rOut);
-                    case Type::DIELECTRIC: return evaluateDielectric(i, rIn, rOut);
-                    case Type::COATED: return evaluateCoated(i, rIn, rOut);
-                    case Type::EMISSIVE: return SampledSpectrum(0);
-                }
-
-                return SampledSpectrum(0);
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum scatter(const Intersection & i, Ray & r, Random & state, bool & collapsed) const {
-                switch (type) {
-                    case Type::LAMBERTIAN: return scatterLambertian(i, r, state, collapsed);
-                    case Type::MIRROR: return scatterMirror(i, r, collapsed);
-                    case Type::CONDUCTOR: return scatterConductor(i, r, state, collapsed);
-                    case Type::DIELECTRIC: return scatterDielectric(i, r, state, collapsed);
-                    case Type::COATED: return scatterCoated(i, r, state, collapsed);
+                    case Type::LAMBERTIAN: return sampleLambertian(intersection, r, medium0, probabilityDensity, collapsed, state);
+                    case Type::MIRROR: return sampleMirror(intersection, r, medium0, probabilityDensity, collapsed);
+                    case Type::CONDUCTOR: return sampleConductor(nullptr, intersection, r, medium0, probabilityDensity, collapsed, state);
+                    case Type::DIELECTRIC: return sampleDielectric(nullptr, intersection, r, medium0, medium1, probabilityDensity, collapsed, state);
+                    case Type::COATED: return sampleCoated(intersection, r, medium0, medium1, probabilityDensity, collapsed, state);
                     case Type::EMISSIVE: return SampledSpectrum(0);
                 }
 
@@ -199,376 +188,274 @@ namespace lambda {
                 struct { SpectrumTexture * emission; } emissive;
             };
 
-            LAMBDA_HOST_DEVICE bool isSpecularCoated() const {
+            LAMBDA_HOST_DEVICE bool isSpecularCoated(const Intersection & intersection) const {
                 switch (coated.substrate->type) {
-                    case Type::LAMBERTIAN: return false;
-                    case Type::MIRROR: return false;
-                    case Type::CONDUCTOR: return coated.substrate->conductor.alphaX->getMax() < constants::EPSILON && coated.substrate->conductor.alphaY->getMax() < constants::EPSILON;
-                    case Type::DIELECTRIC: return coated.substrate->dielectric.alphaX->getMax() < constants::EPSILON && coated.substrate->dielectric.alphaY->getMax() < constants::EPSILON;
-                    case Type::COATED: return false;
-                    case Type::EMISSIVE: return false;
+                    case Type::CONDUCTOR: return coated.substrate->conductor.alphaX->evaluate(intersection) <= constants::EPSILON && coated.substrate->conductor.alphaY->evaluate(intersection) <= constants::EPSILON;
+                    case Type::DIELECTRIC: return coated.substrate->dielectric.alphaX->evaluate(intersection) <= constants::EPSILON && coated.substrate->dielectric.alphaY->evaluate(intersection) <= constants::EPSILON;
+                    default: return false;
                 }
-
-                return false;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum emissionEmissive(const Intersection & i, const SampledSpectrum & lambdas) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum emissionEmissive(const Intersection & intersection, const SampledSpectrum & lambdas) const {
                 SampledSpectrum emission;
 
-                for (int j = 0; j < constants::HERO_COUNT; j++) emission[j] = emissive.emission->evaluate(i, lambdas[j]);
+                for (int i = 0; i < constants::HERO_COUNT; i++) emission[i] = emissive.emission->evaluate(intersection, lambdas[i]);
 
                 return emission;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum pdfLambertian(const Intersection & i, const Ray & r) const {
-                Float cosTheta = dot(i.transformedNormal, r.getDirection());
+            LAMBDA_HOST_DEVICE SampledSpectrum evaluateLambertian(const Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed) const {
+                Float cosTheta = dot(intersection.transformedNormal, r.getDirection());
 
-                return cosTheta > 0 ? SampledSpectrum(cosTheta / constants::PI) : SampledSpectrum(0);
+                probabilityDensity = cosTheta > constants::EPSILON ? SampledSpectrum(cosTheta / constants::PI) : SampledSpectrum(0);
+
+                if (cosTheta <= constants::EPSILON) return SampledSpectrum(0);
+
+                SampledSpectrum attenuation;
+
+                for (int i = 0; i < constants::HERO_COUNT; i++) attenuation[i] = !collapsed || i == 0 ? lambertian.albedo->evaluate(intersection, r.getLambdas()[i]) / constants::PI : 0;
+
+                return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum pdfConductor(const Intersection & i, const Ray & rIn, const Ray & rOut) const {
-                Float alphaX = conductor.alphaX->evaluate(i);
-                Float alphaY = conductor.alphaY->evaluate(i);
+            LAMBDA_HOST_DEVICE SampledSpectrum evaluateConductor(const Material * coating, const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+                Float alphaX = conductor.alphaX->evaluate(intersection);
+                Float alphaY = conductor.alphaY->evaluate(intersection);
 
-                if (alphaX < constants::EPSILON && alphaY < constants::EPSILON) return 0;
+                if (alphaX <= constants::EPSILON && alphaY <= constants::EPSILON) {
+                    probabilityDensity = SampledSpectrum(1);
+
+                    return SampledSpectrum(0);
+                }
 
                 Vector<Float, 3> vIn = -rIn.getDirection();
                 Vector<Float, 3> vOut = rOut.getDirection();
 
-                if (dot(i.transformedNormal, vIn) < constants::EPSILON || dot(i.transformedNormal, vOut) < constants::EPSILON) return 0;
+                probabilityDensity = SampledSpectrum(0);
 
-                Vector<Float, 3> bitangent = cross(i.transformedNormal, i.transformedTangent);
+                if (dot(intersection.transformedNormal, vIn) <= constants::EPSILON || dot(intersection.transformedNormal, vOut) <= constants::EPSILON) return SampledSpectrum(0);
 
-                Vector<Float, 3> vInLocal = Vector<Float, 3>(dot(vIn, i.transformedTangent), dot(vIn, bitangent), dot(vIn, i.transformedNormal));
-                Vector<Float, 3> vOutLocal = Vector<Float, 3>(dot(vOut, i.transformedTangent), dot(vOut, bitangent), dot(vOut, i.transformedNormal));
+                Vector<Float, 3> bitangent = cross(intersection.transformedNormal, intersection.transformedTangent);
+
+                Vector<Float, 3> vInLocal = Vector<Float, 3>(dot(vIn, intersection.transformedTangent), dot(vIn, bitangent), dot(vIn, intersection.transformedNormal));
+                Vector<Float, 3> vOutLocal = Vector<Float, 3>(dot(vOut, intersection.transformedTangent), dot(vOut, bitangent), dot(vOut, intersection.transformedNormal));
 
                 Vector<Float, 3> halfVLocal = vInLocal + vOutLocal;
 
                 Float lengthSquared = halfVLocal.lengthSquared();
 
-                if (lengthSquared < constants::EPSILON_SQUARED) return 0;
+                if (lengthSquared <= constants::EPSILON_SQUARED) return SampledSpectrum(0);
 
                 halfVLocal /= std::sqrt(lengthSquared);
 
-                if (halfVLocal[2] < constants::EPSILON) halfVLocal *= -1;
+                if (halfVLocal[2] <= constants::EPSILON) halfVLocal *= -1;
+
+                Float cosTheta = dot(vInLocal, halfVLocal);
+
+                SampledSpectrum reflectance, transmittance;
+
+                for (int i = 0; i < constants::HERO_COUNT; i++)
+                    if (!collapsed || i == 0) {
+                        Float lambda = rIn.getLambdas()[i];
+
+                        Float n0 = conductor.n0->get(lambda);
+                        Complex n1 = conductor.n1->get(lambda);
+
+                        fresnel(coating, intersection, n0, n1, cosTheta, lambda, reflectance[i], transmittance[i]);
+                    }
 
                 Float D = utils::ggxD(halfVLocal, alphaX, alphaY);
                 Float G1 = utils::ggxG1(vInLocal, alphaX, alphaY);
+                Float G2 = utils::ggxG2(vInLocal, vOutLocal, alphaX, alphaY);
 
-                return SampledSpectrum(D * G1 / (4 * std::fabs(vInLocal[2])));
+                probabilityDensity = SampledSpectrum(D * G1 / (4 * std::fabs(vInLocal[2])));
+
+                return reflectance * (D * G2 / (4 * vInLocal[2] * vOutLocal[2]));
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum pdfDielectric(const Intersection & i, const Ray & rIn, const Ray & rOut, const Material * coating = nullptr) const {
-                Float alphaX = dielectric.alphaX->evaluate(i);
-                Float alphaY = dielectric.alphaY->evaluate(i);
-
-                if (alphaX < constants::EPSILON && alphaY < constants::EPSILON) return SampledSpectrum(0);
+            LAMBDA_HOST_DEVICE SampledSpectrum evaluateDielectric(const Material * coating, const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+                Float alphaX = dielectric.alphaX->evaluate(intersection);
+                Float alphaY = dielectric.alphaY->evaluate(intersection);
 
                 Vector<Float, 3> vIn = -rIn.getDirection();
                 Vector<Float, 3> vOut = rOut.getDirection();
 
-                if (dot(i.transformedNormal, vIn) < constants::EPSILON) return SampledSpectrum(0);
+                bool reflect = dot(intersection.transformedNormal, vOut) > constants::EPSILON;
 
-                bool reflect = dot(i.transformedNormal, vOut) > constants::EPSILON;
+                if (alphaX <= constants::EPSILON && alphaY <= constants::EPSILON) {
+                    probabilityDensity = SampledSpectrum(1);
 
-                Vector<Float, 3> bitangent = cross(i.transformedNormal, i.transformedTangent);
+                    return SampledSpectrum(0);
+                }
 
-                Vector<Float, 3> vInLocal = Vector<Float, 3>(dot(vIn, i.transformedTangent), dot(vIn, bitangent), dot(vIn, i.transformedNormal));
-                Vector<Float, 3> vOutLocal = Vector<Float, 3>(dot(vOut, i.transformedTangent), dot(vOut, bitangent), dot(vOut, i.transformedNormal));
+                Vector<Float, 3> bitangent = cross(intersection.transformedNormal, intersection.transformedTangent);
+
+                Vector<Float, 3> vInLocal = Vector<Float, 3>(dot(vIn, intersection.transformedTangent), dot(vIn, bitangent), dot(vIn, intersection.transformedNormal));
+                Vector<Float, 3> vOutLocal = Vector<Float, 3>(dot(vOut, intersection.transformedTangent), dot(vOut, bitangent), dot(vOut, intersection.transformedNormal));
 
                 Float G1 = utils::ggxG1(vInLocal, alphaX, alphaY);
 
-                SampledSpectrum probability;
-                Float reflectance, transmittance;
+                probabilityDensity = SampledSpectrum(0);
 
-                for (int j = 0; j < constants::HERO_COUNT; j++) {
-                    Float lambda = rIn.getLambdas()[j];
+                SampledSpectrum reflectance, transmittance, attenuation;
 
-                    Float n0 = i.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
-                    Float n1 = i.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
+                for (int i = 0; i < constants::HERO_COUNT; i++) {
+                    Float lambda = rIn.getLambdas()[i];
+
+                    Float n0 = intersection.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
+                    Float n1 = intersection.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
 
                     Float ratio = n0 / n1;
 
-                    if (!reflect && std::fabs(ratio - 1) < constants::EPSILON) probability[j] = 0;
+                    if (!reflect && std::fabs(ratio - 1) <= constants::EPSILON) probabilityDensity[i] = std::fabs(dot(intersection.transformedNormal, vOut));
                     else {
                         Vector<Float, 3> halfVLocal = reflect ? vInLocal + vOutLocal : -(vInLocal * ratio + vOutLocal);
 
                         Float lengthSquared = halfVLocal.lengthSquared();
 
-                        if (lengthSquared < constants::EPSILON_SQUARED) probability[j] = 0;
-                        else {
+                        if (lengthSquared > constants::EPSILON_SQUARED) {
                             halfVLocal /= std::sqrt(lengthSquared);
 
-                            if (halfVLocal[2] < constants::EPSILON) halfVLocal *= -1;
-
-                            Float D = utils::ggxD(halfVLocal, alphaX, alphaY);
+                            if (halfVLocal[2] <= constants::EPSILON) halfVLocal *= -1;
 
                             Float cosTheta = dot(halfVLocal, vInLocal);
 
-                            if (cosTheta < constants::EPSILON) probability[j] = 0;
-                            else {
-                                if (coating) coating->thinFilmFresnel(n0, n1, cosTheta, i, rIn.getLambdas()[j], reflectance, transmittance);
-                                else fresnel(n0, n1, cosTheta, reflectance, transmittance);
+                            if (cosTheta > constants::EPSILON && (reflect || dot(halfVLocal, vOutLocal) < 0)) {
+                                fresnel(coating, intersection, n0, n1, cosTheta, lambda, reflectance[i], transmittance[i]);
 
-                                if (reflect) probability[j] = reflectance * D * G1 / (4 * std::fabs(vInLocal[2]));
+                                Vector<Float, 3> vOutLocalShadow(vOutLocal[0], vOutLocal[1], std::fabs(vOutLocal[2]));
+
+                                Float D = utils::ggxD(halfVLocal, alphaX, alphaY);
+                                Float G2 = utils::ggxG2(vInLocal, vOutLocalShadow, alphaX, alphaY);
+
+                                if (reflect) {
+                                    probabilityDensity[i] = reflectance[i] * D * G1 / (4 * std::fabs(vInLocal[2]));
+                                    attenuation[i] = (!collapsed || i == 0) ? reflectance[i] * (D * G2 / (4 * vInLocal[2] * vOutLocalShadow[2])) : 0;
+                                }
                                 else {
                                     Float denominator = ratio * dot(vInLocal, halfVLocal) + dot(vOutLocal, halfVLocal);
 
-                                    probability[j] = transmittance * D * G1 * cosTheta * std::fabs(dot(vOutLocal, halfVLocal)) / (denominator * denominator * std::fabs(vInLocal[2]));
+                                    probabilityDensity[i] = transmittance[i] * D * G1 * cosTheta * std::fabs(dot(vOutLocal, halfVLocal)) / (denominator * denominator * std::fabs(vInLocal[2]));
+                                    attenuation[i] = (!collapsed || i == 0) ? transmittance[i] * D * G2 * cosTheta * std::fabs(dot(vOutLocal, halfVLocal)) / (denominator * denominator * std::fabs(vInLocal[2]) * std::fabs(vOutLocal[2])) * ratio * ratio : 0;
                                 }
                             }
                         }
                     }
                 }
 
-                return probability;
+                return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum pdfCoated(const Intersection & i, const Ray & rIn, const Ray & rOut) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum evaluateCoated(const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 switch (coated.substrate->type) {
-                    case Type::LAMBERTIAN: return SampledSpectrum(0);
-                    case Type::MIRROR: return SampledSpectrum(0);
-                    case Type::CONDUCTOR: return coated.substrate->pdfConductor(i, rIn, rOut);
-                    case Type::DIELECTRIC: return coated.substrate->pdfDielectric(i, rIn, rOut, this);
-                    case Type::COATED: return SampledSpectrum(0);
-                    case Type::EMISSIVE: return SampledSpectrum(0);
+                    case Type::CONDUCTOR: return coated.substrate->evaluateConductor(this, intersection, rIn, rOut, probabilityDensity, collapsed);
+                    case Type::DIELECTRIC: return coated.substrate->evaluateDielectric(this, intersection, rIn, rOut, probabilityDensity, collapsed);
+                    default: return SampledSpectrum(0);
                 }
-
-                return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateLambertian(const Intersection & i, const Ray & r, bool collapsed = false) const {
-                if (dot(i.transformedNormal, r.getDirection()) < constants::EPSILON) return SampledSpectrum(0);
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleLambertian(const Intersection & intersection, Ray & r, const Medium * medium, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+                r = Ray(intersection.transformedPoint, utils::randomInHemisphere(intersection.transformedNormal, state), r.getLambdas(), medium);
+
+                SampledSpectrum attenuation = evaluateLambertian(intersection, r, probabilityDensity, collapsed);
+
+                if (!(probabilityDensity[0] > 0)) return SampledSpectrum(0);
+
+                return attenuation * dot(intersection.transformedNormal, r.getDirection()) / probabilityDensity[0];
+            }
+
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleMirror(const Intersection & intersection, Ray & r, const Medium * medium, SampledSpectrum & probabilityDensity, bool collapsed) const {
+                r = Ray(intersection.transformedPoint, utils::reflected(r.getDirection(), intersection.transformedNormal), r.getLambdas(), medium);
+
+                probabilityDensity = SampledSpectrum(1);
 
                 SampledSpectrum attenuation;
 
-                for (int j = 0; j < constants::HERO_COUNT; j++) attenuation[j] = !collapsed || j == 0 ? lambertian.albedo->evaluate(i, r.getLambdas()[j]) / constants::PI : 0;
+                for (int i = 0; i < constants::HERO_COUNT; i++) attenuation[i] = !collapsed || i == 0 ? mirror.albedo->evaluate(intersection, r.getLambdas()[i]) : 0;
 
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateConductor(const Intersection & i, const Ray & rIn, const Ray & rOut, bool collapsed = false, const Material * coating = nullptr) const {
-                Float alphaX = conductor.alphaX->evaluate(i);
-                Float alphaY = conductor.alphaY->evaluate(i);
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleConductor(const Material * coating, const Intersection & intersection, Ray & r, const Medium * medium, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+                Vector<Float, 3> normal = intersection.transformedNormal;
 
-                if (alphaX < constants::EPSILON && alphaY < constants::EPSILON) return SampledSpectrum(0);
+                Float alphaX = conductor.alphaX->evaluate(intersection);
+                Float alphaY = conductor.alphaY->evaluate(intersection);
 
-                Vector<Float, 3> vIn = -rIn.getDirection();
-                Vector<Float, 3> vOut = rOut.getDirection();
-
-                if (dot(i.transformedNormal, vIn) < constants::EPSILON || dot(i.transformedNormal, vOut) < constants::EPSILON) return SampledSpectrum(0);
-
-                Vector<Float, 3> bitangent = cross(i.transformedNormal, i.transformedTangent);
-
-                Vector<Float, 3> vInLocal = Vector<Float, 3>(dot(vIn, i.transformedTangent), dot(vIn, bitangent), dot(vIn, i.transformedNormal));
-                Vector<Float, 3> vOutLocal = Vector<Float, 3>(dot(vOut, i.transformedTangent), dot(vOut, bitangent), dot(vOut, i.transformedNormal));
-
-                Vector<Float, 3> halfVLocal = vInLocal + vOutLocal;
-
-                Float lengthSquared = halfVLocal.lengthSquared();
-
-                if (lengthSquared < constants::EPSILON_SQUARED) return SampledSpectrum(0);
-
-                halfVLocal /= std::sqrt(lengthSquared);
-
-                if (halfVLocal[2] < constants::EPSILON) halfVLocal *= -1;
-
-                Float cosTheta = dot(vInLocal, halfVLocal);
-
-                SampledSpectrum attenuation;
-                Float transmittance;
-
-                for (int j = 0; j < constants::HERO_COUNT; j++)
-                    if (!collapsed || j == 0) {
-                        Float lambda = rIn.getLambdas()[j];
-
-                        Float n0 = conductor.n0->get(lambda);
-                        Complex n1 = conductor.n1->get(lambda);
-
-                        if (coating) coating->thinFilmFresnel(n0, n1, cosTheta, i, lambda, attenuation[j], transmittance);
-                        else fresnel(n0, n1, cosTheta, attenuation[j], transmittance);
-                    }
-                    else attenuation[j] = 0;
-
-                Float D = utils::ggxD(halfVLocal, alphaX, alphaY);
-                Float G2 = utils::ggxG2(vInLocal, vOutLocal, alphaX, alphaY);
-
-                return attenuation * (D * G2 / (4 * vInLocal[2] * vOutLocal[2]));
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateDielectric(const Intersection & i, const Ray & rIn, const Ray & rOut, bool collapsed = false, const Material * coating = nullptr) const {
-                Float alphaX = dielectric.alphaX->evaluate(i);
-                Float alphaY = dielectric.alphaY->evaluate(i);
-
-                if (alphaX < constants::EPSILON && alphaY < constants::EPSILON) return SampledSpectrum(0);
-
-                Vector<Float, 3> vIn = -rIn.getDirection();
-                Vector<Float, 3> vOut = rOut.getDirection();
-
-                bool reflect = dot(i.transformedNormal, vOut) > constants::EPSILON;
-
-                Vector<Float, 3> bitangent = cross(i.transformedNormal, i.transformedTangent);
-
-                Vector<Float, 3> vInLocal = Vector<Float, 3>(dot(vIn, i.transformedTangent), dot(vIn, bitangent), dot(vIn, i.transformedNormal));
-                Vector<Float, 3> vOutLocal = Vector<Float, 3>(dot(vOut, i.transformedTangent), dot(vOut, bitangent), dot(vOut, i.transformedNormal));
-
-                SampledSpectrum attenuation;
-                Float reflectance, transmittance;
-
-                for (int j = 0; j < constants::HERO_COUNT; j++)
-                    if (!collapsed || j == 0) {
-                        Float lambda = rIn.getLambdas()[j];
-
-                        Float n0 = i.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
-                        Float n1 = i.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
-
-                        Float ratio = n0 / n1;
-
-                        if (!reflect && std::fabs(ratio - 1) < constants::EPSILON) attenuation[j] = 0;
-                        else {
-                            Vector<Float, 3> halfVLocal = reflect ? vInLocal + vOutLocal : -(vInLocal * ratio + vOutLocal);
-
-                            Float lengthSquared = halfVLocal.lengthSquared();
-
-                            if (lengthSquared < constants::EPSILON_SQUARED) attenuation[j] = 0;
-                            else {
-                                halfVLocal /= std::sqrt(lengthSquared);
-
-                                if (halfVLocal[2] < constants::EPSILON) halfVLocal *= -1;
-
-                                Float cosTheta = dot(halfVLocal, vInLocal);
-
-                                if (cosTheta < constants::EPSILON) attenuation[j] = 0;
-                                else {
-                                    if (coating) coating->thinFilmFresnel(n0, n1, cosTheta, i, lambda, reflectance, transmittance);
-                                    else fresnel(n0, n1, cosTheta, reflectance, transmittance);
-
-                                    if (reflect) attenuation[j] = reflectance;
-                                    else attenuation[j] = transmittance;
-
-                                    Float D = utils::ggxD(halfVLocal, alphaX, alphaY);
-
-                                    Vector<Float, 3> vOutLocalShadow(vOutLocal[0], vOutLocal[1], std::fabs(vOutLocal[2]));
-
-                                    Float G2 = utils::ggxG2(vInLocal, vOutLocalShadow, alphaX, alphaY);
-
-                                    if (reflect) attenuation[j] *= (D * G2 / (4 * vInLocal[2] * vOutLocalShadow[2]));
-                                    else {
-                                        Float denominator = ratio * dot(vInLocal, halfVLocal) + dot(vOutLocal, halfVLocal);
-
-                                        attenuation[j] *= D * G2 * cosTheta * std::fabs(dot(vOutLocal, halfVLocal)) / (denominator * denominator * std::fabs(vInLocal[2]) * std::fabs(vOutLocal[2]));
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                return attenuation;
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateCoated(const Intersection & i, const Ray & rIn, const Ray & rOut, bool collapsed = false) const {
-                switch (coated.substrate->type) {
-                    case Type::LAMBERTIAN: return SampledSpectrum(0);
-                    case Type::MIRROR: return SampledSpectrum(0);
-                    case Type::CONDUCTOR: return coated.substrate->evaluateConductor(i, rIn, rOut, collapsed, this);
-                    case Type::DIELECTRIC: return coated.substrate->evaluateDielectric(i, rIn, rOut, collapsed, this);
-                    case Type::COATED: return SampledSpectrum(0);
-                    case Type::EMISSIVE: return SampledSpectrum(0);
-                }
-
-                return SampledSpectrum(0);
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum scatterLambertian(const Intersection & i, Ray & r, Random & state, bool collapsed) const {
-                r = Ray(i.transformedPoint, utils::randomInHemisphere(i.transformedNormal, state), r.getLambdas(), r.getMedium());
-
-                return evaluateLambertian(i, r, collapsed);
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum scatterMirror(const Intersection & i, Ray & r, bool collapsed) const {
-                r = Ray(i.transformedPoint, utils::reflected(r.getDirection(), i.transformedNormal), r.getLambdas(), r.getMedium());
-
-                SampledSpectrum attenuation;
-
-                for (int j = 0; j < constants::HERO_COUNT; j++) attenuation[j] = !collapsed || j == 0 ? mirror.albedo->evaluate(i, r.getLambdas()[j]) : 0;
-
-                return attenuation;
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum scatterConductor(const Intersection & i, Ray & r, Random & state, bool collapsed, const Material * coating = nullptr) const {
-                Vector<Float, 3> normal = i.transformedNormal;
-
-                Float alphaX = conductor.alphaX->evaluate(i);
-                Float alphaY = conductor.alphaY->evaluate(i);
-
-                if (alphaX > constants::EPSILON || alphaY > constants::EPSILON) normal = utils::ggxNormal(-r.getDirection(), normal, i.transformedTangent, alphaX, alphaY, state);
-
-                Float cosTheta = dot(normal, -r.getDirection());
-
-                SampledSpectrum reflectance, transmittance;
-
-                for (int j = 0; j < constants::HERO_COUNT; j++) {
-                    Float lambda = r.getLambdas()[j];
-
-                    Float n0 = conductor.n0->get(lambda);
-                    Complex n1 = conductor.n1->get(lambda);
-
-                    if (coating) coating->thinFilmFresnel(n0, n1, cosTheta, i, lambda, reflectance[j], transmittance[j]);
-                    else fresnel(n0, n1, cosTheta, reflectance[j], transmittance[j]);
-                }
-
-                bool reflect = utils::randomFloat(state) < reflectance[0] || reflectance[0] >= 1;
-
-                if (!reflect) return SampledSpectrum(0);
+                if (alphaX > constants::EPSILON || alphaY > constants::EPSILON) normal = utils::ggxNormal(-r.getDirection(), normal, intersection.transformedTangent, alphaX, alphaY, state);
 
                 Vector<Float, 3> direction = utils::reflected(r.getDirection(), normal);
 
-                if (dot(i.transformedNormal, direction) < constants::EPSILON) return SampledSpectrum(0);
+                if (dot(intersection.transformedNormal, direction) <= constants::EPSILON) return SampledSpectrum(0);
 
-                Ray rOut(i.transformedPoint, direction, r.getLambdas(), r.getMedium());
-
-                Float averageReflectance = collapsed ? reflectance[0] : reflectance.average();
+                Ray rOut(intersection.transformedPoint, direction, r.getLambdas(), medium);
 
                 SampledSpectrum attenuation;
 
-                if ((alphaX > constants::EPSILON || alphaY > constants::EPSILON)) attenuation = evaluateConductor(i, r, rOut, collapsed, coating) / averageReflectance;
-                else for (int j = 0; j < constants::HERO_COUNT; j++) attenuation[j] = (!collapsed || j == 0) ? reflectance[j] / averageReflectance : 0;
+                if ((alphaX > constants::EPSILON || alphaY > constants::EPSILON)) {
+                    attenuation = evaluateConductor(coating, intersection, r, rOut, probabilityDensity, collapsed);
+
+                    if (!(probabilityDensity[0] > 0)) attenuation = SampledSpectrum(0);
+                    else attenuation *= dot(intersection.transformedNormal, rOut.getDirection()) / probabilityDensity[0];
+                }
+                else {
+                    probabilityDensity = SampledSpectrum(1);
+
+                    Float cosTheta = dot(intersection.transformedNormal, -r.getDirection());
+
+                    SampledSpectrum reflectance, transmittance;
+
+                    for (int i = 0; i < constants::HERO_COUNT; i++)
+                        if (!collapsed || i == 0) {
+                            Float lambda = r.getLambdas()[i];
+
+                            Float n0 = conductor.n0->get(lambda);
+                            Complex n1 = conductor.n1->get(lambda);
+
+                            fresnel(coating, intersection, n0, n1, cosTheta, lambda, reflectance[i], transmittance[i]);
+
+                            attenuation[i] = reflectance[i];
+                        }
+                }
 
                 r = rOut;
 
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum scatterDielectric(const Intersection & i, Ray & r, Random & state, bool & collapsed, const Material * coating = nullptr) const {
-                Vector<Float, 3> normal = i.transformedNormal;
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleDielectric(const Material * coating, const Intersection & intersection, Ray & r, const Medium * medium0, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+                Vector<Float, 3> normal = intersection.transformedNormal;
 
-                Float alphaX = dielectric.alphaX->evaluate(i);
-                Float alphaY = dielectric.alphaY->evaluate(i);
+                Float alphaX = dielectric.alphaX->evaluate(intersection);
+                Float alphaY = dielectric.alphaY->evaluate(intersection);
 
-                if (alphaX > constants::EPSILON || alphaY > constants::EPSILON) normal = utils::ggxNormal(-r.getDirection(), normal, i.transformedTangent, alphaX, alphaY, state);
+                if (alphaX > constants::EPSILON || alphaY > constants::EPSILON) normal = utils::ggxNormal(-r.getDirection(), normal, intersection.transformedTangent, alphaX, alphaY, state);
 
                 Float lambda = r.getLambdas()[0];
 
-                Float n0Hero = i.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
-                Float n1Hero = i.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
+                Float n0Hero = intersection.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
+                Float n1Hero = intersection.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
 
                 bool collapse = false;
 
-                SampledSpectrum reflectance, transmittance;
+                Float cosTheta = dot(normal, -r.getDirection());
 
-                for (int j = 0; j < constants::HERO_COUNT; j++) {
-                    lambda = r.getLambdas()[j];
+                SampledSpectrum reflectance, transmittance, ratio;
 
-                    Float n0 = i.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
-                    Float n1 = i.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
+                for (int i = 0; i < constants::HERO_COUNT; i++) {
+                    lambda = r.getLambdas()[i];
+
+                    Float n0 = intersection.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
+                    Float n1 = intersection.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
 
                     if (!collapsed && (std::fabs(n0Hero - n0) > constants::EPSILON || std::fabs(n1Hero - n1) > constants::EPSILON)) collapse = true;
 
-                    Float cosTheta = dot(normal, -r.getDirection());
+                    fresnel(coating, intersection, n0, n1, cosTheta, lambda, reflectance[i], transmittance[i]);
 
-                    if (coating) coating->thinFilmFresnel(n0, n1, cosTheta, i, lambda, reflectance[j], transmittance[j]);
-                    else fresnel(n0, n1, cosTheta, reflectance[j], transmittance[j]);
+                    ratio[i] = n0 / n1;
                 }
+
+                if (reflectance[0] + transmittance[0] <= constants::EPSILON) return SampledSpectrum(0);
 
                 Float u = utils::randomFloat(state);
 
@@ -578,32 +465,27 @@ namespace lambda {
 
                 Vector<Float, 3> direction = reflect ? utils::reflected(r.getDirection(), normal) : utils::refracted(r.getDirection(), normal, n0Hero / n1Hero);
 
-                if ((alphaX > constants::EPSILON || alphaY > constants::EPSILON) && (reflect ? dot(i.transformedNormal, direction) < constants::EPSILON : dot(i.transformedNormal, direction) > -constants::EPSILON)) return SampledSpectrum(0);
+                if ((alphaX > constants::EPSILON || alphaY > constants::EPSILON) && (reflect ? dot(intersection.transformedNormal, direction) <= constants::EPSILON : dot(intersection.transformedNormal, direction) >= -constants::EPSILON)) return SampledSpectrum(0);
 
-                Ray rOut(i.transformedPoint, direction, r.getLambdas(), r.getMedium());
+                Ray rOut(intersection.transformedPoint, direction, r.getLambdas(), reflect ? medium0 : medium1);
+
+                if (!reflect && collapse) collapsed = true;
 
                 SampledSpectrum attenuation;
 
                 if ((alphaX > constants::EPSILON || alphaY > constants::EPSILON) && (reflect || std::fabs(n0Hero - n1Hero) > constants::EPSILON)) {
-                    if (!reflect && collapse) collapsed = true;
+                    attenuation = evaluateDielectric(coating, intersection, r, rOut, probabilityDensity, collapsed);
 
-                    attenuation = evaluateDielectric(i, r, rOut, collapsed, coating);
-
-                    if (!reflect && collapse) attenuation[0] *= constants::HERO_COUNT;
+                    if (!(probabilityDensity[0] > 0)) attenuation = SampledSpectrum(0);
+                    else attenuation *= std::fabs(dot(intersection.transformedNormal, rOut.getDirection())) / probabilityDensity[0];
                 }
                 else {
-                    Float averageReflectance = collapsed || (!reflect && collapse) ? reflectance[0] : reflectance.average();
-                    Float averageTransmittance = collapsed || (!reflect && collapse) ? transmittance[0] : transmittance.average();
+                    probabilityDensity = reflect ? reflectance : transmittance;
 
-                    attenuation = reflect ? reflectance / averageReflectance : transmittance / averageTransmittance;
+                    attenuation = reflect ? reflectance / reflectance[0] : transmittance / transmittance[0] * ratio * ratio;
 
-                    if (!reflect && collapse) {
-                        attenuation[0] *= constants::HERO_COUNT;
-
-                        collapsed = true;
-                    }
-
-                    if (collapsed) for (int j = 1; j < constants::HERO_COUNT; j++) attenuation[j] = 0;
+                    if (collapsed)
+                        for (int i = 1; i < constants::HERO_COUNT; i++) attenuation[i] = 0;
                 }
 
                 r = rOut;
@@ -611,116 +493,114 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum scatterCoated(const Intersection & i, Ray & r, Random & state, bool & collapsed) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleCoated(const Intersection & intersection, Ray & r, const Medium * medium0, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
                 switch (coated.substrate->type) {
-                    case Type::LAMBERTIAN: return SampledSpectrum(0);
-                    case Type::MIRROR: return SampledSpectrum(0);
-                    case Type::CONDUCTOR: return coated.substrate->scatterConductor(i, r, state, collapsed, this);
-                    case Type::DIELECTRIC: return coated.substrate->scatterDielectric(i, r, state, collapsed, this);
-                    case Type::COATED: return SampledSpectrum(0);
-                    case Type::EMISSIVE: return SampledSpectrum(0);
+                    case Type::CONDUCTOR: return coated.substrate->sampleConductor(this, intersection, r, medium0, probabilityDensity, collapsed, state);
+                    case Type::DIELECTRIC: return coated.substrate->sampleDielectric(this, intersection, r, medium0, medium1, probabilityDensity, collapsed, state);
+                    default: return SampledSpectrum(0);
                 }
-
-                return SampledSpectrum(0);
             }
 
             template <typename T>
-            LAMBDA_HOST_DEVICE void fresnel(Float nI, const T & nT, Float cosThetaI, Float & reflectance, Float & transmittance) const {
+            LAMBDA_HOST_DEVICE static void fresnel(const Material * coating, const Intersection & intersection, Float nI, const T & nT, Float cosThetaI, Float lambda, Float & reflectance, Float & transmittance) {
                 using std::abs;
                 using std::fabs;
                 using std::sqrt;
 
-                T sinTheta = nI / nT;
-                sinTheta *= sinTheta * (1 - cosThetaI * cosThetaI);
+                if (!coating) {
+                    T sinTheta = nI / nT;
+                    sinTheta *= sinTheta * (1 - cosThetaI * cosThetaI);
 
-                if constexpr (std::is_same_v<T, Float>)
-                    if (sinTheta >= 1) {
-                        reflectance = 1;
-                        transmittance = 0;
+                    if constexpr (std::is_same_v<T, Float>)
+                        if (sinTheta >= 1) {
+                            reflectance = 1;
+                            transmittance = 0;
 
-                        return;
+                            return;
+                        }
+
+                    T cosThetaT = sqrt(1 - sinTheta);
+
+                    Float R_s = abs((nI * cosThetaI - nT * cosThetaT) / (nI * cosThetaI + nT * cosThetaT));
+                    Float R_p = abs((nI * cosThetaT - nT * cosThetaI) / (nI * cosThetaT + nT * cosThetaI));
+
+                    R_s *= R_s;
+                    R_p *= R_p;
+
+                    reflectance = Float(0.5) * (R_s + R_p);
+
+                    if constexpr (std::is_same_v<T, Float>) {
+                        Float T_s = abs(2 * nI * cosThetaI / (nI * cosThetaI + nT * cosThetaT));
+                        Float T_p = abs(2 * nI * cosThetaI / (nI * cosThetaT + nT * cosThetaI));
+
+                        T_s *= T_s * (nT * cosThetaT) / (nI * cosThetaI);
+                        T_p *= T_p * (nT * cosThetaT) / (nI * cosThetaI);
+
+                        transmittance = Float(0.5) * (T_s + T_p);
+                    }
+                    else transmittance = 0;
+                }
+                else {
+                    int numLayers = coating->coated.numLayers;
+
+                    const DenseSpectrum<Complex> * const * n = coating->coated.n;
+                    const ScalarTexture * const * d = coating->coated.d;
+
+                    int jOffset = intersection.frontFacing ? 0 : numLayers - 1;
+                    int jSign = intersection.frontFacing ? 1 : -1;
+
+                    Complex n0 = nI;
+                    Complex n1 = n[jOffset]->get(lambda);
+
+                    Float nSinThetaSquared = nI * nI * (1 - cosThetaI * cosThetaI);
+
+                    Complex cosCurrent = cosThetaI;
+                    Complex sinNext = nSinThetaSquared / (n1 * n1);
+                    Complex cosNext = sqrt(1 - sinNext);
+
+                    Matrix<Complex, 2> matrices[2];
+                    matrices[0] = utils::interfaceMatrixS(n0, n1, cosCurrent, cosNext);
+                    matrices[1] = utils::interfaceMatrixP(n0, n1, cosCurrent, cosNext);
+
+                    for (int i = 0; i < numLayers; i++) {
+                        n0 = n[jOffset + jSign * i]->get(lambda);
+                        n1 = i == numLayers - 1 ? nT : n[jOffset + jSign * (i + 1)]->get(lambda);
+
+                        cosCurrent = cosNext;
+                        sinNext = nSinThetaSquared / (n1 * n1);
+                        cosNext = sqrt(1 - sinNext);
+
+                        Matrix<Complex, 2> interfaceS = utils::interfaceMatrixS(n0, n1, cosCurrent, cosNext);
+                        Matrix<Complex, 2> interfaceP = utils::interfaceMatrixP(n0, n1, cosCurrent, cosNext);
+
+                        Complex phi = n0 * 2 * constants::PI / lambda * d[jOffset + jSign * i]->evaluate(intersection) * cosCurrent;
+
+                        Matrix<Complex, 2> propagation = utils::propagationMatrix(phi);
+                        matrices[0] *= propagation * interfaceS;
+                        matrices[1] *= propagation * interfaceP;
                     }
 
-                T cosThetaT = sqrt(1 - sinTheta);
+                    Float R_s = abs(matrices[0].get(1, 0) / matrices[0].get(0, 0));
+                    Float R_p = abs(matrices[1].get(1, 0) / matrices[1].get(0, 0));
 
-                Float R_s = abs((nI * cosThetaI - nT * cosThetaT) / (nI * cosThetaI + nT * cosThetaT));
-                Float R_p = abs((nI * cosThetaT - nT * cosThetaI) / (nI * cosThetaT + nT * cosThetaI));
+                    R_s *= R_s;
+                    R_p *= R_p;
 
-                R_s *= R_s;
-                R_p *= R_p;
+                    reflectance = Float(0.5) * (R_s + R_p);
 
-                reflectance = Float(0.5) * (R_s + R_p);
+                    if constexpr (std::is_same_v<T, Float>) {
+                        Float T_s = abs(1 / matrices[0].get(0, 0));
+                        Float T_p = abs(1 / matrices[1].get(0, 0));
 
-                if constexpr (std::is_same_v<T, Float>) {
-                    Float T_s = abs(2 * nI * cosThetaI / (nI * cosThetaI + nT * cosThetaT));
-                    Float T_p = abs(2 * nI * cosThetaI / (nI * cosThetaT + nT * cosThetaI));
+                        Float factor = Float(((nT * cosNext) / (nI * cosThetaI)).real());
 
-                    T_s *= T_s * (nT * cosThetaT) / (nI * cosThetaI);
-                    T_p *= T_p * (nT * cosThetaT) / (nI * cosThetaI);
+                        T_s *= T_s * factor;
+                        T_p *= T_p * factor;
 
-                    transmittance = Float(0.5) * (T_s + T_p);
+                        transmittance = Float(0.5) * (T_s + T_p);
+                    }
+                    else transmittance = 0;
                 }
-                else transmittance = 0;
-            }
-
-            template <typename T>
-            LAMBDA_HOST_DEVICE void thinFilmFresnel(Float nI, const T & nT, const Complex & cosThetaI, const Intersection & i, Float lambda, Float & reflectance, Float & transmittance) const {
-                int jOffset = i.frontFacing ? 0 : coated.numLayers - 1;
-                int jSign = i.frontFacing ? 1 : -1;
-
-                Complex n0 = nI;
-                Complex n1 = coated.n[jOffset]->get(lambda);
-
-                Complex cosCurrent = cosThetaI;
-                Complex sinCurrent;
-                Complex sinNext = n0 / n1;
-                sinNext *= sinNext * (1 - cosCurrent * cosCurrent);
-                Complex cosNext = sqrt(1 - sinNext);
-
-                Matrix<Complex, 2> matrices[2];
-                matrices[0] = utils::interfaceMatrixS(n0, n1, cosCurrent, cosNext);
-                matrices[1] = utils::interfaceMatrixP(n0, n1, cosCurrent, cosNext);
-
-                for (int j = 0; j < coated.numLayers; j++) {
-                    n0 = coated.n[jOffset + jSign * j]->get(lambda);
-                    n1 = j == coated.numLayers - 1 ? nT : coated.n[jOffset + jSign * (j + 1)]->get(lambda);
-
-                    cosCurrent = cosNext;
-                    sinCurrent = sinNext;
-                    sinNext = n0 / n1;
-                    sinNext *= sinNext * sinCurrent;
-                    cosNext = sqrt(1 - sinNext);
-
-                    Matrix<Complex, 2> interfaceS = utils::interfaceMatrixS(n0, n1, cosCurrent, cosNext);
-                    Matrix<Complex, 2> interfaceP = utils::interfaceMatrixP(n0, n1, cosCurrent, cosNext);
-
-                    Complex phi = n0 * 2 * constants::PI / lambda * coated.d[jOffset + jSign * j]->evaluate(i) * cosCurrent;
-
-                    Matrix<Complex, 2> propagation = utils::propagationMatrix(phi);
-                    matrices[0] *= propagation * interfaceS;
-                    matrices[1] *= propagation * interfaceP;
-                }
-
-                Float R_s = abs(matrices[0].get(1, 0) / matrices[0].get(0, 0));
-                Float R_p = abs(matrices[1].get(1, 0) / matrices[1].get(0, 0));
-
-                R_s *= R_s;
-                R_p *= R_p;
-
-                reflectance = Float(0.5) * (R_s + R_p);
-
-                if constexpr (std::is_same_v<T, Float>) {
-                    Float T_s = abs(1 / matrices[0].get(0, 0));
-                    Float T_p = abs(1 / matrices[1].get(0, 0));
-
-                    Float factor = Float(((nT * cosNext) / (nI * cosThetaI)).real());
-
-                    T_s *= T_s * factor;
-                    T_p *= T_p * factor;
-
-                    transmittance = Float(0.5) * (T_s + T_p);
-                }
-                else transmittance = 0;
             }
     };
 }

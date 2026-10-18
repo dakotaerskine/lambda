@@ -3,9 +3,9 @@
 #include "core/constants.h"
 #include "core/platform.h"
 #include "core/utils.h"
-#include "math/intersection.h"
 #include "math/ray.h"
 #include "math/spectrum.h"
+#include "scene/intersection.h"
 
 namespace lambda {
     class Medium {
@@ -23,41 +23,33 @@ namespace lambda {
                 return medium;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum transmittance(const Ray & r, const Intersection & intersection) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum transmittance(const Intersection & intersection, const Ray & r, bool collapsed) const {
                 switch (type) {
-                    case Type::HOMOGENEOUS: return transmittanceHomogeneous(r, intersection);
+                    case Type::HOMOGENEOUS: return transmittanceHomogeneous(intersection, r, collapsed);
                 }
 
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum intersect(const Ray & r, Intersection & intersection, Random & state) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleDistance(Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 switch (type) {
-                    case Type::HOMOGENEOUS: return intersectHomogeneous(r, intersection, state);
+                    case Type::HOMOGENEOUS: return sampleDistanceHomogeneous(intersection, r, probabilityDensity, collapsed, state);
                 }
 
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum pdf(const Intersection &, const Ray & rIn, const Ray & rOut) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 switch (type) {
-                    case Type::HOMOGENEOUS: return pdfHomogeneous(rIn, rOut);
+                    case Type::HOMOGENEOUS: return evaluateHomogeneous(rIn, rOut, probabilityDensity, collapsed);
                 }
 
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Intersection &, const Ray & rIn, const Ray & rOut) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 switch (type) {
-                    case Type::HOMOGENEOUS: return evaluateHomogeneous(rIn, rOut);
-                }
-
-                return SampledSpectrum(0);
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum scatter(const Intersection & i, Ray & r, Random & state) const {
-                switch (type) {
-                    case Type::HOMOGENEOUS: return scatterHomogeneous(i, r, state);
+                    case Type::HOMOGENEOUS: return sampleHomogeneous(intersection, r, probabilityDensity, collapsed, state);
                 }
 
                 return SampledSpectrum(0);
@@ -72,22 +64,23 @@ namespace lambda {
                 struct { DenseSpectrum<Float> * sigmaA, * sigmaS; Float g; } homogeneous;
             };
 
-            LAMBDA_HOST_DEVICE SampledSpectrum transmittanceHomogeneous(const Ray & r, const Intersection & intersection) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum transmittanceHomogeneous(const Intersection & intersection, const Ray & r, bool collapsed) const {
                 SampledSpectrum attenuation;
 
-                for (int j = 0; j < constants::HERO_COUNT; j++) {
-                    Float sigmaA = homogeneous.sigmaA->get(r.getLambdas()[j]);
-                    Float sigmaS = homogeneous.sigmaS->get(r.getLambdas()[j]);
-                    Float sigmaT = sigmaA + sigmaS;
+                for (int i = 0; i < constants::HERO_COUNT; i++)
+                    if (!collapsed || i == 0) {
+                        Float sigmaA = homogeneous.sigmaA->get(r.getLambdas()[i]);
+                        Float sigmaS = homogeneous.sigmaS->get(r.getLambdas()[i]);
+                        Float sigmaT = sigmaA + sigmaS;
 
-                    if (intersection.t >= constants::MAX) attenuation[j] = sigmaT > constants::EPSILON ? 0 : 1;
-                    else attenuation[j] = std::exp(-sigmaT * intersection.t);
-                }
+                        if (intersection.t >= constants::MAX) attenuation[i] = sigmaT > constants::EPSILON ? 0 : 1;
+                        else attenuation[i] = std::exp(-sigmaT * intersection.t);
+                    }
 
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum intersectHomogeneous(const Ray & r, Intersection & intersection, Random & state) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleDistanceHomogeneous(Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 Float sigmaA = homogeneous.sigmaA->get(r.getLambdas()[0]);
                 Float sigmaS = homogeneous.sigmaS->get(r.getLambdas()[0]);
                 Float sigmaT = sigmaA + sigmaS;
@@ -98,53 +91,53 @@ namespace lambda {
 
                 if (isSurface) t = intersection.t;
 
-                SampledSpectrum transmittance;
-                SampledSpectrum scatterProbability;
-
-                for (int j = 0; j < constants::HERO_COUNT; j++) {
-                    sigmaA = homogeneous.sigmaA->get(r.getLambdas()[j]);
-                    sigmaS = homogeneous.sigmaS->get(r.getLambdas()[j]);
-                    sigmaT = sigmaA + sigmaS;
-
-                    transmittance[j] = std::exp(-sigmaT * t);
-
-                    scatterProbability[j] = isSurface ? transmittance[j] : (sigmaT * transmittance[j]);
-                }
-
                 if (!isSurface) {
+                    intersection = Intersection();
+
                     intersection.t = t;
                     intersection.transformedPoint = r.at(t);
                     intersection.isSurface = false;
                 }
 
-                Float averageProbability = scatterProbability.average();
+                SampledSpectrum transmittance = transmittanceHomogeneous(intersection, r, collapsed);
 
-                if (averageProbability < constants::EPSILON) return SampledSpectrum(0);
+                for (int i = 0; i < constants::HERO_COUNT; i++)
+                    if (i == 0 || !collapsed) {
+                        sigmaA = homogeneous.sigmaA->get(r.getLambdas()[i]);
+                        sigmaS = homogeneous.sigmaS->get(r.getLambdas()[i]);
+                        sigmaT = sigmaA + sigmaS;
 
-                return transmittance / averageProbability;
+                        probabilityDensity[i] = isSurface ? transmittance[i] : sigmaT * transmittance[i];
+                    }
+
+                if (!(probabilityDensity[0] > 0)) return SampledSpectrum(0);
+
+                return transmittance / probabilityDensity[0];
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum pdfHomogeneous(const Ray & rIn, const Ray & rOut) const {
-                Float g2 = homogeneous.g * homogeneous.g;
+            LAMBDA_HOST_DEVICE SampledSpectrum evaluateHomogeneous(const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+                if (std::fabs(homogeneous.g) <= constants::EPSILON) probabilityDensity = SampledSpectrum(1 / (4 * constants::PI));
+                else {
+                    Float g2 = homogeneous.g * homogeneous.g;
 
-                return SampledSpectrum(1 / (4 * constants::PI) * (1 - g2) / std::pow(1 + g2 + 2 * homogeneous.g * dot(-rIn.getDirection(), rOut.getDirection()), Float(1.5)));
-            }
+                    probabilityDensity = SampledSpectrum(1 / (4 * constants::PI) * (1 - g2) / std::pow(1 + g2 + 2 * homogeneous.g * dot(-rIn.getDirection(), rOut.getDirection()), Float(1.5)));
+                }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateHomogeneous(const Ray & rIn, const Ray & rOut) const {
                 SampledSpectrum attenuation;
 
-                for (int j = 0; j < constants::HERO_COUNT; j++) attenuation[j] = homogeneous.sigmaS->get(rIn.getLambdas()[j]);
+                for (int i = 0; i < constants::HERO_COUNT; i++)
+                    if (i == 0 || !collapsed) attenuation[i] = homogeneous.sigmaS->get(rIn.getLambdas()[i]);
 
-                return attenuation * pdfHomogeneous(rIn, rOut);
+                return attenuation * probabilityDensity;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum scatterHomogeneous(const Intersection & i, Ray & r, Random & state) const {
-                Float g2 = homogeneous.g * homogeneous.g;
-
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleHomogeneous(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 Float cosTheta = 0;
 
-                if (std::fabs(homogeneous.g) < constants::EPSILON) cosTheta = 1 - 2 * utils::randomFloat(state);
+                if (std::fabs(homogeneous.g) <= constants::EPSILON) cosTheta = 1 - 2 * utils::randomFloat(state);
                 else {
+                    Float g2 = homogeneous.g * homogeneous.g;
+
                     Float term = (1 - g2) / (1 - homogeneous.g + 2 * homogeneous.g * utils::randomFloat(state));
 
                     cosTheta = -(1 + g2 - term * term) / (2 * homogeneous.g);
@@ -161,13 +154,12 @@ namespace lambda {
 
                 Vector<Float, 3> direction = tangent * (sinTheta * std::cos(phi)) + bitangent * (sinTheta * std::sin(phi)) - r.getDirection() * (cosTheta);
 
-                Ray rOut(i.transformedPoint, direction, r.getLambdas(), r.getMedium());
+                Ray rOut(intersection.transformedPoint, direction, r.getLambdas(), r.getMedium());
 
-                SampledSpectrum attenuation;
+                SampledSpectrum attenuation = evaluateHomogeneous(r, rOut, probabilityDensity, collapsed);
 
-                for (int j = 0; j < constants::HERO_COUNT; j++) attenuation[j] = homogeneous.sigmaS->get(r.getLambdas()[j]);
-
-                attenuation *= pdfHomogeneous(r, rOut);
+                if (!(probabilityDensity[0] > 0)) attenuation = SampledSpectrum(0);
+                else attenuation /= probabilityDensity[0];
 
                 r = rOut;
 

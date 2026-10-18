@@ -6,10 +6,10 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-option(CPU "Force CPU build" OFF)
-option(DOUBLE_PRECISION "Use double precision for floating point values" OFF)
+option(LAMBDA_CPU "Force CPU build" OFF)
+option(LAMBDA_DOUBLE_PRECISION "Use double precision for floating point values" OFF)
 
-if (NOT CPU)
+if (NOT LAMBDA_CPU)
     include(CheckLanguage)
     check_language(CUDA)
 
@@ -32,7 +32,7 @@ target_compile_definitions(lambda PRIVATE LAMBDA_DATA_DIRECTORY="${CMAKE_CURRENT
 find_package(OpenMP REQUIRED)
 target_link_libraries(lambda PRIVATE OpenMP::OpenMP_CXX)
 
-if(CMAKE_CUDA_COMPILER AND NOT CPU)
+if(CMAKE_CUDA_COMPILER AND NOT LAMBDA_CPU)
     set_source_files_properties(src/main.cpp PROPERTIES LANGUAGE CUDA)
 
     set_target_properties(lambda PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_SEPARABLE_COMPILATION ON)
@@ -48,6 +48,6 @@ endif()
 
 target_compile_definitions(lambda PRIVATE STB_IMAGE_IMPLEMENTATION STB_IMAGE_WRITE_IMPLEMENTATION TINYEXR_IMPLEMENTATION TINYEXR_USE_MINIZ=0 TINYEXR_USE_STB_ZLIB=1)
 
-if (DOUBLE_PRECISION)
+if (LAMBDA_DOUBLE_PRECISION)
     target_compile_definitions(lambda PRIVATE LAMBDA_DOUBLE_PRECISION)
 endif()

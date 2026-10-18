@@ -2,7 +2,9 @@
 
 #include <cctype>
 #include <cerrno>
+#include <clocale>
 #include <cstring>
+#include <new>
 #include <stdexcept>
 #include <string>
 
@@ -26,11 +28,9 @@ namespace lambda {
         [[noreturn]] inline void fileError(const std::string & file, const std::string & message) { fileError(file, 0, 0, message); }
 
         [[noreturn]] inline void failedToOpenFileError(const std::string & file) {
-            std::string errorString;
+            const char * rawError = strerror_l(errno, LC_GLOBAL_LOCALE);
 
-            errorString.resize(1024);
-
-            if (strerror_r(errno, errorString.data(), errorString.size())) errorString = "";
+            std::string errorString = (rawError && rawError[0] != '\0') ? std::string(rawError) : "";
 
             if (!errorString.empty()) {
                 errorString[0] = char(std::tolower(errorString[0]));
@@ -44,6 +44,8 @@ namespace lambda {
         [[noreturn]] inline void lengthError(int length) { throw std::length_error("length " + std::to_string(length) + " is invalid"); }
 
         [[noreturn]] inline void outOfRangeError(int i) { throw std::out_of_range("index " + std::to_string(i) + " is out of range"); }
+
+        [[noreturn]] inline void badAllocError() { throw std::bad_alloc(); }
 
         #ifdef __CUDACC__
             inline void checkCudaError(cudaError_t err, const std::string & message) {

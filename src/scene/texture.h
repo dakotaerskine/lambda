@@ -4,8 +4,8 @@
 
 #include "core/platform.h"
 #include "core/utils.h"
-#include "math/intersection.h"
 #include "math/spectrum.h"
+#include "scene/intersection.h"
 
 namespace lambda {
     class ScalarTexture {
@@ -157,8 +157,8 @@ namespace lambda {
 
                 texture.type = Type::IMAGE;
                 texture.isConstant = false;
-                texture.width = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? width : 1;
-                texture.height = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? height : 1;
+                texture.width = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? width : 1;
+                texture.height = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? height : 1;
 
                 texture.min = constants::MAX;
                 texture.max = -constants::MAX;
@@ -214,15 +214,15 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & i) const {
+            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & intersection) const {
                 switch (type) {
                     case Type::CONSTANT: return constant.value;
-                    case Type::SCALE: return scale.texture1->evaluate(i) * scale.texture2->evaluate(i);
-                    case Type::MIX: return utils::interpolate(mix.texture1->evaluate(i), mix.texture2->evaluate(i), mix.factor->evaluate(i));
-                    case Type::CHECKER: return evaluateChecker(i);
-                    case Type::PERLIN: return evaluatePerlin(i);
-                    case Type::WORLEY: return evaluateWorley(i);
-                    case Type::IMAGE: return evaluateImage(i);
+                    case Type::SCALE: return scale.texture1->evaluate(intersection) * scale.texture2->evaluate(intersection);
+                    case Type::MIX: return utils::interpolate(mix.texture1->evaluate(intersection), mix.texture2->evaluate(intersection), mix.factor->evaluate(intersection));
+                    case Type::CHECKER: return evaluateChecker(intersection);
+                    case Type::PERLIN: return evaluatePerlin(intersection);
+                    case Type::WORLEY: return evaluateWorley(intersection);
+                    case Type::IMAGE: return evaluateImage(intersection);
                 }
 
                 return 0;
@@ -257,21 +257,21 @@ namespace lambda {
                 return image.image[y * image.width + x];
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & i) const {
-                int x = int(std::floor(i.textureCoordinate[0] * checker.uScale + checker.uOffset));
-                int y = int(std::floor(i.textureCoordinate[1] * checker.vScale + checker.vOffset));
+            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & intersection) const {
+                int x = int(std::floor(intersection.textureCoordinate[0] * checker.uScale + checker.uOffset));
+                int y = int(std::floor(intersection.textureCoordinate[1] * checker.vScale + checker.vOffset));
 
                 return abs(x + y) % 2 == 0 ? checker.value1 : checker.value2;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluatePerlin(const Intersection & i) const {
+            LAMBDA_HOST_DEVICE Float evaluatePerlin(const Intersection & intersection) const {
                 Float value = 0, amplitude = 1, factor = 0;
 
-                Vector<Float, 3> point = i.useTransformed ? i.transformedPoint : i.point;
+                Vector<Float, 3> point = intersection.useTransformed ? intersection.transformedPoint : intersection.point;
 
                 point *= perlin.frequency;
 
-                for (int j = 0; j < perlin.octaves; j++) {
+                for (int i = 0; i < perlin.octaves; i++) {
                     value += utils::perlinNoise(point) * amplitude;
                     factor += amplitude;
 
@@ -282,14 +282,14 @@ namespace lambda {
                 return value / factor;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateWorley(const Intersection & i) const {
+            LAMBDA_HOST_DEVICE Float evaluateWorley(const Intersection & intersection) const {
                 Float value = 0, amplitude = 1, factor = 0;
 
-                Vector<Float, 3> point = i.useTransformed ? i.transformedPoint : i.point;
+                Vector<Float, 3> point = intersection.useTransformed ? intersection.transformedPoint : intersection.point;
 
                 point *= worley.frequency;
 
-                for (int j = 0; j < worley.octaves; j++) {
+                for (int i = 0; i < worley.octaves; i++) {
                     value += utils::worleyNoise(point) * amplitude;
                     factor += amplitude;
 
@@ -300,12 +300,12 @@ namespace lambda {
                 return value / factor;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & i) const {
-                Float u = i.textureCoordinate[0] * image.uScale + image.uOffset;
-                Float v = i.textureCoordinate[1] * image.vScale + image.vOffset;
+            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & intersection) const {
+                Float u = intersection.textureCoordinate[0] * image.uScale + image.uOffset;
+                Float v = intersection.textureCoordinate[1] * image.vScale + image.vOffset;
 
                 u = u - std::floor(u);
-                v = v - std::floor(v);
+                v = utils::clamp(v, Float(0), Float(1));
 
                 Float x = u * Float(image.width) - Float(0.5);
                 Float y = v * Float(image.height) - Float(0.5);
@@ -320,10 +320,10 @@ namespace lambda {
                 Float ty = y - Float(y0);
 
                 x0 = ((x0 % image.width) + image.width) % image.width;
-                y0 = ((y0 % image.height) + image.height) % image.height;
                 x1 = ((x1 % image.width) + image.width) % image.width;
-                y1 = ((y1 % image.height) + image.height) % image.height;
 
+                y1 = utils::clamp(y1, 0, image.height - 1);
+                y0 = utils::clamp(y0, 0, image.height - 1);
 
                 Float c00 = image.image[y0 * image.width + x0];
                 Float c10 = image.image[y0 * image.width + x1];
@@ -464,8 +464,8 @@ namespace lambda {
 
                 texture.type = Type::IMAGE;
                 texture.isConstant = false;
-                texture.width = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? width : 1;
-                texture.height = (std::fabs(uScale - 1) < constants::EPSILON && std::fabs(vScale - 1) < constants::EPSILON && std::fabs(uOffset) < constants::EPSILON && std::fabs(vOffset) < constants::EPSILON) ? height : 1;
+                texture.width = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? width : 1;
+                texture.height = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? height : 1;
 
                 texture.min = constants::MAX;
                 texture.max = -constants::MAX;
@@ -485,7 +485,11 @@ namespace lambda {
                     texture.average += rowSum / Float(width);
                 }
 
-                texture.average /= Float(height);
+                texture.average /= Float(height * 3);
+
+                texture.min = std::fmax(texture.min, Float(0));
+                texture.max = std::fmax(texture.max, Float(0));
+                texture.average = std::fmax(texture.average, Float(0));
 
                 texture.image.image = image;
                 texture.image.space = space;
@@ -522,14 +526,14 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & i, Float lambda) const {
+            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & intersection, Float lambda) const {
                 switch (type) {
                     case Type::CONSTANT: return constant.value->get(lambda);
-                    case Type::SCALAR: return scalar.texture->evaluate(i);
-                    case Type::SCALE: return scale.texture1->evaluate(i, lambda) * scale.texture2->evaluate(i, lambda);
-                    case Type::MIX: return utils::interpolate(mix.texture1->evaluate(i, lambda), mix.texture2->evaluate(i, lambda), mix.factor->evaluate(i));
-                    case Type::CHECKER: return evaluateChecker(i, lambda);
-                    case Type::IMAGE: return evaluateImage(i, lambda);
+                    case Type::SCALAR: return scalar.texture->evaluate(intersection);
+                    case Type::SCALE: return scale.texture1->evaluate(intersection, lambda) * scale.texture2->evaluate(intersection, lambda);
+                    case Type::MIX: return utils::interpolate(mix.texture1->evaluate(intersection, lambda), mix.texture2->evaluate(intersection, lambda), mix.factor->evaluate(intersection));
+                    case Type::CHECKER: return evaluateChecker(intersection, lambda);
+                    case Type::IMAGE: return evaluateImage(intersection, lambda);
                 }
 
                 return 0;
@@ -560,24 +564,24 @@ namespace lambda {
 
                 Float sum = 0;
 
-                for (int j = 0; j < 3; j++) sum += image.image[(y * image.width + x) * 3 + j];
+                for (int i = 0; i < 3; i++) sum += image.image[(y * image.width + x) * 3 + i];
 
                 return sum / 3;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & i, Float lambda) const {
-                int x = int(std::floor(i.textureCoordinate[0] * checker.uScale + checker.uOffset));
-                int y = int(std::floor(i.textureCoordinate[1] * checker.vScale + checker.vOffset));
+            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & intersection, Float lambda) const {
+                int x = int(std::floor(intersection.textureCoordinate[0] * checker.uScale + checker.uOffset));
+                int y = int(std::floor(intersection.textureCoordinate[1] * checker.vScale + checker.vOffset));
 
                 return abs(x + y) % 2 == 0 ? checker.value1->get(lambda) : checker.value2->get(lambda);
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & i, Float lambda) const {
-                Float u = i.textureCoordinate[0] * image.uScale + image.uOffset;
-                Float v = i.textureCoordinate[1] * image.vScale + image.vOffset;
+            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & intersection, Float lambda) const {
+                Float u = intersection.textureCoordinate[0] * image.uScale + image.uOffset;
+                Float v = intersection.textureCoordinate[1] * image.vScale + image.vOffset;
 
                 u = u - std::floor(u);
-                v = v - std::floor(v);
+                v = utils::clamp(v, Float(0), Float(1));
 
                 Float x = u * Float(image.width) - Float(0.5);
                 Float y = v * Float(image.height) - Float(0.5);
@@ -592,19 +596,20 @@ namespace lambda {
                 Float ty = y - Float(y0);
 
                 x0 = ((x0 % image.width) + image.width) % image.width;
-                y0 = ((y0 % image.height) + image.height) % image.height;
                 x1 = ((x1 % image.width) + image.width) % image.width;
-                y1 = ((y1 % image.height) + image.height) % image.height;
+
+                y1 = utils::clamp(y1, 0, image.height - 1);
+                y0 = utils::clamp(y0, 0, image.height - 1);
 
                 Vector<Float, 3> color;
 
-                for (int j = 0; j < 3; j++) {
-                    Float c00 = image.image[(y0 * image.width + x0) * 3 + j];
-                    Float c10 = image.image[(y0 * image.width + x1) * 3 + j];
-                    Float c01 = image.image[(y1 * image.width + x0) * 3 + j];
-                    Float c11 = image.image[(y1 * image.width + x1) * 3 + j];
+                for (int i = 0; i < 3; i++) {
+                    Float c00 = image.image[(y0 * image.width + x0) * 3 + i];
+                    Float c10 = image.image[(y0 * image.width + x1) * 3 + i];
+                    Float c01 = image.image[(y1 * image.width + x0) * 3 + i];
+                    Float c11 = image.image[(y1 * image.width + x1) * 3 + i];
 
-                    color[j] = utils::interpolate(utils::interpolate(c00, c10, tx), utils::interpolate(c01, c11, tx), ty);
+                    color[i] = utils::interpolate(utils::interpolate(c00, c10, tx), utils::interpolate(c01, c11, tx), ty);
                 }
 
                 Float upsamplingScale = std::fmax(color[0], std::fmax(color[1], color[2]));

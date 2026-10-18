@@ -12,7 +12,8 @@
 #include "core/error.h"
 #include "core/utils.h"
 #include "render/camera.h"
-#include "render/renderer.h"
+#include "render/film.h"
+#include "render/integrator.h"
 #include "math/matrix.h"
 #include "math/random.h"
 #include "math/vector.h"
@@ -22,17 +23,17 @@ namespace lambda {
         public:
             static bool hasValidExtension(const std::string & output) { return utils::hasExtension(output, ".exr") || utils::hasExtension(output, ".pfm") || utils::hasExtension(output, ".png"); }
 
-            static void writeImage(const std::string & output, const Renderer * renderer, Float duration) {
-                if (utils::hasExtension(output, ".exr")) writeEXR(output, renderer, duration);
-                else if (utils::hasExtension(output, ".pfm")) writePFM(output, renderer);
-                else if (utils::hasExtension(output, ".png")) writePNG(output, renderer);
+            static void writeImage(const std::string & output, const Integrator * integrator, Float duration) {
+                if (utils::hasExtension(output, ".exr")) writeEXR(output, integrator, duration);
+                else if (utils::hasExtension(output, ".pfm")) writePFM(output, integrator->getFilm());
+                else if (utils::hasExtension(output, ".png")) writePNG(output, integrator->getFilm());
                 else error::fileError(output, "invalid file extension");
             }
 
             static void writeUpsamplingTables(const std::string & output, float * scale, const float * lut) {
                 std::ofstream outputFile(output, std::ios::binary);
 
-                if (!outputFile.is_open()) error::failedToOpenFileError(output);
+                if (!outputFile.is_open()) return;
 
                 outputFile.write("SPEC", 4);
 
@@ -45,20 +46,23 @@ namespace lambda {
             }
 
         private:
-            static void writePNG(const std::string & output, const Renderer * renderer) {
-                std::vector<unsigned char> pixels(renderer->getTotalPixels() * 3);
+            static void writePNG(const std::string & output, const Film * film) {
+                std::vector<unsigned char> pixels(film->getWidth() * film->getHeight() * 3);
+
+                Matrix<double, 3> toRGB = utils::toRGBMatrix(ColorSpace::SRGB);
 
                 Random state(0, 0);
 
-                for (int i = 0; i < renderer->getTotalPixels(); i++) {
-                    Vector<Float, 3> color = utils::toRGBMatrix(ColorSpace::SRGB) * Vector<Float, 3>(renderer->getChannel(i, 0), renderer->getChannel(i, 1), renderer->getChannel(i, 2));
+                for (int i = 0; i < film->getWidth(); i++)
+                    for (int j = 0; j < film->getHeight(); j++) {
+                        Vector<Float, 3> color = toRGB * film->getPixel(i, j);
 
-                    pixels[i * 3 + 0] = utils::quantize(utils::toneMap(color[0]), state);
-                    pixels[i * 3 + 1] = utils::quantize(utils::toneMap(color[1]), state);
-                    pixels[i * 3 + 2] = utils::quantize(utils::toneMap(color[2]), state);
-                }
+                        pixels[(j * film->getWidth() + i) * 3 + 0] = utils::quantize(utils::toneMap(color[0]), state);
+                        pixels[(j * film->getWidth() + i) * 3 + 1] = utils::quantize(utils::toneMap(color[1]), state);
+                        pixels[(j * film->getWidth() + i) * 3 + 2] = utils::quantize(utils::toneMap(color[2]), state);
+                    }
 
-                if (!stbi_write_png(output.c_str(), renderer->getWidth(), renderer->getHeight(), 3, pixels.data(), renderer->getWidth() * 3)) {
+                if (!stbi_write_png(output.c_str(), film->getWidth(), film->getHeight(), 3, pixels.data(), film->getWidth() * 3)) {
                     const char * failureReason = stbi_failure_reason();
 
                     std::string error = failureReason ? " (" + std::string(failureReason) + ")" : "";
@@ -67,20 +71,18 @@ namespace lambda {
                 }
             }
 
-            static void writePFM(const std::string & output, const Renderer * renderer) {
+            static void writePFM(const std::string & output, const Film * film) {
                 std::ofstream outputFile(output, std::ios::binary);
 
                 if (!outputFile.is_open()) error::failedToOpenFileError(output);
 
-                Random state(0, 0);
+                Matrix<double, 3> toRGB = utils::toRGBMatrix(film->getSpace());
 
-                outputFile << "PF\n" << renderer->getWidth() << " " << renderer->getHeight() << "\n-1.0\n";
+                outputFile << "PF\n" << film->getWidth() << " " << film->getHeight() << "\n-1.0\n";
 
-                for (int j = renderer->getHeight() - 1; j >= 0; j--)
-                    for (int i = 0; i < renderer->getWidth(); i++) {
-                        int index = j * renderer->getWidth() + i;
-
-                        Vector<float, 3> color = utils::toRGBMatrix(renderer->getSpace()) * Vector<float, 3>(renderer->getChannel(index, 0), renderer->getChannel(index, 1), renderer->getChannel(index, 2));
+                for (int j = film->getHeight() - 1; j >= 0; j--)
+                    for (int i = 0; i < film->getWidth(); i++) {
+                        Vector<float, 3> color = toRGB * film->getPixel(i, j);
 
                         outputFile.write(reinterpret_cast<const char *>(&color[0]), sizeof(float));
                         outputFile.write(reinterpret_cast<const char *>(&color[1]), sizeof(float));
@@ -90,7 +92,9 @@ namespace lambda {
                 outputFile.close();
             }
 
-            static void writeEXR(const std::string & output, const Renderer * renderer, Float duration) {
+            static void writeEXR(const std::string & output, const Integrator * integrator, Float duration) {
+                const Film * film = integrator->getFilm();
+
                 EXRHeader header;
                 InitEXRHeader(&header);
 
@@ -98,20 +102,23 @@ namespace lambda {
                 InitEXRImage(&image);
 
                 image.num_channels = 3;
-                image.width = renderer->getWidth();
-                image.height = renderer->getHeight();
+                image.width = film->getWidth();
+                image.height = film->getHeight();
 
-                std::vector<float> channelB(renderer->getTotalPixels());
-                std::vector<float> channelG(renderer->getTotalPixels());
-                std::vector<float> channelR(renderer->getTotalPixels());
+                std::vector<float> channelB(image.width * image.height);
+                std::vector<float> channelG(image.width * image.height);
+                std::vector<float> channelR(image.width * image.height);
 
-                for (int i = 0; i < renderer->getTotalPixels(); i++) {
-                    Vector<float, 3> color = utils::toRGBMatrix(renderer->getSpace()) * Vector<float, 3>(renderer->getChannel(i, 0), renderer->getChannel(i, 1), renderer->getChannel(i, 2));
+                Matrix<double, 3> toRGB = utils::toRGBMatrix(film->getSpace());
 
-                    channelR[i] = color[0];
-                    channelG[i] = color[1];
-                    channelB[i] = color[2];
-                }
+                for (int i = 0; i < image.width; i++)
+                    for (int j = 0; j < image.height; j++) {
+                        Vector<float, 3> color = toRGB * film->getPixel(i, j);
+
+                        channelR[j * image.width + i] = std::fmin(color[0], float(65504));
+                        channelG[j * image.width + i] = std::fmin(color[1], float(65504));
+                        channelB[j * image.width + i] = std::fmin(color[2], float(65504));
+                    }
 
                 float * pointers[3] = {channelB.data(), channelG.data(), channelR.data()};
 
@@ -142,24 +149,24 @@ namespace lambda {
 
                 float chromaticities[8];
 
-                for (int i = 0; i < 8; i++) chromaticities[i] = float(utils::chromaticity(renderer->getSpace(), i));
+                for (int i = 0; i < 8; i++) chromaticities[i] = float(utils::chromaticity(film->getSpace(), i));
 
                 float worldToCamera[16];
 
-                Matrix<Float, 4> worldToCameraMatrix = renderer->getCamera()->getWorldToCamera();
+                Matrix<Float, 4> worldToCameraMatrix = integrator->getCamera()->getWorldToCamera();
 
                 for (int i = 0; i < 16; i++) worldToCamera[i] = float(worldToCameraMatrix.get(i / 4, i % 4));
 
                 float worldToNDC[16];
 
-                Matrix<Float, 4> worldToNDCMatrix = renderer->getCamera()->getWorldToNDC();
+                Matrix<Float, 4> worldToNDCMatrix = integrator->getCamera()->getWorldToNDC();
 
                 for (int i = 0; i < 16; i++) worldToNDC[i] = float(worldToNDCMatrix.get(i / 4, i % 4));
 
-                int samplesPerPixel = renderer->getSamples();
+                int samplesPerPixel = integrator->getSamples();
                 float renderTimeSeconds = float(duration);
-                float lambdaMin = float(renderer->getLambdaMin());
-                float lambdaMax = float(renderer->getLambdaMax());
+                float lambdaMin = float(film->getLambdaMin());
+                float lambdaMax = float(film->getLambdaMax());
 
                 std::vector<unsigned char> bytesVector(std::ssize(software) + sizeof(chromaticities) + sizeof(worldToCamera) + sizeof(worldToNDC) + sizeof(samplesPerPixel) + sizeof(renderTimeSeconds) + sizeof(lambdaMin) + sizeof(lambdaMax));
 

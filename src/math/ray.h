@@ -10,11 +10,9 @@ namespace lambda {
 
     class Ray {
         public:
-            LAMBDA_HOST_DEVICE Ray() : direction(0, 1, 0) {}
+            LAMBDA_HOST_DEVICE Ray() : direction(0, 1, 0), medium(nullptr) {}
 
-            LAMBDA_HOST_DEVICE Ray(const Vector<Float, 3> & o, const Vector<Float, 3> & d, const SampledSpectrum & l, const Medium * m = nullptr) : origin(o), direction(d), lambdas(l), medium(m) {}
-
-            LAMBDA_HOST_DEVICE void setMedium(const Medium * m) { medium = m; }
+            LAMBDA_HOST_DEVICE Ray(const Vector<Float, 3> & o, const Vector<Float, 3> & d, const SampledSpectrum & l, const Medium * m) : origin(o), direction(d), lambdas(l), medium(m) {}
 
             LAMBDA_HOST_DEVICE const Vector<Float, 3> & getOrigin() const { return origin; }
 

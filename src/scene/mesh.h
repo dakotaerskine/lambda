@@ -8,7 +8,7 @@ namespace lambda {
         public:
             Mesh() : type(Type::TRI) {}
 
-            static Mesh makeTri(Vector<Float, 3> * vertices, Vector<Float, 3> * normals, Vector<Float, 2> * textureCoordinates, int * faces) {
+            static Mesh makeTri(Vector<Float, 3> * vertices, Vector<Float, 3> * normals, Vector<Float, 2> * textureCoordinates, Vector<int, 3> * faces) {
                 Mesh mesh;
 
                 mesh.type = Type::TRI;
@@ -20,7 +20,7 @@ namespace lambda {
                 return mesh;
             }
 
-            static Mesh makeQuad(Vector<Float, 3> * vertices, Vector<Float, 3> * normals, Vector<Float, 2> * textureCoordinates, int * faces) {
+            static Mesh makeQuad(Vector<Float, 3> * vertices, Vector<Float, 3> * normals, Vector<Float, 2> * textureCoordinates, Vector<int, 4> * faces) {
                 Mesh mesh;
 
                 mesh.type = Type::QUAD;
@@ -52,8 +52,8 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE Vector<Float, 3> getVertex(int i, int j) const {
                 switch (type) {
-                    case Type::TRI: return tri.vertices ? tri.vertices[tri.faces[i * 3 + j]] : Vector<Float, 3>();
-                    case Type::QUAD: return quad.vertices ? quad.vertices[quad.faces[i * 4 + j]] : Vector<Float, 3>();
+                    case Type::TRI: return tri.vertices ? j >= 0 && j < 3 ? tri.vertices[tri.faces[i][j]] : Vector<Float, 3>() : Vector<Float, 3>();
+                    case Type::QUAD: return quad.vertices ? j >= 0 && j < 4 ? quad.vertices[quad.faces[i][j]] : Vector<Float, 3>() : Vector<Float, 3>();
                 }
 
                 return Vector<Float, 3>();
@@ -61,8 +61,8 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE Vector<Float, 3> getNormal(int i, int j) const {
                 switch (type) {
-                    case Type::TRI: return tri.normals ? tri.normals[tri.faces[i * 3 + j]] : Vector<Float, 3>();
-                    case Type::QUAD: return quad.normals ? quad.normals[quad.faces[i * 4 + j]] : Vector<Float, 3>();
+                    case Type::TRI: return tri.normals ? j >= 0 && j < 3 ? tri.normals[tri.faces[i][j]] : Vector<Float, 3>() : Vector<Float, 3>();
+                    case Type::QUAD: return quad.normals ? j >= 0 && j < 4 ? quad.normals[quad.faces[i][j]] : Vector<Float, 3>() : Vector<Float, 3>();
                 }
 
                 return Vector<Float, 3>();
@@ -70,8 +70,8 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE Vector<Float, 2> getTextureCoordinate(int i, int j) const {
                 switch (type) {
-                    case Type::TRI: return tri.textureCoordinates ? tri.textureCoordinates[tri.faces[i * 3 + j]] : Vector<Float, 2>();
-                    case Type::QUAD: return quad.textureCoordinates ? quad.textureCoordinates[quad.faces[i * 4 + j]] : Vector<Float, 2>();
+                    case Type::TRI: return tri.textureCoordinates ? j >= 0 && j < 3 ? tri.textureCoordinates[tri.faces[i][j]] : Vector<Float, 2>() : Vector<Float, 2>();
+                    case Type::QUAD: return quad.textureCoordinates ? j >= 0 && j < 4 ? quad.textureCoordinates[quad.faces[i][j]] : Vector<Float, 2>() : Vector<Float, 2>();
                 }
 
                 return Vector<Float, 2>();
@@ -83,8 +83,8 @@ namespace lambda {
             Type type;
 
             union {
-                struct { Vector<Float, 3> * vertices, * normals; Vector<Float, 2> * textureCoordinates; int * faces; } tri;
-                struct { Vector<Float, 3> * vertices, * normals; Vector<Float, 2> * textureCoordinates; int * faces; } quad;
+                struct { Vector<Float, 3> * vertices, * normals; Vector<Float, 2> * textureCoordinates; Vector<int, 3> * faces; } tri;
+                struct { Vector<Float, 3> * vertices, * normals; Vector<Float, 2> * textureCoordinates; Vector<int, 4> * faces; } quad;
             };
     };
 }

@@ -154,7 +154,8 @@ namespace lambda {
             LAMBDA_HOST_DEVICE friend Vector<T, N> operator*(const Matrix<T, N> & m, const Vector<T, N> & v1) {
                 Vector<T, N> v2;
 
-                for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) v2[i] += m.elements[i * N + j] * v1[j];
+                for (int i = 0; i < N; i++)
+                    for (int j = 0; j < N; j++) v2[i] += m.elements[i * N + j] * v1[j];
 
                 return v2;
             }
@@ -162,7 +163,8 @@ namespace lambda {
             LAMBDA_HOST_DEVICE friend Vector<T, N> operator*(const Vector<T, N> & v1, const Matrix<T, N> & m) {
                 Vector<T, N> v2;
 
-                for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) v2[i] += v1[j] * m.elements[j * N + i];
+                for (int i = 0; i < N; i++)
+                    for (int j = 0; j < N; j++) v2[i] += v1[j] * m.elements[j * N + i];
 
                 return v2;
             }
@@ -227,7 +229,7 @@ namespace lambda {
                     for (int j = i + 1; j < N; j++)
                         if (abs(m.elements[j * N + i]) > abs(m.elements[pivot * N + i])) pivot = j;
 
-                    if (abs(m.elements[pivot * N + i]) < constants::EPSILON) return T(0);
+                    if (abs(m.elements[pivot * N + i]) <= constants::EPSILON) return T(0);
 
                     if (pivot != i) {
                         for (int j = i; j < N; j++) {
@@ -254,7 +256,8 @@ namespace lambda {
             LAMBDA_HOST_DEVICE friend Matrix<T, N> transpose(const Matrix<T, N> & m1) {
                 Matrix<T, N> m2;
 
-                for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) m2.elements[i * N + j] = m1.elements[j * N + i];
+                for (int i = 0; i < N; i++)
+                    for (int j = 0; j < N; j++) m2.elements[i * N + j] = m1.elements[j * N + i];
 
                 return m2;
             }
@@ -266,7 +269,7 @@ namespace lambda {
                 T det = m.determinant();
                 T invDet = T(1) / det;
 
-                return abs(det) > constants::EPSILON ? Matrix<T, N>(1 * invDet) : Matrix<T, N>();
+                return abs(det) > constants::EPSILON_SQUARED ? Matrix<T, N>(1 * invDet) : Matrix<T, N>();
             }
 
             LAMBDA_HOST_DEVICE friend Matrix<T, N> inverse(const Matrix<T, N> & m) requires (N == 2) {
@@ -276,7 +279,7 @@ namespace lambda {
                 T det = m.determinant();
                 T invDet = T(1) / det;
 
-                return abs(det) > constants::EPSILON ? Matrix<T, N>(m.elements[3] * invDet, -m.elements[1] * invDet, -m.elements[2] * invDet, m.elements[0] * invDet) : Matrix<T, N>();
+                return abs(det) > constants::EPSILON_SQUARED ? Matrix<T, N>(m.elements[3] * invDet, -m.elements[1] * invDet, -m.elements[2] * invDet, m.elements[0] * invDet) : Matrix<T, N>();
             }
 
             LAMBDA_HOST_DEVICE friend Matrix<T, N> inverse(const Matrix<T, N> & m) requires (N == 3) {
@@ -286,7 +289,7 @@ namespace lambda {
                 T det = m.determinant();
                 T invDet = T(1) / det;
 
-                return abs(det) > constants::EPSILON ? Matrix<T, N>((m.elements[4] * m.elements[8] - m.elements[5] * m.elements[7]) * invDet, (m.elements[2] * m.elements[7] - m.elements[1] * m.elements[8]) * invDet, (m.elements[1] * m.elements[5] - m.elements[2] * m.elements[4]) * invDet, (m.elements[5] * m.elements[6] - m.elements[3] * m.elements[8]) * invDet, (m.elements[0] * m.elements[8] - m.elements[2] * m.elements[6]) * invDet, (m.elements[2] * m.elements[3] - m.elements[0] * m.elements[5]) * invDet, (m.elements[3] * m.elements[7] - m.elements[4] * m.elements[6]) * invDet, (m.elements[1] * m.elements[6] - m.elements[0] * m.elements[7]) * invDet, (m.elements[0] * m.elements[4] - m.elements[1] * m.elements[3]) * invDet) : Matrix<T, N>();
+                return abs(det) > constants::EPSILON_SQUARED ? Matrix<T, N>((m.elements[4] * m.elements[8] - m.elements[5] * m.elements[7]) * invDet, (m.elements[2] * m.elements[7] - m.elements[1] * m.elements[8]) * invDet, (m.elements[1] * m.elements[5] - m.elements[2] * m.elements[4]) * invDet, (m.elements[5] * m.elements[6] - m.elements[3] * m.elements[8]) * invDet, (m.elements[0] * m.elements[8] - m.elements[2] * m.elements[6]) * invDet, (m.elements[2] * m.elements[3] - m.elements[0] * m.elements[5]) * invDet, (m.elements[3] * m.elements[7] - m.elements[4] * m.elements[6]) * invDet, (m.elements[1] * m.elements[6] - m.elements[0] * m.elements[7]) * invDet, (m.elements[0] * m.elements[4] - m.elements[1] * m.elements[3]) * invDet) : Matrix<T, N>();
             }
 
             LAMBDA_HOST_DEVICE friend Matrix<T, N> inverse(const Matrix<T, N> & m) requires (N == 4) {
@@ -310,7 +313,7 @@ namespace lambda {
                 T c4 = m.elements[9] * m.elements[15] - m.elements[11] * m.elements[13];
                 T c5 = m.elements[10] * m.elements[15] - m.elements[11] * m.elements[14];
 
-                return abs(det) > constants::EPSILON ? Matrix<T, N>((m.elements[5] * c5 - m.elements[6] * c4 + m.elements[7] * c3) * invDet, (-m.elements[1] * c5 + m.elements[2] * c4 - m.elements[3] * c3) * invDet, (m.elements[13] * s5 - m.elements[14] * s4 + m.elements[15] * s3) * invDet, (-m.elements[9] * s5 + m.elements[10] * s4 - m.elements[11] * s3) * invDet, (-m.elements[4] * c5 + m.elements[6] * c2 - m.elements[7] * c1) * invDet, (m.elements[0] * c5 - m.elements[2] * c2 + m.elements[3] * c1) * invDet, (-m.elements[12] * s5 + m.elements[14] * s2 - m.elements[15] * s1) * invDet, (m.elements[8] * s5 - m.elements[10] * s2 + m.elements[11] * s1) * invDet, (m.elements[4] * c4 - m.elements[5] * c2 + m.elements[7] * c0) * invDet, (-m.elements[0] * c4 + m.elements[1] * c2 - m.elements[3] * c0) * invDet, (m.elements[12] * s4 - m.elements[13] * s2 + m.elements[15] * s0) * invDet, (-m.elements[8] * s4 + m.elements[9] * s2 - m.elements[11] * s0) * invDet, (-m.elements[4] * c3 + m.elements[5] * c1 - m.elements[6] * c0) * invDet, (m.elements[0] * c3 - m.elements[1] * c1 + m.elements[2] * c0) * invDet, (-m.elements[12] * s3 + m.elements[13] * s1 - m.elements[14] * s0) * invDet, (m.elements[8] * s3 - m.elements[9] * s1 + m.elements[10] * s0) * invDet) : Matrix<T, N>();
+                return abs(det) > constants::EPSILON_SQUARED ? Matrix<T, N>((m.elements[5] * c5 - m.elements[6] * c4 + m.elements[7] * c3) * invDet, (-m.elements[1] * c5 + m.elements[2] * c4 - m.elements[3] * c3) * invDet, (m.elements[13] * s5 - m.elements[14] * s4 + m.elements[15] * s3) * invDet, (-m.elements[9] * s5 + m.elements[10] * s4 - m.elements[11] * s3) * invDet, (-m.elements[4] * c5 + m.elements[6] * c2 - m.elements[7] * c1) * invDet, (m.elements[0] * c5 - m.elements[2] * c2 + m.elements[3] * c1) * invDet, (-m.elements[12] * s5 + m.elements[14] * s2 - m.elements[15] * s1) * invDet, (m.elements[8] * s5 - m.elements[10] * s2 + m.elements[11] * s1) * invDet, (m.elements[4] * c4 - m.elements[5] * c2 + m.elements[7] * c0) * invDet, (-m.elements[0] * c4 + m.elements[1] * c2 - m.elements[3] * c0) * invDet, (m.elements[12] * s4 - m.elements[13] * s2 + m.elements[15] * s0) * invDet, (-m.elements[8] * s4 + m.elements[9] * s2 - m.elements[11] * s0) * invDet, (-m.elements[4] * c3 + m.elements[5] * c1 - m.elements[6] * c0) * invDet, (m.elements[0] * c3 - m.elements[1] * c1 + m.elements[2] * c0) * invDet, (-m.elements[12] * s3 + m.elements[13] * s1 - m.elements[14] * s0) * invDet, (m.elements[8] * s3 - m.elements[9] * s1 + m.elements[10] * s0) * invDet) : Matrix<T, N>();
             }
 
             LAMBDA_HOST_DEVICE friend Matrix<T, N> inverse(const Matrix<T, N> & m1) requires (N > 4) {
@@ -330,7 +333,7 @@ namespace lambda {
                     for (int j = i + 1; j < N; j++)
                         if (abs(m2.elements[j * N + i]) > abs(m2.elements[pivot * N + i])) pivot = j;
 
-                    if (abs(m2.elements[pivot * N + i]) < constants::EPSILON * scale) return Matrix<T, N>();
+                    if (abs(m2.elements[pivot * N + i]) <= constants::EPSILON_SQUARED * scale) return Matrix<T, N>();
 
                     if (pivot != i)
                         for (int j = 0; j < N; j++) {

@@ -4,7 +4,6 @@
 
 namespace lambda {
     namespace constants {
-        inline constexpr int CHUNK_SIZE = 4096;
         inline constexpr int STACK_SIZE = 4096;
 
         inline constexpr int BLOCK_W = 16;
@@ -12,6 +11,7 @@ namespace lambda {
 
         inline constexpr Float EPSILON = Float(1e-4);
         inline constexpr Float EPSILON_SQUARED = EPSILON * EPSILON;
+
         inline constexpr Float PI = Float(3.14159265358979323846);
 
         inline constexpr double LM_EPSILON = 1e-4;
@@ -40,26 +40,16 @@ namespace lambda {
 
         inline constexpr Float CIE_Y_INTEGRAL = Float(106.856895);
 
+        inline constexpr Float WAVELENGTH_PDF_CENTER = 538;
+        inline constexpr Float WAVELENGTH_PDF_WIDTH = Float(0.0072);
+
         inline constexpr int UPSAMPLING_RESOLUTION = 64;
 
         inline constexpr double CHROMATICITIES_SRGB[8] = {0.6400, 0.3300, 0.3000, 0.6000, 0.1500, 0.0600, 0.3127, 0.3290};
-
         inline constexpr double CHROMATICITIES_REC2020[8] = {0.7080, 0.2920, 0.1700, 0.7970, 0.1310, 0.0460, 0.3127, 0.3290};
-
         inline constexpr double CHROMATICITIES_ACES2065[8] = {0.7347, 0.2653, 0.0000, 1.0000, 0.0001, -0.0770, 0.32168, 0.33767};
 
-        inline LAMBDA_MANAGED const double * SRGB_TO_XYZ;
-        inline LAMBDA_MANAGED const double * XYZ_TO_SRGB;
-
-        inline LAMBDA_MANAGED const double * REC2020_TO_XYZ;
-        inline LAMBDA_MANAGED const double * XYZ_TO_REC2020;
-
-        inline LAMBDA_MANAGED const double * ACES2065_TO_XYZ;
-        inline LAMBDA_MANAGED const double * XYZ_TO_ACES2065;
-
         inline constexpr double BRADFORD[][3] = {{0.8951000, 0.2664000, -0.1614000}, {-0.7502000, 1.7135000, 0.0367000}, {0.0389000, -0.0685000, 1.0296000}};
-
-        inline LAMBDA_MANAGED const double * BRADFORD_INVERSE;
 
         inline constexpr int h_PERMUTATION[] = {151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33, 88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196, 135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250, 124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42, 223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9, 129, 22, 39, 253, 19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228, 251, 34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107, 49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180};
 

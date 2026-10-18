@@ -2,10 +2,11 @@
 
 #include "core/constants.h"
 #include "core/platform.h"
-#include "math/intersection.h"
 #include "math/ray.h"
 #include "math/spectrum.h"
+#include "math/transform.h"
 #include "math/vector.h"
+#include "scene/intersection.h"
 #include "scene/texture.h"
 
 namespace lambda {
@@ -19,8 +20,7 @@ namespace lambda {
                 background.type = Type::EQUIRECTANGULAR;
                 background.radius = 1;
                 background.emission = emission;
-                background.rotation = utils::rotationMatrix(rotation);
-                background.inverseRotation = transpose(background.rotation);
+                background.transform = Transform(Vector<Float, 3>(0, 0, 0), rotation, Vector<Float, 3>(1, 1, 1));
 
                 return background;
             }
@@ -31,23 +31,21 @@ namespace lambda {
                 background.type = Type::OCTAHEDRAL;
                 background.radius = 1;
                 background.emission = emission;
-                background.rotation =  utils::rotationMatrix(rotation);
-                background.inverseRotation = transpose(background.rotation);
+                background.transform = Transform(Vector<Float, 3>(0, 0, 0), rotation, Vector<Float, 3>(1, 1, 1));
 
                 return background;
             }
 
             void setRadius(Float r) { radius = r; }
 
-            void setConditionalCDF(Float * c) { conditionalCDF = c; }
-
-            void setMarginalCDF(Float * m) { marginalCDF = m; }
+            void setCDF(Float * c, Float * m) {
+                conditionalCDF = c;
+                marginalCDF = m;
+            }
 
             LAMBDA_HOST_DEVICE const SpectrumTexture * getEmission() const { return emission; }
 
-            LAMBDA_HOST_DEVICE Float area() const { return 4 * constants::PI * radius * radius; }
-
-            LAMBDA_HOST_DEVICE Float getPower() const { return area() * emission->getAverage(); }
+            LAMBDA_HOST_DEVICE Float getPower() const { return 4 * constants::PI * radius * radius * emission->getAverage(); }
 
             LAMBDA_HOST_DEVICE Float jacobian(Float y) const {
                 switch (type) {
@@ -65,18 +63,16 @@ namespace lambda {
                 }
             }
 
-            LAMBDA_HOST_DEVICE Float pdf(const Vector<Float, 3> & direction) const {
-                Vector<Float, 3> transformedDirection(rotation * Vector<Float, 4>(direction, 0));
-
+            LAMBDA_HOST_DEVICE Float probabilityDensity(const Vector<Float, 3> & direction) const {
                 Vector<Float, 2> textureCoordinate;
 
-                getTextureCoordinate(transformedDirection, textureCoordinate);
+                getTextureCoordinate(transform.vectorToWorld(direction), textureCoordinate);
 
                 int width = emission->getWidth();
                 int height = emission->getHeight();
 
-                int xIndex = int(utils::clamp(textureCoordinate[0] * Float(width), 0, Float(width - 1)));
-                int yIndex = int(utils::clamp(textureCoordinate[1] * Float(height), 0, Float(height - 1)));
+                int xIndex = int(utils::clamp(textureCoordinate[0] * Float(width), Float(0), Float(width - 1)));
+                int yIndex = int(utils::clamp(textureCoordinate[1] * Float(height), Float(0), Float(height - 1)));
 
                 Float marginal = marginalCDF[yIndex];
                 Float conditional = conditionalCDF[yIndex * width + xIndex];
@@ -99,11 +95,16 @@ namespace lambda {
             LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Ray & r) const {
                 Intersection intersection;
 
-                Vector<Float, 3> direction(rotation * Vector<Float, 4>(r.getDirection(), 0));
+                Vector<Float, 3> direction = transform.vectorToWorld(r.getDirection());
 
                 intersection.point = direction;
                 intersection.normal = direction;
-                intersection.tangent = normalize(Vector<Float, 3>(-direction[2], 0, direction[0]));
+                intersection.tangent = Vector<Float, 3>(-direction[2], 0, direction[0]);
+
+                Float tangentLengthSquared = intersection.tangent.lengthSquared();
+
+                if (tangentLengthSquared <= constants::EPSILON_SQUARED) intersection.tangent = Vector<Float, 3>(1, 0, 0);
+                else intersection.tangent /= std::sqrt(tangentLengthSquared);
 
                 getTextureCoordinate(direction, intersection.textureCoordinate);
 
@@ -121,8 +122,7 @@ namespace lambda {
             Float radius;
             SpectrumTexture * emission;
             Float * conditionalCDF, * marginalCDF;
-            Matrix<Float, 4> rotation;
-            Matrix<Float, 4> inverseRotation;
+            Transform transform;
 
             LAMBDA_HOST_DEVICE void textureCoordinateEquirectangular(const Vector<Float, 3> & direction, Vector<Float, 2> & textureCoordinate) const {
                 textureCoordinate[0] = (std::atan2(direction[2], direction[0]) + constants::PI) / (2 * constants::PI);
@@ -181,7 +181,7 @@ namespace lambda {
 
                 Vector<Float, 3> direction(sinTheta * std::cos(phi), std::cos(theta), sinTheta * std::sin(phi));
 
-                return Vector<Float, 3>(inverseRotation * Vector<Float, 4>(direction, 0));
+                return transform.vectorToLocal(direction);
             }
 
             LAMBDA_HOST_DEVICE Vector<Float, 3> sampleOctahedral(Random & state) const {
@@ -216,7 +216,7 @@ namespace lambda {
                     direction[2] = std::copysign(denominator * std::sin(phi), v);
                 }
 
-                return Vector<Float, 3>(inverseRotation * Vector<Float, 4>(direction, 0));
+                return transform.vectorToLocal(direction);
             }
     };
 }

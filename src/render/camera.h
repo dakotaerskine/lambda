@@ -12,7 +12,7 @@ namespace lambda {
 
     class Camera {
         public:
-            Camera() : type(Type::PERSPECTIVE), medium(nullptr), position(0, 0, 0), perspective{Vector<Float, 3>(-1, 1, 1), Vector<Float, 3>(2, 0, 0), Vector<Float, 3>(0, -2, 0)} {}
+            Camera() : type(Type::PERSPECTIVE), medium(nullptr), position(0, 0, 0) {}
 
             static Camera makePerspective(Medium * medium, const Vector<Float, 3> & position, const Vector<Float, 3> & lookAt, const Vector<Float, 3> & up, Float fov, Float aspect) {
                 Camera camera;

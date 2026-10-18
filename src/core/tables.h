@@ -1,11 +1,12 @@
 #pragma once
 
-#include "core/buffer.h"
+#include "core/allocator.h"
 #include "core/constants.h"
 #include "core/parser.h"
 #include "core/platform.h"
 #include "core/utils.h"
 #include "core/writer.h"
+#include "math/matrix.h"
 
 #ifndef LAMBDA_DATA_DIRECTORY
     #define LAMBDA_DATA_DIRECTORY "data"
@@ -14,46 +15,45 @@
 namespace lambda {
     class Tables {
         public:
-            static void initialize() { static Tables tables; }
+            static void initialize(Allocator & allocator) {
+                constants::PERMUTATION = allocator.allocate(&constants::h_PERMUTATION[0], constants::PERMUTATION_SIZE);
+                constants::CIE_XYZ_1931 = allocator.allocate(&constants::h_CIE_XYZ_1931[0][0], constants::CIE_LAMBDA_BINS * 3);
 
-        private:
-            Buffer<double> SRGB_TO_XYZ, XYZ_TO_SRGB, REC2020_TO_XYZ, XYZ_TO_REC2020, ACES2065_TO_XYZ, XYZ_TO_ACES2065, BRADFORD_INVERSE;
-            Buffer<int> PERMUTATION;
-            Buffer<double> CIE_XYZ_1931;
-            Buffer<float> UPSAMPLING_SCALE_SRGB, UPSAMPLING_LUT_SRGB, UPSAMPLING_SCALE_REC2020, UPSAMPLING_LUT_REC2020, UPSAMPLING_SCALE_ACES2065, UPSAMPLING_LUT_ACES2065;
+                float * upsamplingScaleSRGB = allocator.allocate<float>(constants::UPSAMPLING_RESOLUTION);
+                float * upsamplingLUTSRGB = allocator.allocate<float>(3 * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * 3);
 
-            Tables() : SRGB_TO_XYZ(utils::toXYZMatrix(constants::CHROMATICITIES_SRGB).data(), 3 * 3), XYZ_TO_SRGB(inverse(utils::toXYZMatrix(constants::CHROMATICITIES_SRGB)).data(), 3 * 3), REC2020_TO_XYZ(utils::toXYZMatrix(constants::CHROMATICITIES_REC2020).data(), 3 * 3), XYZ_TO_REC2020(inverse(utils::toXYZMatrix(constants::CHROMATICITIES_REC2020)).data(), 3 * 3), ACES2065_TO_XYZ(utils::toXYZMatrix(constants::CHROMATICITIES_ACES2065).data(), 3 * 3), XYZ_TO_ACES2065(inverse(utils::toXYZMatrix(constants::CHROMATICITIES_ACES2065)).data(), 3 * 3), BRADFORD_INVERSE(inverse(Matrix<double, 3>(constants::BRADFORD)).data(), 3 * 3), PERMUTATION(&constants::h_PERMUTATION[0], constants::PERMUTATION_SIZE), CIE_XYZ_1931(&constants::h_CIE_XYZ_1931[0][0], constants::CIE_LAMBDA_BINS * 3), UPSAMPLING_SCALE_SRGB(constants::UPSAMPLING_RESOLUTION), UPSAMPLING_LUT_SRGB(3 * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * 3), UPSAMPLING_SCALE_REC2020(constants::UPSAMPLING_RESOLUTION), UPSAMPLING_LUT_REC2020(3 * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * 3), UPSAMPLING_SCALE_ACES2065(constants::UPSAMPLING_RESOLUTION), UPSAMPLING_LUT_ACES2065(3 * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * 3) {
-                constants::SRGB_TO_XYZ = SRGB_TO_XYZ.data();
-                constants::XYZ_TO_SRGB = XYZ_TO_SRGB.data();
-                constants::REC2020_TO_XYZ = REC2020_TO_XYZ.data();
-                constants::XYZ_TO_REC2020 = XYZ_TO_REC2020.data();
-                constants::ACES2065_TO_XYZ = ACES2065_TO_XYZ.data();
-                constants::XYZ_TO_ACES2065 = XYZ_TO_ACES2065.data();
-                constants::BRADFORD_INVERSE = BRADFORD_INVERSE.data();
-                constants::PERMUTATION = PERMUTATION.data();
-                constants::CIE_XYZ_1931 = CIE_XYZ_1931.data();
+                loadUpsamplingTables(LAMBDA_DATA_DIRECTORY "/srgb.coeff", ColorSpace::SRGB, upsamplingScaleSRGB, upsamplingLUTSRGB);
 
-                loadUpsamplingTables(LAMBDA_DATA_DIRECTORY "/srgb.coeff", ColorSpace::SRGB, UPSAMPLING_SCALE_SRGB, UPSAMPLING_LUT_SRGB);
-                loadUpsamplingTables(LAMBDA_DATA_DIRECTORY "/rec2020.coeff", ColorSpace::REC2020, UPSAMPLING_SCALE_REC2020, UPSAMPLING_LUT_REC2020);
-                loadUpsamplingTables(LAMBDA_DATA_DIRECTORY "/aces2065-1.coeff", ColorSpace::ACES2065, UPSAMPLING_SCALE_ACES2065, UPSAMPLING_LUT_ACES2065);
+                constants::UPSAMPLING_SCALE_SRGB = upsamplingScaleSRGB;
+                constants::UPSAMPLING_LUT_SRGB = upsamplingLUTSRGB;
 
-                constants::UPSAMPLING_SCALE_SRGB = UPSAMPLING_SCALE_SRGB.data();
-                constants::UPSAMPLING_LUT_SRGB = UPSAMPLING_LUT_SRGB.data();
-                constants::UPSAMPLING_SCALE_REC2020 = UPSAMPLING_SCALE_REC2020.data();
-                constants::UPSAMPLING_LUT_REC2020 = UPSAMPLING_LUT_REC2020.data();
-                constants::UPSAMPLING_SCALE_ACES2065 = UPSAMPLING_SCALE_ACES2065.data();
-                constants::UPSAMPLING_LUT_ACES2065 = UPSAMPLING_LUT_ACES2065.data();
+                float * upsamplingScaleRec2020 = allocator.allocate<float>(constants::UPSAMPLING_RESOLUTION);
+                float * upsamplingLUTRec2020 = allocator.allocate<float>(3 * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * 3);
+
+                loadUpsamplingTables(LAMBDA_DATA_DIRECTORY "/rec2020.coeff", ColorSpace::REC2020, upsamplingScaleRec2020, upsamplingLUTRec2020);
+
+                constants::UPSAMPLING_SCALE_REC2020 = upsamplingScaleRec2020;
+                constants::UPSAMPLING_LUT_REC2020 = upsamplingLUTRec2020;
+
+                float * upsamplingScaleACES2065 = allocator.allocate<float>(constants::UPSAMPLING_RESOLUTION);
+                float * upsamplingLUTACES2065 = allocator.allocate<float>(3 * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * constants::UPSAMPLING_RESOLUTION * 3);
+
+                loadUpsamplingTables(LAMBDA_DATA_DIRECTORY "/aces2065-1.coeff", ColorSpace::ACES2065, upsamplingScaleACES2065, upsamplingLUTACES2065);
+
+                constants::UPSAMPLING_SCALE_ACES2065 = upsamplingScaleACES2065;
+                constants::UPSAMPLING_LUT_ACES2065 = upsamplingLUTACES2065;
             }
 
-            void loadUpsamplingTables(const std::string & file, ColorSpace space, Buffer<float> & scale, Buffer<float> & lut) {
-                if (!Parser::parseUpsamplingTables(file, scale.data(), lut.data())) {
-                    solveGrid(space, scale.data(), lut.data());
+        private:
+            static void loadUpsamplingTables(const std::string & file, ColorSpace space, float * scale, float * lut) {
+                if (!Parser::parseUpsamplingTables(file, scale, lut)) {
+                    solveGrid(space, scale, lut);
 
-                    Writer::writeUpsamplingTables(file, scale.data(), lut.data());
+                    Writer::writeUpsamplingTables(file, scale, lut);
                 }
             }
 
-            Vector<double, 3> residual(ColorSpace space, const Vector<double, 3> & coefficients, const Vector<double, 3> & color, const double rgbTable[3][constants::CIE_LAMBDA_BINS], const Vector<double, 3> & whitepoint) {
+            static Vector<double, 3> residual(ColorSpace space, const Vector<double, 3> & coefficients, const Vector<double, 3> & color, const double rgbTable[3][constants::CIE_LAMBDA_BINS], const Vector<double, 3> & whitepoint) {
                 Vector<double, 3> out(0, 0, 0);
 
                 double inverseRange = 1.0 / (constants::CIE_LAMBDA_MAX - constants::CIE_LAMBDA_MIN);
@@ -79,7 +79,7 @@ namespace lambda {
                 return res;
             }
 
-            double solveLM(ColorSpace space, const Vector<double, 3> & color, Vector<double, 3> & coefficients, const double rgbTable[3][constants::CIE_LAMBDA_BINS], const Vector<double, 3> & whitepoint, int iterations = 15) {
+            static double solveLM(ColorSpace space, const Vector<double, 3> & color, Vector<double, 3> & coefficients, const double rgbTable[3][constants::CIE_LAMBDA_BINS], const Vector<double, 3> & whitepoint, int iterations = 15) {
                 double h = constants::LM_EPSILON;
 
                 Vector<double, 3> res = residual(space, coefficients, color, rgbTable, whitepoint);
@@ -117,7 +117,8 @@ namespace lambda {
                     for (int j = 0; j < 12 && !accepted; j++) {
                         Matrix<double, 3> M = A;
 
-                        for (int k = 0; k < 3; k++) for (int l = 0; l < 3; l++) M.get(k, l) += (k == l ? lambda : 0);
+                        for (int k = 0; k < 3; k++)
+                            for (int l = 0; l < 3; l++) M.get(k, l) += (k == l ? lambda : 0);
 
                         if (std::fmax(std::fabs(M.get(0, 0)) + std::fabs(M.get(1, 0)) + std::fabs(M.get(2, 0)), std::fmax(std::fabs(M.get(0, 1)) + std::fabs(M.get(1, 1)) + std::fabs(M.get(2, 1)), std::fabs(M.get(0, 2)) + std::fabs(M.get(1, 2)) + std::fabs(M.get(2, 2)))) < constants::LM_EPSILON) {
                             lambda *= 10;
@@ -149,7 +150,7 @@ namespace lambda {
                 return std::sqrt(cost);
             }
 
-            void solveGrid(ColorSpace space, float * scale, float * lut) {
+            static void solveGrid(ColorSpace space, float * scale, float * lut) {
                 Vector<double, 3> whitepoint;
                 Matrix<double, 3> toRGB = utils::toRGBMatrix(space);
                 double rgbTable[3][constants::CIE_LAMBDA_BINS];
