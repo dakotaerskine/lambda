@@ -172,7 +172,7 @@ namespace lambda {
 
                     bool previousCollapsed = collapsed;
 
-                    SampledSpectrum scatterDensity, attenuation = intersection.isSurface ? material->sample(intersection, r, medium0, medium1, scatterDensity, collapsed, state) : r.getMedium()->sample(intersection, r, scatterDensity, collapsed, state);
+                    SampledSpectrum scatterDensity, attenuation = intersection.isSurface ? material->sample(intersection, r, medium1, scatterDensity, collapsed, state) : r.getMedium()->sample(intersection, r, scatterDensity, collapsed, state);
 
                     if (attenuation.max() <= 0 || !(scatterDensity[0] > 0)) break;
 

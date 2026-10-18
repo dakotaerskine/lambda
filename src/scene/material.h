@@ -161,13 +161,13 @@ namespace lambda {
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, const Medium * medium0, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
                 switch (type) {
-                    case Type::LAMBERTIAN: return sampleLambertian(intersection, r, medium0, probabilityDensity, collapsed, state);
-                    case Type::MIRROR: return sampleMirror(intersection, r, medium0, probabilityDensity, collapsed);
-                    case Type::CONDUCTOR: return sampleConductor(nullptr, intersection, r, medium0, probabilityDensity, collapsed, state);
-                    case Type::DIELECTRIC: return sampleDielectric(nullptr, intersection, r, medium0, medium1, probabilityDensity, collapsed, state);
-                    case Type::COATED: return sampleCoated(intersection, r, medium0, medium1, probabilityDensity, collapsed, state);
+                    case Type::LAMBERTIAN: return sampleLambertian(intersection, r, probabilityDensity, collapsed, state);
+                    case Type::MIRROR: return sampleMirror(intersection, r, probabilityDensity, collapsed);
+                    case Type::CONDUCTOR: return sampleConductor(nullptr, intersection, r, probabilityDensity, collapsed, state);
+                    case Type::DIELECTRIC: return sampleDielectric(nullptr, intersection, r, medium1, probabilityDensity, collapsed, state);
+                    case Type::COATED: return sampleCoated(intersection, r, medium1, probabilityDensity, collapsed, state);
                     case Type::EMISSIVE: return SampledSpectrum(0);
                 }
 
@@ -354,8 +354,8 @@ namespace lambda {
                 }
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleLambertian(const Intersection & intersection, Ray & r, const Medium * medium, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
-                r = Ray(intersection.transformedPoint, utils::randomInHemisphere(intersection.transformedNormal, state), r.getLambdas(), medium);
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleLambertian(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+                r = Ray(intersection.transformedPoint, utils::randomInHemisphere(intersection.transformedNormal, state), r.getLambdas(), r.getMedium());
 
                 SampledSpectrum attenuation = evaluateLambertian(intersection, r, probabilityDensity, collapsed);
 
@@ -364,8 +364,8 @@ namespace lambda {
                 return attenuation * dot(intersection.transformedNormal, r.getDirection()) / probabilityDensity[0];
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleMirror(const Intersection & intersection, Ray & r, const Medium * medium, SampledSpectrum & probabilityDensity, bool collapsed) const {
-                r = Ray(intersection.transformedPoint, utils::reflected(r.getDirection(), intersection.transformedNormal), r.getLambdas(), medium);
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleMirror(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed) const {
+                r = Ray(intersection.transformedPoint, utils::reflected(r.getDirection(), intersection.transformedNormal), r.getLambdas(), r.getMedium());
 
                 probabilityDensity = SampledSpectrum(1);
 
@@ -376,7 +376,7 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleConductor(const Material * coating, const Intersection & intersection, Ray & r, const Medium * medium, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleConductor(const Material * coating, const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
                 Vector<Float, 3> normal = intersection.transformedNormal;
 
                 Float alphaX = conductor.alphaX->evaluate(intersection);
@@ -388,7 +388,7 @@ namespace lambda {
 
                 if (dot(intersection.transformedNormal, direction) <= constants::EPSILON) return SampledSpectrum(0);
 
-                Ray rOut(intersection.transformedPoint, direction, r.getLambdas(), medium);
+                Ray rOut(intersection.transformedPoint, direction, r.getLambdas(), r.getMedium());
 
                 SampledSpectrum attenuation;
 
@@ -423,7 +423,7 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleDielectric(const Material * coating, const Intersection & intersection, Ray & r, const Medium * medium0, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleDielectric(const Material * coating, const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
                 Vector<Float, 3> normal = intersection.transformedNormal;
 
                 Float alphaX = dielectric.alphaX->evaluate(intersection);
@@ -467,7 +467,7 @@ namespace lambda {
 
                 if ((alphaX > constants::EPSILON || alphaY > constants::EPSILON) && (reflect ? dot(intersection.transformedNormal, direction) <= constants::EPSILON : dot(intersection.transformedNormal, direction) >= -constants::EPSILON)) return SampledSpectrum(0);
 
-                Ray rOut(intersection.transformedPoint, direction, r.getLambdas(), reflect ? medium0 : medium1);
+                Ray rOut(intersection.transformedPoint, direction, r.getLambdas(), reflect ? r.getMedium() : medium1);
 
                 if (!reflect && collapse) collapsed = true;
 
@@ -493,10 +493,10 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleCoated(const Intersection & intersection, Ray & r, const Medium * medium0, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
+            LAMBDA_HOST_DEVICE SampledSpectrum sampleCoated(const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, bool & collapsed, Random & state) const {
                 switch (coated.substrate->type) {
-                    case Type::CONDUCTOR: return coated.substrate->sampleConductor(this, intersection, r, medium0, probabilityDensity, collapsed, state);
-                    case Type::DIELECTRIC: return coated.substrate->sampleDielectric(this, intersection, r, medium0, medium1, probabilityDensity, collapsed, state);
+                    case Type::CONDUCTOR: return coated.substrate->sampleConductor(this, intersection, r, probabilityDensity, collapsed, state);
+                    case Type::DIELECTRIC: return coated.substrate->sampleDielectric(this, intersection, r, medium1, probabilityDensity, collapsed, state);
                     default: return SampledSpectrum(0);
                 }
             }
