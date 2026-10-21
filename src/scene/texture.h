@@ -16,7 +16,6 @@ namespace lambda {
                 ScalarTexture texture;
 
                 texture.type = Type::CONSTANT;
-                texture.isConstant = true;
                 texture.width = 1;
                 texture.height = 1;
                 texture.min = v;
@@ -31,7 +30,6 @@ namespace lambda {
                 ScalarTexture texture;
 
                 texture.type = Type::SCALE;
-                texture.isConstant = t1->isConstant && t2->isConstant;
 
                 int width1 = t1->width;
                 int width2 = t2->width;
@@ -39,17 +37,19 @@ namespace lambda {
                 int height1 = t1->height;
                 int height2 = t2->height;
 
-                int maxHeight = std::max(height1, height2);
+                int minWidth = std::min(width1, width2);
+                int minHeight = std::min(height1, height2);
+
                 int maxWidth = std::max(width1, width2);
+                int maxHeight = std::max(height1, height2);
 
-                if (t1->isConstant) width1 = maxWidth;
-                if (t2->isConstant) width2 = maxWidth;
+                if (width1 == 0 || width2 == 0) texture.width = 0;
+                else if (maxWidth % minWidth == 0) texture.width = maxWidth;
+                else texture.width = 0;
 
-                if (t1->isConstant) height1 = maxHeight;
-                if (t2->isConstant) height2 = maxHeight;
-
-                texture.width = width1 == width2 ? width1 : 1;
-                texture.height = height1 == height2 ? height1 : 1;
+                if (height1 == 0 || height2 == 0) texture.height = 0;
+                else if (maxHeight % minHeight == 0) texture.height = maxHeight;
+                else texture.height = 0;
 
                 texture.min = std::fmin(t1->min * t2->min, std::fmin(t1->min * t2->max, std::fmin(t1->max * t2->min, t1->max * t2->max)));
                 texture.max = std::fmax(t1->min * t2->min, std::fmax(t1->min * t2->max, std::fmax(t1->max * t2->min, t1->max * t2->max)));
@@ -64,7 +64,6 @@ namespace lambda {
                 ScalarTexture texture;
 
                 texture.type = Type::MIX;
-                texture.isConstant = t1->isConstant && t2->isConstant && factor->isConstant;
 
                 int width1 = t1->width;
                 int width2 = t2->width;
@@ -74,19 +73,22 @@ namespace lambda {
                 int height2 = t2->height;
                 int height3 = factor->height;
 
+                int minWidth = std::min(width1, std::min(width2, width3));
+                int minHeight = std::min(height1, std::min(height2, height3));
+
                 int maxWidth = std::max(width1, std::max(width2, width3));
                 int maxHeight = std::max(height1, std::max(height2, height3));
 
-                if (t1->isConstant) width1 = maxWidth;
-                if (t2->isConstant) width2 = maxWidth;
-                if (factor->isConstant) width3 = maxWidth;
+                int midWidth = width1 + width2 + width3 - minWidth - maxWidth;
+                int midHeight = height1 + height2 + height3 - minHeight - maxHeight;
+                
+                if (width1 == 0 || width2 == 0 || width3 == 0) texture.width = 0;
+                else if (maxWidth % minWidth == 0 && maxWidth % midWidth == 0) texture.width = maxWidth;
+                else texture.width = 0;
 
-                if (t1->isConstant) height1 = maxHeight;
-                if (t2->isConstant) height2 = maxHeight;
-                if (factor->isConstant) height3 = maxHeight;
-
-                texture.width = (width1 == width2 && width2 == width3) ? width1 : 1;
-                texture.height = (height1 == height2 && height2 == height3) ? height1 : 1;
+                if (height1 == 0 || height2 == 0 || height3 == 0) texture.height = 0;
+                else if (maxHeight % minHeight == 0 && maxHeight % midHeight == 0) texture.height = maxHeight;
+                else texture.height = 0;
 
                 texture.min = std::fmin(t1->min, t2->min);
                 texture.max = std::fmax(t1->max, t2->max);
@@ -102,9 +104,8 @@ namespace lambda {
                 ScalarTexture texture;
 
                 texture.type = Type::CHECKER;
-                texture.isConstant = false;
-                texture.width = 1;
-                texture.height = 1;
+                texture.width = 0;
+                texture.height = 0;
                 texture.min = std::fmin(v1, v2);
                 texture.max = std::fmax(v1, v2);
                 texture.average = Float(0.5) * (v1 + v2);
@@ -122,9 +123,8 @@ namespace lambda {
                 ScalarTexture texture;
 
                 texture.type = Type::PERLIN;
-                texture.isConstant = false;
-                texture.width = 1;
-                texture.height = 1;
+                texture.width = 0;
+                texture.height = 0;
                 texture.min = 0;
                 texture.max = 1;
                 texture.average = 0.5;
@@ -139,9 +139,8 @@ namespace lambda {
                 ScalarTexture texture;
 
                 texture.type = Type::WORLEY;
-                texture.isConstant = false;
-                texture.width = 1;
-                texture.height = 1;
+                texture.width = 0;
+                texture.height = 0;
                 texture.min = 0;
                 texture.max = 1;
                 texture.average = 0.5;
@@ -156,9 +155,8 @@ namespace lambda {
                 ScalarTexture texture;
 
                 texture.type = Type::IMAGE;
-                texture.isConstant = false;
-                texture.width = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? width : 1;
-                texture.height = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? height : 1;
+                texture.width = (uScale == 1 && vScale == 1 && uOffset == 0 && vOffset == 0) ? width : 0;
+                texture.height = (uScale == 1 && vScale == 1 && uOffset == 0 && vOffset == 0) ? height : 0;
 
                 texture.min = constants::MAX;
                 texture.max = -constants::MAX;
@@ -190,9 +188,9 @@ namespace lambda {
                 return texture;
             }
 
-            LAMBDA_HOST_DEVICE int getWidth() const { return width; }
+            LAMBDA_HOST_DEVICE int getWidth() const { return width > 0 ? width : 1; }
 
-            LAMBDA_HOST_DEVICE int getHeight() const { return height; }
+            LAMBDA_HOST_DEVICE int getHeight() const { return height > 0 ? height : 1; }
 
             LAMBDA_HOST_DEVICE Float getMin() const { return min; }
 
@@ -203,8 +201,8 @@ namespace lambda {
             LAMBDA_HOST_DEVICE Float getAverage(int x, int y) const {
                 switch (type) {
                     case Type::CONSTANT: return average;
-                    case Type::SCALE: return scale.texture1->getAverage(x, y) * scale.texture2->getAverage(x, y);
-                    case Type::MIX: return utils::interpolate(mix.texture1->getAverage(x, y), mix.texture2->getAverage(x, y), mix.factor->getAverage(x, y));
+                    case Type::SCALE: return scale.texture1->getAverage(width != 0 ? x * scale.texture1->width / width : x, height != 0 ? y * scale.texture1->height / height : y) * scale.texture2->getAverage(width != 0 ? x * scale.texture2->width / width : x, height != 0 ? y * scale.texture2->height / height : y);
+                    case Type::MIX: return utils::interpolate(mix.texture1->getAverage(width != 0 ? x * mix.texture1->width / width : x, height != 0 ? y * mix.texture1->height / height : y), mix.texture2->getAverage(width != 0 ? x * mix.texture2->width / width : x, height != 0 ? y * mix.texture2->height / height : y), mix.factor->getAverage(width != 0 ? x * mix.factor->width / width : x, height != 0 ? y * mix.factor->height / height : y));
                     case Type::CHECKER: return average;
                     case Type::PERLIN: return average;
                     case Type::WORLEY: return average;
@@ -234,7 +232,6 @@ namespace lambda {
             enum class Type { CONSTANT, SCALE, MIX, CHECKER, PERLIN, WORLEY, IMAGE };
 
             Type type;
-            bool isConstant;
             int width, height;
             Float min, max, average;
 
@@ -249,7 +246,7 @@ namespace lambda {
             };
 
             LAMBDA_HOST_DEVICE Float getAverageImage(int x, int y) const {
-                if (std::fabs(image.uScale - 1) > constants::EPSILON || std::fabs(image.vScale - 1) > constants::EPSILON || std::fabs(image.uOffset) > constants::EPSILON || std::fabs(image.vOffset) > constants::EPSILON) return average;
+                if (image.uScale != 1 || image.vScale != 1 || image.uOffset != 0 || image.vOffset != 0) return average;
 
                 x = ((x % image.width) + image.width) % image.width;
                 y = ((y % image.height) + image.height) % image.height;
@@ -342,7 +339,6 @@ namespace lambda {
                 SpectrumTexture texture;
 
                 texture.type = Type::CONSTANT;
-                texture.isConstant = true;
                 texture.width = 1;
                 texture.height = 1;
                 texture.min = v->min();
@@ -357,7 +353,6 @@ namespace lambda {
                 SpectrumTexture texture;
 
                 texture.type = Type::SCALAR;
-                texture.isConstant = t->isConstant;
                 texture.width = t->width;
                 texture.height = t->height;
                 texture.min = t->min;
@@ -372,7 +367,6 @@ namespace lambda {
                 SpectrumTexture texture;
 
                 texture.type = Type::SCALE;
-                texture.isConstant = t1->isConstant && t2->isConstant;
 
                 int width1 = t1->width;
                 int width2 = t2->width;
@@ -380,17 +374,19 @@ namespace lambda {
                 int height1 = t1->height;
                 int height2 = t2->height;
 
+                int minWidth = std::min(width1, width2);
+                int minHeight = std::min(height1, height2);
+
                 int maxWidth = std::max(width1, width2);
                 int maxHeight = std::max(height1, height2);
 
-                if (t1->isConstant) width1 = maxWidth;
-                if (t2->isConstant) width2 = maxWidth;
+                if (width1 == 0 || width2 == 0) texture.width = 0;
+                else if (maxWidth % minWidth == 0) texture.width = maxWidth;
+                else texture.width = 0;
 
-                if (t1->isConstant) height1 = maxHeight;
-                if (t2->isConstant) height2 = maxHeight;
-
-                texture.width = width1 == width2 ? width1 : 1;
-                texture.height = height1 == height2 ? height1 : 1;
+                if (height1 == 0 || height2 == 0) texture.height = 0;
+                else if (maxHeight % minHeight == 0) texture.height = maxHeight;
+                else texture.height = 0;
 
                 texture.min = std::fmin(t1->min * t2->min, std::fmin(t1->min * t2->max, std::fmin(t1->max * t2->min, t1->max * t2->max)));
                 texture.max = std::fmax(t1->min * t2->min, std::fmax(t1->min * t2->max, std::fmax(t1->max * t2->min, t1->max * t2->max)));
@@ -405,7 +401,6 @@ namespace lambda {
                 SpectrumTexture texture;
 
                 texture.type = Type::MIX;
-                texture.isConstant = t1->isConstant && t2->isConstant && factor->isConstant;
 
                 int width1 = t1->width;
                 int width2 = t2->width;
@@ -415,19 +410,22 @@ namespace lambda {
                 int height2 = t2->height;
                 int height3 = factor->height;
 
+                int minWidth = std::min(width1, std::min(width2, width3));
+                int minHeight = std::min(height1, std::min(height2, height3));
+
                 int maxWidth = std::max(width1, std::max(width2, width3));
                 int maxHeight = std::max(height1, std::max(height2, height3));
 
-                if (t1->isConstant) width1 = maxWidth;
-                if (t2->isConstant) width2 = maxWidth;
-                if (factor->isConstant) width3 = maxWidth;
+                int midWidth = width1 + width2 + width3 - minWidth - maxWidth;
+                int midHeight = height1 + height2 + height3 - minHeight - maxHeight;
+                
+                if (width1 == 0 || width2 == 0 || width3 == 0) texture.width = 0;
+                else if (maxWidth % minWidth == 0 && maxWidth % midWidth == 0) texture.width = maxWidth;
+                else texture.width = 0;
 
-                if (t1->isConstant) height1 = maxHeight;
-                if (t2->isConstant) height2 = maxHeight;
-                if (factor->isConstant) height3 = maxHeight;
-
-                texture.width = width1 == width2 && width2 == width3 ? width1 : 1;
-                texture.height = height1 == height2 && height2 == height3 ? height1 : 1;
+                if (height1 == 0 || height2 == 0 || height3 == 0) texture.height = 0;
+                else if (maxHeight % minHeight == 0 && maxHeight % midHeight == 0) texture.height = maxHeight;
+                else texture.height = 0;
 
                 texture.min = std::fmin(t1->min, t2->min);
                 texture.max = std::fmax(t1->max, t2->max);
@@ -443,9 +441,8 @@ namespace lambda {
                 SpectrumTexture texture;
 
                 texture.type = Type::CHECKER;
-                texture.isConstant = false;
-                texture.width = 1;
-                texture.height = 1;
+                texture.width = 0;
+                texture.height = 0;
                 texture.min = std::fmin(v1->min(), v2->min());
                 texture.max = std::fmax(v1->max(), v2->max());
                 texture.average = Float(0.5) * (v1->average() + v2->average());
@@ -463,9 +460,8 @@ namespace lambda {
                 SpectrumTexture texture;
 
                 texture.type = Type::IMAGE;
-                texture.isConstant = false;
-                texture.width = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? width : 1;
-                texture.height = (std::fabs(uScale - 1) <= constants::EPSILON && std::fabs(vScale - 1) <= constants::EPSILON && std::fabs(uOffset) <= constants::EPSILON && std::fabs(vOffset) <= constants::EPSILON) ? height : 1;
+                texture.width = (uScale == 1 && vScale == 1 && uOffset == 0 && vOffset == 0) ? width : 0;
+                texture.height = (uScale == 1 && vScale == 1 && uOffset == 0 && vOffset == 0) ? height : 0;
 
                 texture.min = constants::MAX;
                 texture.max = -constants::MAX;
@@ -503,9 +499,9 @@ namespace lambda {
                 return texture;
             }
 
-            LAMBDA_HOST_DEVICE int getWidth() const { return width; }
+            LAMBDA_HOST_DEVICE int getWidth() const { return width > 0 ? width : 1; }
 
-            LAMBDA_HOST_DEVICE int getHeight() const { return height; }
+            LAMBDA_HOST_DEVICE int getHeight() const { return height > 0 ? height : 1; }
 
             LAMBDA_HOST_DEVICE Float getMin() const { return min; }
 
@@ -517,8 +513,8 @@ namespace lambda {
                 switch (type) {
                     case Type::CONSTANT: return average;
                     case Type::SCALAR: return scalar.texture->getAverage(x, y);
-                    case Type::SCALE: return scale.texture1->getAverage(x, y) * scale.texture2->getAverage(x, y);
-                    case Type::MIX: return utils::interpolate(mix.texture1->getAverage(x, y), mix.texture2->getAverage(x, y), mix.factor->getAverage(x, y));
+                    case Type::SCALE: return scale.texture1->getAverage(width != 0 ? x * scale.texture1->width / width : x, height != 0 ? y * scale.texture1->height / height : y) * scale.texture2->getAverage(width != 0 ? x * scale.texture2->width / width : x, height != 0 ? y * scale.texture2->height / height : y);
+                    case Type::MIX: return utils::interpolate(mix.texture1->getAverage(width != 0 ? x * mix.texture1->width / width : x, height != 0 ? y * mix.texture1->height / height : y), mix.texture2->getAverage(width != 0 ? x * mix.texture2->width / width : x, height != 0 ? y * mix.texture2->height / height : y), mix.factor->getAverage(width != 0 ? x * mix.factor->width / width : x, height != 0 ? y * mix.factor->height / height : y));
                     case Type::CHECKER: return average;
                     case Type::IMAGE: return getAverageImage(x, y);
                 }
@@ -543,7 +539,6 @@ namespace lambda {
             enum class Type { CONSTANT, SCALAR, SCALE, MIX, CHECKER, IMAGE };
 
             Type type;
-            bool isConstant;
             int width, height;
             Float min, max, average;
 
@@ -557,7 +552,7 @@ namespace lambda {
             };
 
             LAMBDA_HOST_DEVICE Float getAverageImage(int x, int y) const {
-                if (std::fabs(image.uScale - 1) > constants::EPSILON || std::fabs(image.vScale - 1) > constants::EPSILON || std::fabs(image.uOffset) > constants::EPSILON || std::fabs(image.vOffset) > constants::EPSILON) return average;
+                if (image.uScale != 1 || image.vScale != 1 || image.uOffset != 0 || image.vOffset != 0) return average;
 
                 x = ((x % image.width) + image.width) % image.width;
                 y = ((y % image.height) + image.height) % image.height;

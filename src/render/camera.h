@@ -159,7 +159,7 @@ namespace lambda {
 
                 Vector<Float, 3> t = -(m * position);
 
-                return Matrix<Float, 4>(m.get(0, 0), m.get(0, 1), m.get(0, 2), t[0], m.get(1, 0), m.get(1, 1), m.get(1, 2), t[1], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2], 0, 0, 0, 1);
+                return Matrix<Float, 4>(m.get(0, 0), m.get(0, 1), m.get(0, 2), t[0], m.get(1, 0), m.get(1, 1), m.get(1, 2), t[1], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2]);
             }
 
             LAMBDA_HOST_DEVICE Matrix<Float, 4> getWorldToNDCOrthographic() const {

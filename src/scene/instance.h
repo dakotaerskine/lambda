@@ -78,20 +78,19 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE Float getPower() const { return lightNode->getPower() * transform.scaleSquared(0) * (material ? material->averageEmission() : 1); }
 
-            LAMBDA_HOST_DEVICE Float getPower(int i) const { return area(i) * getMaterial(i)->averageEmission(); }
+            LAMBDA_HOST_DEVICE Float getPower(int i) const {
+                const Material * currentMaterial = getMaterial(i);
+
+                if (!currentMaterial) return 0;
+
+                return area(i) * currentMaterial->averageEmission();
+            }
 
             LAMBDA_HOST_DEVICE Float probabilityDensity(int i, const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const { return objects[i].probabilityDensity(transform.pointToLocal(point), normalize(transform.vectorToLocal(direction))); }
 
             LAMBDA_HOST_DEVICE bool intersect(int i, Intersection & intersection, const Ray & r) const {
                 if (objects[i].intersect(intersection, transform.rayToLocal(r))) {
-                    intersection.instance = this;
-                    intersection.i = i;
-                    intersection.transformedPoint = transform.pointToWorld(intersection.point);
-                    intersection.transformedNormal = transform.normalToWorld(intersection.normal);
-                    intersection.transformedTangent = normalize(transform.vectorToWorld(intersection.tangent));
-                    intersection.useTransformed = material != nullptr;
-                    intersection.frontFacing = dot(r.getDirection(), intersection.transformedNormal) < 0;
-                    if (!intersection.frontFacing) intersection.transformedNormal *= -1;
+                    toWorld(intersection, r, i);
 
                     return true;
                 }
@@ -145,6 +144,20 @@ namespace lambda {
             Medium * medium0, * medium1;
             Transform transform;
 
+            LAMBDA_HOST_DEVICE void toWorld(Intersection & intersection, const Ray & r, int i) const {
+                intersection.instance = this;
+                intersection.i = i;
+                intersection.transformedPoint = transform.pointToWorld(intersection.point);
+                intersection.transformedNormal = transform.normalToWorld(intersection.normal);
+                intersection.transformedTangent = normalize(transform.vectorToWorld(intersection.tangent));
+                intersection.geometricNormal = transform.normalToWorld(intersection.geometricNormal);
+                intersection.pointError = utils::pointError(r.getOrigin(), intersection.point, intersection.transformedPoint, transform.scaleSquared());
+                intersection.useTransformed = material != nullptr;
+                intersection.frontFacing = dot(r.getDirection(), intersection.transformedNormal) < 0;
+                if (!intersection.frontFacing) intersection.transformedNormal *= -1;
+                if (dot(r.getDirection(), intersection.geometricNormal) >= 0) intersection.geometricNormal *= -1;
+            }
+
             template <bool occluded>
             LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const {
                 const BVHNode<Object> * stack[constants::BVH_MAX_DEPTH + 1];
@@ -178,16 +191,7 @@ namespace lambda {
                     }
                 }
 
-                if (hitObject) {
-                    intersection.instance = this;
-                    intersection.i = int(intersection.object - objects);
-                    intersection.transformedPoint = transform.pointToWorld(intersection.point);
-                    intersection.transformedNormal = transform.normalToWorld(intersection.normal);
-                    intersection.transformedTangent = normalize(transform.vectorToWorld(intersection.tangent));
-                    intersection.useTransformed = material != nullptr;
-                    intersection.frontFacing = dot(r.getDirection(), intersection.transformedNormal) < 0;
-                    if (!intersection.frontFacing) intersection.transformedNormal *= -1;
-                }
+                if (hitObject) toWorld(intersection, r, int(intersection.object - objects));
 
                 return hitObject;
             }

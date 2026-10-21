@@ -92,8 +92,13 @@ namespace lambda {
                 Vector<Float, 3> corner2 = mesh->getVertex(i, 2);
                 Vector<Float, 3> corner3 = mesh->getVertex(i, 3);
 
-                if ((corner3 - corner0 - (corner2 - corner1)).length() <= constants::EPSILON) object.area = cross(corner1 - corner0, corner3 - corner0).length();
-                else if (std::fabs(dot(cross(corner1 - corner0, corner3 - corner0), corner2 - corner0)) <= constants::EPSILON) object.area = Float(0.5) * cross(corner2 - corner0, corner3 - corner1).length();
+                Vector<Float, 3> edge0 = corner1 - corner0;
+                Vector<Float, 3> edge1 = corner2 - corner1;
+                Vector<Float, 3> edge2 = corner3 - corner2;
+                Vector<Float, 3> edge3 = corner0 - corner3;
+
+                if ((corner3 - corner0 - edge1).length() <= constants::EPSILON_RELATIVE * std::fmax(edge1.length(), edge3.length())) object.area = cross(edge0, edge3).length();
+                else if (std::fabs(dot(cross(edge0, edge3), corner2 - corner0)) <= constants::EPSILON_RELATIVE * edge0.length() * edge1.length() * edge2.length()) object.area = Float(0.5) * cross(corner2 - corner0, corner3 - corner1).length();
                 else {
                     Vector<Float, 3> points[constants::AREA_SUBDIVISIONS + 1][constants::AREA_SUBDIVISIONS + 1];
 
@@ -131,10 +136,10 @@ namespace lambda {
             LAMBDA_HOST_DEVICE Vector<Float, 3> minBounds() const {
                 switch (type) {
                     case Type::SPHERE: return Vector<Float, 3>(-sphere.radius, -sphere.radius, -sphere.radius);
-                    case Type::DISK: return Vector<Float, 3>(-disk.radius, -constants::EPSILON, -disk.radius);
+                    case Type::DISK: return Vector<Float, 3>(-disk.radius, -constants::EPSILON_RELATIVE * disk.radius, -disk.radius);
                     case Type::CYLINDER: return Vector<Float, 3>(-cylinder.radius, Float(-0.5) * cylinder.height, -cylinder.radius);
-                    case Type::TRI: return min(tri.mesh->getVertex(tri.index, 0), min(tri.mesh->getVertex(tri.index, 1), tri.mesh->getVertex(tri.index, 2))) - Vector<Float, 3>(constants::EPSILON, constants::EPSILON, constants::EPSILON);
-                    case Type::PATCH: return min(patch.mesh->getVertex(patch.index, 0), min(patch.mesh->getVertex(patch.index, 1), min(patch.mesh->getVertex(patch.index, 2), patch.mesh->getVertex(patch.index, 3)))) - Vector<Float, 3>(constants::EPSILON, constants::EPSILON, constants::EPSILON);
+                    case Type::TRI: return minBoundsTri();
+                    case Type::PATCH: return minBoundsPatch();
                 }
 
                 return Vector<Float, 3>();
@@ -143,10 +148,10 @@ namespace lambda {
             LAMBDA_HOST_DEVICE Vector<Float, 3> maxBounds() const {
                 switch (type) {
                     case Type::SPHERE: return Vector<Float, 3>(sphere.radius, sphere.radius, sphere.radius);
-                    case Type::DISK: return Vector<Float, 3>(disk.radius, constants::EPSILON, disk.radius);
+                    case Type::DISK: return Vector<Float, 3>(disk.radius, constants::EPSILON_RELATIVE * disk.radius, disk.radius);
                     case Type::CYLINDER: return Vector<Float, 3>(cylinder.radius, Float(0.5) * cylinder.height, cylinder.radius);
-                    case Type::TRI: return max(tri.mesh->getVertex(tri.index, 0), max(tri.mesh->getVertex(tri.index, 1), tri.mesh->getVertex(tri.index, 2))) + Vector<Float, 3>(constants::EPSILON, constants::EPSILON, constants::EPSILON);
-                    case Type::PATCH: return max(patch.mesh->getVertex(patch.index, 0), max(patch.mesh->getVertex(patch.index, 1), max(patch.mesh->getVertex(patch.index, 2), patch.mesh->getVertex(patch.index, 3)))) + Vector<Float, 3>(constants::EPSILON, constants::EPSILON, constants::EPSILON);
+                    case Type::TRI: return maxBoundsTri();
+                    case Type::PATCH: return maxBoundsPatch();
                 }
 
                 return Vector<Float, 3>();
@@ -228,6 +233,56 @@ namespace lambda {
                 struct { Mesh * mesh; int index; } patch;
             };
 
+            LAMBDA_HOST_DEVICE Vector<Float, 3> minBoundsTri() const {
+                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
+                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
+                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
+
+                Vector<Float, 3> minCorner = min(corner0, min(corner1, corner2));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(minCorner[0]), std::fmax(std::fabs(minCorner[1]), std::fabs(minCorner[2])));
+
+                return minCorner - Vector<Float, 3>(padding, padding, padding);
+            }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> minBoundsPatch() const {
+                Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
+                Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
+                Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
+                Vector<Float, 3> corner3 = patch.mesh->getVertex(patch.index, 3);
+
+                Vector<Float, 3> minCorner = min(min(corner0, corner1), min(corner2, corner3));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(minCorner[0]), std::fmax(std::fabs(minCorner[1]), std::fabs(minCorner[2])));
+
+                return minCorner - Vector<Float, 3>(padding, padding, padding);
+            }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> maxBoundsTri() const {
+                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
+                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
+                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
+
+                Vector<Float, 3> maxCorner = max(corner0, max(corner1, corner2));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(maxCorner[0]), std::fmax(std::fabs(maxCorner[1]), std::fabs(maxCorner[2])));
+
+                return maxCorner + Vector<Float, 3>(padding, padding, padding);
+            }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> maxBoundsPatch() const {
+                Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
+                Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
+                Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
+                Vector<Float, 3> corner3 = patch.mesh->getVertex(patch.index, 3);
+
+                Vector<Float, 3> maxCorner = max(max(corner0, corner1), max(corner2, corner3));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(maxCorner[0]), std::fmax(std::fabs(maxCorner[1]), std::fabs(maxCorner[2])));
+
+                return maxCorner + Vector<Float, 3>(padding, padding, padding);
+            }
+
             LAMBDA_HOST_DEVICE Float radiusTri() const {
                 Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
                 Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
@@ -273,100 +328,41 @@ namespace lambda {
             }
 
             LAMBDA_HOST_DEVICE Float probabilityDensityDisk(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
-                if (std::fabs(direction[1]) <= constants::EPSILON) return 0;
+                Float t, radiusSquared;
+                Vector<Float, 3> hitPoint;
 
-                Float distanceSquared = -point[1] / direction[1];
-
-                if (distanceSquared <= constants::EPSILON) return 0;
-
-                Vector<Float, 3> hitPoint = point + direction * distanceSquared;
-
-                if (hitPoint[0] * hitPoint[0] + hitPoint[2] * hitPoint[2] > disk.radius * disk.radius) return 0;
-
-                distanceSquared *= distanceSquared;
+                if (!rayDisk(point, direction, disk.radius, constants::MAX, t, radiusSquared, hitPoint)) return false;
 
                 Float cosTheta = std::fabs(direction[1]);
 
-                return 1 / (constants::PI * disk.radius * disk.radius) * distanceSquared / std::fmax(cosTheta, constants::EPSILON);
+                return 1 / (constants::PI * disk.radius * disk.radius) * t * t / cosTheta;
             }
 
             LAMBDA_HOST_DEVICE Float probabilityDensityCylinder(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
-                Float a = direction[0] * direction[0] + direction[2] * direction[2];
+                Float t, rho;
+                Vector<Float, 3> hitPoint;
 
-                if (a <= constants::EPSILON_SQUARED) return 0;
-
-                Float b = 2 * (point[0] * direction[0] + point[2] * direction[2]);
-                Float c = point[0] * point[0] + point[2] * point[2] - cylinder.radius * cylinder.radius;
-                Float d = b * b - 4 * a * c;
-
-                if (d < 0) return 0;
-
-                d = std::sqrt(d);
-
-                Float t1 = (-b - d) / (2 * a);
-                Float t2 = (-b + d) / (2 * a);
-
-                if (t1 <= constants::EPSILON && t2 <= constants::EPSILON) return 0;
-
-                Float t = (t1 <= constants::EPSILON) ? t2 : t1;
-
-                Vector<Float, 3> hitPoint = point + direction * t;
-
-                Float rho = std::sqrt(point[0] * point[0] + point[2] * point[2]);
-
-                if (std::fabs(hitPoint[1]) > Float(0.5) * cylinder.height) {
-                    if (rho > cylinder.radius) return 0;
-
-                    t = t2;
-
-                    hitPoint = point + direction * t;
-
-                    if (std::fabs(hitPoint[1]) > Float(0.5) * cylinder.height) return 0;
-                };
+                if (!rayCylinder(point, direction, cylinder.radius, cylinder.height, constants::MAX, t, rho, hitPoint)) return 0;
 
                 Float alpha = rho <= cylinder.radius ? constants::PI : std::acos(utils::clamp(cylinder.radius / rho, Float(-1), Float(1)));
 
-                Float distanceSquared = t * t;
-
                 Float cosTheta = std::fabs(dot(normalize(Vector<Float, 3>(hitPoint[0], 0, hitPoint[2])), direction));
 
-                return 1 / (2 * alpha * cylinder.radius * cylinder.height) * distanceSquared / std::fmax(cosTheta, constants::EPSILON);
+                if (cosTheta <= constants::GRAZING_COS) return 0;
+
+                return 1 / (2 * alpha * cylinder.radius * cylinder.height) * t * t / cosTheta;
             }
 
             LAMBDA_HOST_DEVICE Float probabilityDensityTri(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
-                Vector<Float, 3> corner = tri.mesh->getVertex(tri.index, 0);
-                Vector<Float, 3> horizontal = tri.mesh->getVertex(tri.index, 1) - corner;
-                Vector<Float, 3> vertical = tri.mesh->getVertex(tri.index, 2) - corner;
+                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
+                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
+                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
 
-                Vector<Float, 3> rayCrossVertical = cross(direction, vertical);
+                Float t, alpha, beta;
 
-                Float determinant = dot(horizontal, rayCrossVertical);
+                if (!rayTri(point, direction, corner0, corner1, corner2, constants::MAX, t, alpha, beta)) return 0;
 
-                if (std::fabs(determinant) <= constants::EPSILON_SQUARED) return 0;
-
-                Float inverseDeterminant = 1 / determinant;
-
-                Vector<Float, 3> oc = point - corner;
-
-                Float alpha = inverseDeterminant * dot(oc, rayCrossVertical);
-
-                if (alpha < 0 || alpha > 1) return 0;
-
-                Vector<Float, 3> ocCrossHorizontal = cross(oc, horizontal);
-
-                Float beta = inverseDeterminant * dot(direction, ocCrossHorizontal);
-
-                if (beta < 0 || alpha + beta > 1) return 0;
-
-                Float t = inverseDeterminant * dot(vertical, ocCrossHorizontal);
-
-                if (t <= constants::EPSILON) return 0;
-
-                Vector<Float, 3> normal = cross(horizontal, vertical);
-
-                normal = normalize(normal);
-
-                Float cosTheta = dot(normalize(normal), direction);
+                Float cosTheta = dot(normalize(cross(corner1 - corner0, corner2 - corner0)), direction);
 
                 return t * t / (std::fabs(cosTheta) * area);
             }
@@ -384,77 +380,30 @@ namespace lambda {
 
                 Float totalWeight = w0 + w1 + w2 + w3;
 
-                Float a = dot(cross(corner3 - corner0, corner1 - corner2), direction);
-                Float c = dot(cross(corner0 - point, direction), corner1 - corner0);
-                Float b = dot(cross(corner3 - point, direction), corner2 - corner3) - (a + c);
+                Float t1, u1, v1, t2, u2, v2;
 
-                if (std::fabs(a) <= constants::EPSILON && std::fabs(b) <= constants::EPSILON) return 0;
-
-                Float d = b * b - 4 * a * c;
-
-                if (d < 0) return 0;
-
-                d = std::sqrt(d);
-
-                Float q = Float(-0.5) * (b + (b < 0 ? -d : d));
-
-                Float u1 = std::fabs(a) <= constants::EPSILON ? -c / b : q / a;
-                Float u2 = std::fabs(a) > constants::EPSILON && std::fabs(q) > constants::EPSILON ? c / q : -1;
+                if (!rayPatch(point, direction, corner0, corner1, corner2, corner3, constants::MAX, t1, u1, v1, t2, u2, v2)) return 0;
 
                 Float sum = 0;
 
-                if (u1 >= 0 && u1 <= 1) {
-                    Vector<Float, 3> uo = utils::interpolate(corner0, corner3, u1);
-                    Vector<Float, 3> ud = utils::interpolate(corner1, corner2, u1) - uo;
-                    Vector<Float, 3> delta = uo - point;
-                    Vector<Float, 3> perp = cross(direction, ud);
+                Vector<Float, 3> normal1 = cross(utils::interpolate(corner3 - corner0, corner2 - corner1, v1), utils::interpolate(corner1 - corner0, corner2 - corner3, u1));
 
-                    Float perpLengthSquared = perp.lengthSquared();
+                Float jacobian1 = normal1.length();
 
-                    Float v1 = dot(cross(delta, direction), perp) / perpLengthSquared;
-                    Float t1 = dot(cross(delta, ud), perp) / perpLengthSquared;
+                if (t1 > 0 && t1 < constants::MAX && jacobian1 > 0) {
+                    Float cosTheta = std::fabs(dot(normal1 / jacobian1, direction));
 
-                    if (v1 >= 0 && v1 <= 1 && t1 > constants::EPSILON) {
-                        Vector<Float, 3> dpdu = utils::interpolate(corner3 - corner0, corner2 - corner1, v1);
-                        Vector<Float, 3> dpdv = utils::interpolate(corner1 - corner0, corner2 - corner3, u1);
-
-                        Vector<Float, 3> normal = cross(dpdu, dpdv);
-
-                        Float jacobian = normal.length();
-
-                        if (jacobian > constants::EPSILON) {
-                            Float cosTheta = std::fabs(dot(normal / jacobian, direction));
-
-                            if (cosTheta > constants::EPSILON) sum += 4 * ((1 - u1) * (1 - v1) * w0 + u1 * (1 - v1) * w1 + (1 - u1) * v1 * w2 + u1 * v1 * w3) / totalWeight / jacobian * t1 * t1 / cosTheta;
-                        }
-                    }
+                    if (cosTheta > constants::GRAZING_COS) sum += 4 * ((1 - u1) * (1 - v1) * w0 + u1 * (1 - v1) * w1 + (1 - u1) * v1 * w2 + u1 * v1 * w3) / totalWeight / jacobian1 * t1 * t1 / cosTheta;
                 }
 
-                if (u2 >= 0 && u2 <= 1) {
-                    Vector<Float, 3> uo = utils::interpolate(corner0, corner3, u2);
-                    Vector<Float, 3> ud = utils::interpolate(corner1, corner2, u2) - uo;
-                    Vector<Float, 3> delta = uo - point;
-                    Vector<Float, 3> perp = cross(direction, ud);
+                Vector<Float, 3> normal2 = cross(utils::interpolate(corner3 - corner0, corner2 - corner1, v2), utils::interpolate(corner1 - corner0, corner2 - corner3, u2));
 
-                    Float perpLengthSquared = perp.lengthSquared();
+                Float jacobian2 = normal2.length();
 
-                    Float v2 = dot(cross(delta, direction), perp) / perpLengthSquared;
-                    Float t2 = dot(cross(delta, ud), perp) / perpLengthSquared;
+                if (t2 > 0 && t2 < constants::MAX && jacobian2 > 0) {
+                    Float cosTheta = std::fabs(dot(normal2 / jacobian2, direction));
 
-                    if (v2 >= 0 && v2 <= 1 && t2 > constants::EPSILON) {
-                        Vector<Float, 3> dpdu = utils::interpolate(corner3 - corner0, corner2 - corner1, v2);
-                        Vector<Float, 3> dpdv = utils::interpolate(corner1 - corner0, corner2 - corner3, u2);
-
-                        Vector<Float, 3> normal = cross(dpdu, dpdv);
-
-                        Float jacobian = normal.length();
-
-                        if (jacobian > constants::EPSILON) {
-                            Float cosTheta = std::fabs(dot(normal / jacobian, direction));
-
-                            if (cosTheta > constants::EPSILON) sum += 4 * ((1 - u2) * (1 - v2) * w0 + u2 * (1 - v2) * w1 + (1 - u2) * v2 * w2 + u2 * v2 * w3) / totalWeight / jacobian * t2 * t2 / cosTheta;
-                        }
-                    }
+                    if (cosTheta > constants::GRAZING_COS) sum += 4 * ((1 - u2) * (1 - v2) * w0 + u2 * (1 - v2) * w1 + (1 - u2) * v2 * w2 + u2 * v2 * w3) / totalWeight / jacobian2 * t2 * t2 / cosTheta;
                 }
 
                 return sum;
@@ -489,15 +438,15 @@ namespace lambda {
 
                 probabilityDensity = 0;
 
-                if (std::fabs(direction[1]) > constants::EPSILON) {
+                if (std::fabs(direction[1]) > constants::EPSILON_RELATIVE_SQUARED * direction.lengthSquared()) {
                     Float distanceSquared = -point[1] / direction[1];
 
-                    if (distanceSquared > constants::EPSILON_SQUARED && sample[0] * sample[0] + sample[2] * sample[2] <= disk.radius * disk.radius) {
+                    if (distanceSquared > 0 && sample[0] * sample[0] + sample[2] * sample[2] <= disk.radius * disk.radius) {
                         distanceSquared *= distanceSquared;
 
                         Float cosTheta = std::fabs(direction[1]);
 
-                        probabilityDensity = 1 / (constants::PI * disk.radius * disk.radius) * distanceSquared / std::fmax(cosTheta, constants::EPSILON);
+                        probabilityDensity = 1 / (constants::PI * disk.radius * disk.radius) * distanceSquared / cosTheta;
                     }
                 }
 
@@ -524,7 +473,11 @@ namespace lambda {
                 if (std::fabs(sample[1]) <= Float(0.5) * cylinder.height) {
                     Float alpha = rho <= cylinder.radius ? constants::PI : std::acos(utils::clamp(cylinder.radius / rho, Float(-1), Float(1)));
 
-                    probabilityDensity = 1 / (2 * alpha * cylinder.radius * cylinder.height) * distanceSquared / std::fmax(std::fabs(dot(normalize(Vector<Float, 3>(sample[0], 0, sample[2])), direction)), constants::EPSILON);
+                    Float cosTheta = std::fabs(dot(normalize(Vector<Float, 3>(sample[0], 0, sample[2])), direction));
+
+                    if (cosTheta <= constants::GRAZING_COS) return direction;
+
+                    probabilityDensity = 1 / (2 * alpha * cylinder.radius * cylinder.height) * distanceSquared / cosTheta;
                 }
 
                 return direction;
@@ -592,42 +545,37 @@ namespace lambda {
                 Float t1 = (-b - d) / (2 * a);
                 Float t2 = (-b + d) / (2 * a);
 
-                if (t1 <= constants::EPSILON && t2 <= constants::EPSILON) return false;
+                if (t1 <= 0 && t2 <= 0) return false;
 
-                Float t = (t1 <= constants::EPSILON) ? t2 : t1;
+                Float t = (t1 <= 0) ? t2 : t1;
 
                 if (t >= intersection.t) return false;
 
                 intersection.object = this;
                 intersection.t = t;
                 intersection.point = r.at(t);
+                intersection.point *= sphere.radius / intersection.point.length();
                 intersection.normal = normalize(intersection.point);
                 intersection.tangent = Vector<Float, 3>(-intersection.point[2], 0, intersection.point[0]);
 
                 Float tangentLengthSquared = intersection.tangent.lengthSquared();
 
-                if (tangentLengthSquared <= constants::EPSILON_SQUARED) intersection.tangent = Vector<Float, 3>(1, 0, 0);
+                if (tangentLengthSquared <= constants::EPSILON_RELATIVE_SQUARED * sphere.radius * sphere.radius) intersection.tangent = Vector<Float, 3>(1, 0, 0);
                 else intersection.tangent /= std::sqrt(tangentLengthSquared);
 
                 intersection.textureCoordinate[0] = (std::atan2(intersection.normal[2], intersection.normal[0]) + constants::PI) / (2 * constants::PI);
                 intersection.textureCoordinate[1] = std::acos(utils::clamp(intersection.normal[1], Float(-1), Float(1))) / constants::PI;
+                intersection.geometricNormal = intersection.normal;
                 intersection.isSurface = true;
 
                 return true;
             }
 
             LAMBDA_HOST_DEVICE bool intersectDisk(Intersection & intersection, const Ray & r) const {
-                if (std::fabs(r.getDirection()[1]) <= constants::EPSILON) return false;
+                Float t, radiusSquared;
+                Vector<Float, 3> point;
 
-                Float t = -r.getOrigin()[1] / r.getDirection()[1];
-
-                if (t <= constants::EPSILON || t >= intersection.t) return false;
-
-                Vector<Float, 3> point = r.at(t);
-
-                Float radiusSquared = point[0] * point[0] + point[2] * point[2];
-
-                if (radiusSquared > disk.radius * disk.radius) return false;
+                if (!rayDisk(r.getOrigin(), r.getDirection(), disk.radius, intersection.t, t, radiusSquared, point)) return false;
 
                 intersection.object = this;
                 intersection.t = t;
@@ -637,86 +585,46 @@ namespace lambda {
 
                 Float tangentLengthSquared = intersection.tangent.lengthSquared();
 
-                if (tangentLengthSquared <= constants::EPSILON_SQUARED) intersection.tangent = Vector<Float, 3>(1, 0, 0);
+                if (tangentLengthSquared <= constants::EPSILON_RELATIVE_SQUARED * disk.radius * disk.radius) intersection.tangent = Vector<Float, 3>(1, 0, 0);
                 else intersection.tangent /= std::sqrt(tangentLengthSquared);
 
                 intersection.textureCoordinate = Vector<Float, 2>(std::sqrt(radiusSquared) / disk.radius, std::atan2(point[2], point[0]) / (2 * constants::PI) + Float(0.5));
+                intersection.geometricNormal = intersection.normal;
                 intersection.isSurface = true;
 
                 return true;
             }
 
             LAMBDA_HOST_DEVICE bool intersectCylinder(Intersection & intersection, const Ray & r) const {
-                Float a = r.getDirection()[0] * r.getDirection()[0] + r.getDirection()[2] * r.getDirection()[2];
+                Float t, rho;
+                Vector<Float, 3> point;
 
-                if (a <= constants::EPSILON_SQUARED) return false;
-
-                Float b = 2 * (r.getOrigin()[0] * r.getDirection()[0] + r.getOrigin()[2] * r.getDirection()[2]);
-                Float c = r.getOrigin()[0] * r.getOrigin()[0] + r.getOrigin()[2] * r.getOrigin()[2] - cylinder.radius * cylinder.radius;
-                Float d = b * b - 4 * a * c;
-
-                if (d < 0) return false;
-
-                d = std::sqrt(d);
-
-                Float t1 = (-b - d) / (2 * a);
-                Float t2 = (-b + d) / (2 * a);
-
-                if (t1 <= constants::EPSILON && t2 <= constants::EPSILON) return false;
-
-                Float t = (t1 <= constants::EPSILON) ? t2 : t1;
-
-                Vector<Float, 3> point = r.at(t);
-
-                if (std::fabs(point[1]) > Float(0.5) * cylinder.height) {
-                    t = t2;
-
-                    point = r.at(t);
-
-                    if (std::fabs(point[1]) > Float(0.5) * cylinder.height) return false;
-                }
-
-                if (t >= intersection.t) return false;
+                if (!rayCylinder(r.getOrigin(), r.getDirection(), cylinder.radius, cylinder.height, intersection.t, t, rho, point)) return false;
 
                 intersection.object = this;
                 intersection.t = t;
                 intersection.point = point;
+                intersection.point *= cylinder.radius / std::sqrt(point[0] * point[0] + point[2] * point[2]);
                 intersection.normal = normalize(Vector<Float, 3>(point[0], 0, point[2]));
                 intersection.tangent = normalize(Vector<Float, 3>(-point[2], 0, point[0]));
                 intersection.textureCoordinate = Vector<Float, 2>(std::atan2(point[2], point[0]) / (2 * constants::PI) + Float(0.5), (point[1] + Float(0.5) * cylinder.height) / cylinder.height);
+                intersection.geometricNormal = intersection.normal;
                 intersection.isSurface = true;
 
                 return true;
             }
 
             LAMBDA_HOST_DEVICE bool intersectTri(Intersection & intersection, const Ray & r) const {
-                Vector<Float, 3> corner = tri.mesh->getVertex(tri.index, 0);
-                Vector<Float, 3> horizontal = tri.mesh->getVertex(tri.index, 1) - corner;
-                Vector<Float, 3> vertical = tri.mesh->getVertex(tri.index, 2) - corner;
+                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
+                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
+                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
 
-                Vector<Float, 3> rayCrossVertical = cross(r.getDirection(), vertical);
+                Float t, alpha, beta;
 
-                Float determinant = dot(horizontal, rayCrossVertical);
+                if (!rayTri(r.getOrigin(), r.getDirection(), corner0, corner1, corner2, intersection.t, t, alpha, beta)) return false;
 
-                if (std::fabs(determinant) <= constants::EPSILON_SQUARED) return false;
-
-                Float inverseDeterminant = 1 / determinant;
-
-                Vector<Float, 3> oc = r.getOrigin() - corner;
-
-                Float alpha = inverseDeterminant * dot(oc, rayCrossVertical);
-
-                if (alpha < 0 || alpha > 1) return false;
-
-                Vector<Float, 3> ocCrossHorizontal = cross(oc, horizontal);
-
-                Float beta = inverseDeterminant * dot(r.getDirection(), ocCrossHorizontal);
-
-                if (beta < 0 || alpha + beta > 1) return false;
-
-                Float t = inverseDeterminant * dot(vertical, ocCrossHorizontal);
-
-                if (t <= constants::EPSILON || t >= intersection.t) return false;
+                Vector<Float, 3> horizontal = corner1 - corner0;
+                Vector<Float, 3> vertical = corner2 - corner0;
 
                 Vector<Float, 3> flatNormal = normalize(cross(horizontal, vertical));
 
@@ -740,7 +648,7 @@ namespace lambda {
 
                 Float normalLengthSquared = normal.lengthSquared();
 
-                if (normalLengthSquared <= constants::EPSILON_SQUARED) normal = flatNormal;
+                if (normalLengthSquared <= constants::GRAZING_COS_SQUARED) normal = flatNormal;
                 else normal /= std::sqrt(normalLengthSquared);
 
                 Matrix<Float, 2> invDelta = inverse(Matrix<Float, 2>(textureCoordinate1[0] - textureCoordinate0[0], textureCoordinate2[0] - textureCoordinate0[0], textureCoordinate1[1] - textureCoordinate0[1], textureCoordinate2[1] - textureCoordinate0[1]));
@@ -750,15 +658,16 @@ namespace lambda {
 
                 Float tangentLengthSquared = tangent.lengthSquared();
 
-                if (tangentLengthSquared <= constants::EPSILON_SQUARED) tangent = normal == flatNormal ? rawTangent : cross(normal, rawTangent);
+                if (tangentLengthSquared <= constants::EPSILON_RELATIVE_SQUARED * rawTangent.lengthSquared()) tangent = std::fabs(normal[0]) > std::fabs(normal[1]) ? normalize(Vector<Float, 3>(-normal[2], 0, normal[0])) : normalize(Vector<Float, 3>(0, normal[2], -normal[1]));
                 else tangent /= std::sqrt(tangentLengthSquared);
 
                 intersection.object = this;
                 intersection.t = t;
-                intersection.point = r.at(t);
+                intersection.point = (1 - alpha - beta) * corner0 + alpha * corner1 + beta * corner2;
                 intersection.normal = normal;
                 intersection.tangent = tangent;
                 intersection.textureCoordinate = (1 - alpha - beta) * textureCoordinate0 + alpha * textureCoordinate1 + beta * textureCoordinate2;
+                intersection.geometricNormal = flatNormal;
                 intersection.isSurface = true;
 
                 return true;
@@ -770,62 +679,21 @@ namespace lambda {
                 Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
                 Vector<Float, 3> corner3 = patch.mesh->getVertex(patch.index, 3);
 
-                Float a = dot(cross(corner3 - corner0, corner1 - corner2), r.getDirection());
-                Float c = dot(cross(corner0 - r.getOrigin(), r.getDirection()), corner1 - corner0);
-                Float b = dot(cross(corner3 - r.getOrigin(), r.getDirection()), corner2 - corner3) - (a + c);
+                Float t1, u1, v1, t2, u2, v2;
 
-                if (std::fabs(a) <= constants::EPSILON && std::fabs(b) <= constants::EPSILON) return false;
+                if (!rayPatch(r.getOrigin(), r.getDirection(), corner0, corner1, corner2, corner3, intersection.t, t1, u1, v1, t2, u2, v2)) return false;
 
-                Float d = b * b - 4 * a * c;
+                Float t, u, v;
 
-                if (d < 0) return false;
-
-                d = std::sqrt(d);
-
-                Float q = Float(-0.5) * (b + (b < 0 ? -d : d));
-
-                Float u1 = std::fabs(a) <= constants::EPSILON ? -c / b : q / a;
-                Float u2 = std::fabs(a) > constants::EPSILON && std::fabs(q) > constants::EPSILON ? c / q : -1;
-
-                Float t = constants::MAX, u = 0, v = 0;
-
-                if (u1 >= 0 && u1 <= 1) {
-                    Vector<Float, 3> uo = utils::interpolate(corner0, corner3, u1);
-                    Vector<Float, 3> ud = utils::interpolate(corner1, corner2, u1) - uo;
-                    Vector<Float, 3> delta = uo - r.getOrigin();
-                    Vector<Float, 3> perp = cross(r.getDirection(), ud);
-
-                    Float perpLengthSquared = perp.lengthSquared();
-
-                    Float v1 = dot(cross(delta, r.getDirection()), perp) / perpLengthSquared;
-                    Float t1 = dot(cross(delta, ud), perp) / perpLengthSquared;
-
-                    if (v1 >= 0 && v1 <= 1 && t1 > constants::EPSILON) {
-                        t = t1;
-                        u = u1;
-                        v = v1;
-                    }
+                if (t1 > 0 && t1 < intersection.t && (t2 <= 0 || t1 < t2)) {
+                    t = t1;
+                    u = u1;
+                    v = v1;
+                } else {
+                    t = t2;
+                    u = u2;
+                    v = v2;
                 }
-
-                if (u2 >= 0 && u2 <= 1) {
-                    Vector<Float, 3> uo = utils::interpolate(corner0, corner3, u2);
-                    Vector<Float, 3> ud = utils::interpolate(corner1, corner2, u2) - uo;
-                    Vector<Float, 3> delta = uo - r.getOrigin();
-                    Vector<Float, 3> perp = cross(r.getDirection(), ud);
-
-                    Float perpLengthSquared = perp.lengthSquared();
-
-                    Float v2 = dot(cross(delta, r.getDirection()), perp) / perpLengthSquared;
-                    Float t2 = dot(cross(delta, ud), perp) / perpLengthSquared;
-
-                    if (v2 >= 0 && v2 <= 1 && t2 > constants::EPSILON && t2 < t) {
-                        t = t2;
-                        u = u2;
-                        v = v2;
-                    }
-                }
-
-                if (t >= intersection.t) return false;
 
                 Vector<Float, 3> dpdu = utils::interpolate(corner3 - corner0, corner2 - corner1, v);
                 Vector<Float, 3> dpdv = utils::interpolate(corner1 - corner0, corner2 - corner3, u);
@@ -856,7 +724,7 @@ namespace lambda {
 
                 Float normalLengthSquared = normal.lengthSquared();
 
-                if (normalLengthSquared <= constants::EPSILON_SQUARED) normal = flatNormal;
+                if (normalLengthSquared <= constants::GRAZING_COS_SQUARED) normal = flatNormal;
                 else normal /= std::sqrt(normalLengthSquared);
 
                 Matrix<Float, 2> invDelta = inverse(Matrix<Float, 2>(utils::interpolate(textureCoordinate3[0] - textureCoordinate0[0], textureCoordinate2[0] - textureCoordinate1[0], v), utils::interpolate(textureCoordinate3[1] - textureCoordinate0[1], textureCoordinate2[1] - textureCoordinate1[1], v), utils::interpolate(textureCoordinate1[0] - textureCoordinate0[0], textureCoordinate2[0] - textureCoordinate3[0], u), utils::interpolate(textureCoordinate1[1] - textureCoordinate0[1], textureCoordinate2[1] - textureCoordinate3[1], u)));
@@ -866,7 +734,7 @@ namespace lambda {
 
                 Float tangentLengthSquared = tangent.lengthSquared();
 
-                if (tangentLengthSquared <= constants::EPSILON_SQUARED) tangent = normal == flatNormal ? rawTangent : normalize(dpdu);
+                if (tangentLengthSquared <= constants::EPSILON_RELATIVE_SQUARED * rawTangent.lengthSquared()) tangent = std::fabs(normal[0]) > std::fabs(normal[1]) ? normalize(Vector<Float, 3>(-normal[2], 0, normal[0])) : normalize(Vector<Float, 3>(0, normal[2], -normal[1]));
                 else tangent /= std::sqrt(tangentLengthSquared);
 
                 intersection.object = this;
@@ -875,9 +743,171 @@ namespace lambda {
                 intersection.normal = normal;
                 intersection.tangent = tangent;
                 intersection.textureCoordinate = utils::interpolate(utils::interpolate(textureCoordinate0, textureCoordinate1, v), utils::interpolate(textureCoordinate3, textureCoordinate2, v), u);
+                intersection.geometricNormal = flatNormal;
                 intersection.isSurface = true;
 
                 return true;
+            }
+
+            LAMBDA_HOST_DEVICE static bool rayDisk(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, Float radius, Float tMax, Float & t, Float & radiusSquared, Vector<Float, 3> & hitPoint) {
+                if (std::fabs(direction[1]) == 0) return false;
+
+                t = -point[1] / direction[1];
+
+                if (t <= 0 || t >= tMax) return false;
+
+                hitPoint = point + direction * t;
+
+                radiusSquared = hitPoint[0] * hitPoint[0] + hitPoint[2] * hitPoint[2];
+
+                if (radiusSquared > radius * radius) return false;
+
+                return true;
+            }
+
+            LAMBDA_HOST_DEVICE static bool rayCylinder(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, Float radius, Float height, Float tMax, Float & t, Float & rho, Vector<Float, 3> & hitPoint) {
+                Float a = direction[0] * direction[0] + direction[2] * direction[2];
+
+                if (a <= constants::EPSILON_RELATIVE_SQUARED * direction.lengthSquared()) return false;
+
+                Float b = 2 * (point[0] * direction[0] + point[2] * direction[2]);
+                Float c = point[0] * point[0] + point[2] * point[2] - radius * radius;
+                Float d = b * b - 4 * a * c;
+
+                if (d < 0) return false;
+
+                d = std::sqrt(d);
+
+                Float t1 = (-b - d) / (2 * a);
+                Float t2 = (-b + d) / (2 * a);
+
+                if (t1 <= 0 && t2 <= 0) return false;
+
+                t = (t1 <= 0) ? t2 : t1;
+
+                hitPoint = point + direction * t;
+
+                rho = std::sqrt(point[0] * point[0] + point[2] * point[2]);
+
+                if (std::fabs(hitPoint[1]) > Float(0.5) * height) {
+                    if (rho > radius) return false;
+
+                    t = t2;
+
+                    hitPoint = point + direction * t;
+
+                    if (std::fabs(hitPoint[1]) > Float(0.5) * height) return false;
+                };
+
+                return t > 0 && t < tMax;
+            }
+
+            LAMBDA_HOST_DEVICE static bool rayTri(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, const Vector<Float, 3> & corner0, const Vector<Float, 3> & corner1, const Vector<Float, 3> & corner2, Float tMax, Float & t, Float & alpha, Float & beta) {
+                Vector<Float, 3> p0 = corner0 - point;
+                Vector<Float, 3> p1 = corner1 - point;
+                Vector<Float, 3> p2 = corner2 - point;
+
+                Float ax = std::fabs(direction[0]);
+                Float ay = std::fabs(direction[1]);
+                Float az = std::fabs(direction[2]);
+
+                int kz = (ax > ay && ax > az) ? 0 : (ay > az) ? 1 : 2;
+                int kx = kz == 2 ? 0 : kz + 1;
+                int ky = kx == 2 ? 0 : kx + 1;
+
+                if (direction[kz] == 0) return false;
+
+                Float sx = -direction[kx] / direction[kz];
+                Float sy = -direction[ky] / direction[kz];
+                Float sz = 1 / direction[kz];
+
+                p0[kx] += sx * p0[kz];
+                p0[ky] += sy * p0[kz];
+                p1[kx] += sx * p1[kz];
+                p1[ky] += sy * p1[kz];
+                p2[kx] += sx * p2[kz];
+                p2[ky] += sy * p2[kz];
+
+                Float e0 = p1[kx] * p2[ky] - p1[ky] * p2[kx];
+                Float e1 = p2[kx] * p0[ky] - p2[ky] * p0[kx];
+                Float e2 = p0[kx] * p1[ky] - p0[ky] * p1[kx];
+
+                if (e0 == 0 || e1 == 0 || e2 == 0) {
+                    e0 = Float(double(p1[kx]) * double(p2[ky]) - double(p1[ky]) * double(p2[kx]));
+                    e1 = Float(double(p2[kx]) * double(p0[ky]) - double(p2[ky]) * double(p0[kx]));
+                    e2 = Float(double(p0[kx]) * double(p1[ky]) - double(p0[ky]) * double(p1[kx]));
+                }
+
+                if ((e0 < 0 || e1 < 0 || e2 < 0) && (e0 > 0 || e1 > 0 || e2 > 0)) return false;
+
+                Float determinant = e0 + e1 + e2;
+
+                if (determinant == 0) return false;
+
+                t = (e0 * p0[kz] + e1 * p1[kz] + e2 * p2[kz]) * sz;
+
+                if ((determinant < 0 && (t >= 0 || t < tMax * determinant)) || (determinant > 0 && (t <= 0 || t > tMax * determinant))) return false;
+
+                Float inverseDeterminant = 1 / determinant;
+
+                t *= inverseDeterminant;
+                
+                alpha = e1 * inverseDeterminant;
+                beta = e2 * inverseDeterminant;
+
+                return true;
+            }
+
+            LAMBDA_HOST_DEVICE static bool rayPatch(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, const Vector<Float, 3> & corner0, const Vector<Float, 3> & corner1, const Vector<Float, 3> & corner2, const Vector<Float, 3> & corner3, Float tMax, Float & t1, Float & u1, Float & v1, Float & t2, Float & u2, Float & v2) {
+                Float a = dot(cross(corner3 - corner0, corner1 - corner2), direction);
+                Float c = dot(cross(corner0 - point, direction), corner1 - corner0);
+                Float b = dot(cross(corner3 - point, direction), corner2 - corner3) - (a + c);
+
+                if (a == 0 && b == 0) return 0;
+
+                Float d = b * b - 4 * a * c;
+
+                if (d < 0) return 0;
+
+                d = std::sqrt(d);
+
+                Float q = Float(-0.5) * (b + (b < 0 ? -d : d));
+
+                u1 = a == 0 ? -c / b : q / a;
+                u2 = a != 0 && q != 0 ? c / q : -1;
+
+                t1 = constants::MAX;
+                v1 = 0;
+                t2 = constants::MAX;
+                v2 = 0;
+
+                if (u1 >= 0 && u1 <= 1) {
+                    Vector<Float, 3> uo = utils::interpolate(corner0, corner3, u1);
+                    Vector<Float, 3> ud = utils::interpolate(corner1, corner2, u1) - uo;
+                    Vector<Float, 3> delta = uo - point;
+                    Vector<Float, 3> perp = cross(direction, ud);
+
+                    Float perpLengthSquared = perp.lengthSquared();
+
+                    v1 = dot(cross(delta, direction), perp) / perpLengthSquared;
+
+                    if (v1 >= 0 && v1 <= 1) t1 = dot(cross(delta, ud), perp) / perpLengthSquared;
+                }
+
+                if (u2 >= 0 && u2 <= 1) {
+                    Vector<Float, 3> uo = utils::interpolate(corner0, corner3, u2);
+                    Vector<Float, 3> ud = utils::interpolate(corner1, corner2, u2) - uo;
+                    Vector<Float, 3> delta = uo - point;
+                    Vector<Float, 3> perp = cross(direction, ud);
+
+                    Float perpLengthSquared = perp.lengthSquared();
+
+                    v2 = dot(cross(delta, direction), perp) / perpLengthSquared;
+
+                    if (v2 >= 0 && v2 <= 1) t2 = dot(cross(delta, ud), perp) / perpLengthSquared;
+                }
+
+                return (t1 > 0 && t1 < tMax) || (t2 > 0 && t2 < tMax);
             }
     };
 }

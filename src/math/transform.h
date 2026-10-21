@@ -23,6 +23,10 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE Float scaleSquared(int i) const { return Vector<Float, 3>(transformMatrix.get(0, i), transformMatrix.get(1, i), transformMatrix.get(2, i)).lengthSquared();}
 
+            LAMBDA_HOST_DEVICE Vector<Float, 3> scale() const { return Vector<Float, 3>(scale(0), scale(1), scale(2)); }
+
+            LAMBDA_HOST_DEVICE Vector<Float, 3> scaleSquared() const { return Vector<Float, 3>(scaleSquared(0), scaleSquared(1), scaleSquared(2)); }
+
             LAMBDA_HOST_DEVICE Vector<Float, 3> pointToLocal(const Vector<Float, 3> & p) const { return Vector<Float, 3>(inverseTransformMatrix * Vector<Float, 4>(p, 1)); }
 
             LAMBDA_HOST_DEVICE Vector<Float, 3> pointToWorld(const Vector<Float, 3> & p) const { return Vector<Float, 3>(transformMatrix * Vector<Float, 4>(p, 1)); }

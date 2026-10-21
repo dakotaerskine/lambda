@@ -20,16 +20,17 @@
 namespace lambda {
     namespace utils {
         template <typename T>
-        LAMBDA_HOST_DEVICE inline T min(const T & a, const T & b) { return a < b ? a : b; }
+        LAMBDA_HOST_DEVICE inline T clamp(T x, T minValue, T maxValue) {
+            if (!(x >= minValue)) return minValue;
+            if (!(x <= maxValue)) return maxValue;
 
-        template <typename T>
-        LAMBDA_HOST_DEVICE inline T max(const T & a, const T & b) { return a > b ? a : b; }
-
-        template <typename T>
-        LAMBDA_HOST_DEVICE inline T clamp(T x, T minValue, T maxValue) { return min(max(x, minValue), maxValue); }
+            return x;
+        }
 
         template <typename T>
         LAMBDA_HOST_DEVICE inline T interpolate(T a, T b, Float t) { return (1 - t) * a + t * b; }
+
+        LAMBDA_HOST_DEVICE inline bool nearlyEqual(Float a, Float b) { return std::fabs(a - b) <= constants::EPSILON_RELATIVE * std::fmax(std::fabs(a), std::fabs(b)); }
 
         LAMBDA_HOST_DEVICE inline Float randomFloat(Random & state) { return state.next(); }
 
@@ -40,7 +41,7 @@ namespace lambda {
 
             Float x = u * (a + b) / (a + std::sqrt(interpolate(a * a, b * b, u)));
 
-            return std::fmin(x, 1 - constants::EPSILON);
+            return std::fmin(x, std::nextafter(Float(1), Float(0)));
         }
 
         LAMBDA_HOST_DEVICE inline Vector<Float, 3> randomUnitVector(Random & state) {
@@ -93,6 +94,20 @@ namespace lambda {
             return x * u + y * v + z * w;
         }
 
+        LAMBDA_HOST_DEVICE inline Float pointError(const Vector<Float, 3> & origin, const Vector<Float, 3> & point, const Vector<Float, 3> & transformedPoint, const Vector<Float, 3> & scaleSquared) {
+            Float maxScale = std::sqrt(std::fmax(std::fabs(scaleSquared[0]), std::fmax(std::fabs(scaleSquared[1]), std::fabs(scaleSquared[2]))));
+
+            Float magnitude = 0;
+
+            for (int i = 0; i < 3; i++) {
+                magnitude = std::fmax(magnitude, std::fabs(origin[i]));
+                magnitude = std::fmax(magnitude, std::fabs(transformedPoint[i]));
+                magnitude = std::fmax(magnitude, std::fabs(point[i]) * maxScale);
+            }
+
+            return constants::POINT_ERROR_SCALE * constants::EPSILON_MACHINE * magnitude;
+        }
+
         LAMBDA_HOST_DEVICE inline Vector<Float, 3> reflected(const Vector<Float, 3> & v, const Vector<Float, 3> & n) {
             return v - 2 * dot(v, n) * n;
         }
@@ -134,7 +149,7 @@ namespace lambda {
         }
 
         LAMBDA_HOST_DEVICE inline Float ggxD(const Vector<Float, 3> & mLocal, Float alphaX, Float alphaY) {
-            if (mLocal[2] <= constants::EPSILON) return 0;
+            if (mLocal[2] <= constants::GRAZING_COS) return 0;
 
             Float x2 = mLocal[0] * mLocal[0] / (alphaX * alphaX);
             Float y2 = mLocal[1] * mLocal[1] / (alphaY * alphaY);
@@ -146,7 +161,7 @@ namespace lambda {
         }
 
         LAMBDA_HOST_DEVICE inline Float ggxLambda(const Vector<Float, 3> & vLocal, Float alphaX, Float alphaY) {
-            if (vLocal[2] <= constants::EPSILON) return 0;
+            if (vLocal[2] <= constants::GRAZING_COS) return 0;
 
             Float x2 = vLocal[0] * vLocal[0] * (alphaX * alphaX);
             Float y2 = vLocal[1] * vLocal[1] * (alphaY * alphaY);
@@ -277,9 +292,11 @@ namespace lambda {
         LAMBDA_HOST_DEVICE inline double xyz31(int lambda, int i) { return constants::CIE_XYZ_1931[(lambda - constants::CIE_LAMBDA_MIN) * 3 + i]; }
 
         LAMBDA_HOST_DEVICE inline Float xyz31(Float lambda, int i) {
+            lambda = std::fmax(lambda, Float(constants::CIE_LAMBDA_MIN));
+
             int min = int(lambda);
 
-            if (min == constants::CIE_LAMBDA_MAX) return Float(xyz31(min, i));
+            if (min >= constants::CIE_LAMBDA_MAX) return Float(xyz31(constants::CIE_LAMBDA_MAX, i));
 
             int max = min + 1;
 
@@ -429,7 +446,7 @@ namespace lambda {
                 z = r;
             }
 
-            if (x <= constants::EPSILON) return Vector<Float, 3>(upsamplingLUT(space, 0, 0, 0, 0, 0), upsamplingLUT(space, 0, 0, 0, 0, 1), upsamplingLUT(space, 0, 0, 0, 0, 2));
+            if (x <= constants::BLACK_LEVEL) return Vector<Float, 3>(upsamplingLUT(space, 0, 0, 0, 0, 0), upsamplingLUT(space, 0, 0, 0, 0, 1), upsamplingLUT(space, 0, 0, 0, 0, 2));
 
             Float gridScale = (constants::UPSAMPLING_RESOLUTION - 1) / x;
 
@@ -480,8 +497,8 @@ namespace lambda {
             Float d2 = triangleSign(px, py, bx, by, cx, cy);
             Float d3 = triangleSign(px, py, cx, cy, ax, ay);
 
-            bool hasNeg = (d1 < -constants::EPSILON) || (d2 < -constants::EPSILON) || (d3 < -constants::EPSILON);
-            bool hasPos = (d1 > constants::EPSILON) || (d2 > constants::EPSILON) || (d3 > constants::EPSILON);
+            bool hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            bool hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
 
             return !(hasNeg && hasPos);
         }

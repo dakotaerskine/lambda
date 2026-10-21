@@ -53,8 +53,8 @@ namespace lambda {
 
                 Random state(0, 0);
 
-                for (int i = 0; i < film->getWidth(); i++)
-                    for (int j = 0; j < film->getHeight(); j++) {
+                for (int j = 0; j < film->getHeight(); j++)
+                    for (int i = 0; i < film->getWidth(); i++) {
                         Vector<Float, 3> color = toRGB * film->getPixel(i, j);
 
                         pixels[(j * film->getWidth() + i) * 3 + 0] = utils::quantize(utils::toneMap(color[0]), state);
@@ -111,8 +111,8 @@ namespace lambda {
 
                 Matrix<double, 3> toRGB = utils::toRGBMatrix(film->getSpace());
 
-                for (int i = 0; i < image.width; i++)
-                    for (int j = 0; j < image.height; j++) {
+                for (int j = 0; j < image.height; j++)
+                    for (int i = 0; i < image.width; i++) {
                         Vector<float, 3> color = toRGB * film->getPixel(i, j);
 
                         channelR[j * image.width + i] = std::fmin(color[0], float(65504));
@@ -155,13 +155,13 @@ namespace lambda {
 
                 Matrix<Float, 4> worldToCameraMatrix = integrator->getCamera()->getWorldToCamera();
 
-                for (int i = 0; i < 16; i++) worldToCamera[i] = float(worldToCameraMatrix.get(i / 4, i % 4));
+                for (int i = 0; i < 16; i++) worldToCamera[i] = float(worldToCameraMatrix.get(i % 4, i / 4));
 
                 float worldToNDC[16];
 
                 Matrix<Float, 4> worldToNDCMatrix = integrator->getCamera()->getWorldToNDC();
 
-                for (int i = 0; i < 16; i++) worldToNDC[i] = float(worldToNDCMatrix.get(i / 4, i % 4));
+                for (int i = 0; i < 16; i++) worldToNDC[i] = float(worldToNDCMatrix.get(i % 4, i / 4));
 
                 int samplesPerPixel = integrator->getSamples();
                 float renderTimeSeconds = float(duration);

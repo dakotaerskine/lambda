@@ -63,7 +63,7 @@ namespace lambda {
                         conditionalCDF[y * width + x] = rowWeight;
                     }
 
-                    if (rowWeight > constants::EPSILON)
+                    if (rowWeight > 0)
                         for (int x = 0; x < width; x++) conditionalCDF[y * width + x] /= rowWeight;
                     else
                         for (int x = 0; x < width; x++) conditionalCDF[y * width + x] = (Float(x) + Float(1)) / Float(width);
@@ -74,7 +74,7 @@ namespace lambda {
                     marginalCDF[y] = totalWeight;
                 }
 
-                if (totalWeight > constants::EPSILON) {
+                if (totalWeight > 0) {
                     for (int y = 0; y < height; y++) marginalCDF[y] /= totalWeight;
                 }
                 else {
@@ -117,7 +117,7 @@ namespace lambda {
                 int bestSplit = -1;
 
                 for (int i = 0; i < 3; i++)
-                    if (maxCenter[i] - minCenter[i] > constants::EPSILON) {
+                    if (maxCenter[i] - minCenter[i] > 0) {
                         Vector<Float, 3> binMin[constants::BVH_BIN_COUNT];
                         Vector<Float, 3> binMax[constants::BVH_BIN_COUNT];
                         Float binCount[constants::BVH_BIN_COUNT];
@@ -176,7 +176,7 @@ namespace lambda {
                         }
 
                         for (int j = 0; j < constants::BVH_BIN_COUNT - 1; j++) {
-                            if (leftCount[j] <= constants::EPSILON || rightCount[j + 1] <= constants::EPSILON) continue;
+                            if (leftCount[j] <= 0 || rightCount[j + 1] <= 0) continue;
 
                             Vector<Float, 3> leftExtents = leftMax[j] - leftMin[j];
                             Vector<Float, 3> rightExtents = rightMax[j + 1] - rightMin[j + 1];
@@ -234,13 +234,7 @@ namespace lambda {
 
             template <typename T>
             static Float elementPower(const T * element, bool materialBlind) {
-                if constexpr (std::is_same_v<T, Instance>) {
-                    Float totalPower = 0;
-
-                    for (int i = 0; i < element->getCount(); i++) totalPower += element->getPower(i);
-
-                    return totalPower;
-                }
+                if constexpr (std::is_same_v<T, Instance>) return element->getPower();
                 else {
                     Float averageEmission = 1;
 

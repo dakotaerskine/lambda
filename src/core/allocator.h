@@ -18,7 +18,20 @@ namespace lambda {
 
             Allocator & operator=(const Allocator &) = delete;
 
-            ~Allocator() { for (const std::pair<void *, size_t> & pair : allocations) free(pair.first); }
+            ~Allocator() {
+                for (void * pointer : hostAllocations) freeHost(pointer);
+                for (const std::pair<void *, size_t> & pair : allocations) free(pair.first);
+            }
+
+            template <typename T>
+            requires (std::is_trivially_destructible_v<T> && alignof(T) <= alignof(std::max_align_t))
+            T * makeHost(const T & value) {
+                T * pointer = rawHost<T>(1);
+
+                new (pointer) T(value);
+
+                return pointer;
+            }
 
             template <typename T>
             requires (std::is_trivially_destructible_v<T> && alignof(T) <= alignof(std::max_align_t))
@@ -73,9 +86,25 @@ namespace lambda {
             #endif
 
         private:
+            std::vector<void *> hostAllocations;
             std::vector<std::pair<void *, size_t>> allocations;
 
             #ifdef __CUDACC__
+                template <typename T>
+                T * rawHost(int n) {
+                    if (n < 0) error::lengthError(n);
+
+                    if (n == 0) return nullptr;
+
+                    void * pointer;
+
+                    error::checkCudaError(cudaMallocHost(&pointer, n * sizeof(T)), "failed to allocate host memory");
+
+                    hostAllocations.push_back(pointer);
+
+                    return (T *)pointer;
+                }
+
                 template <typename T>
                 T * raw(int n) {
                     if (n < 0) error::lengthError(n);
@@ -94,7 +123,24 @@ namespace lambda {
                 }
 
                 void free(void * pointer) { error::checkCudaError(cudaFree(pointer), "failed to free device memory"); }
+
+                void freeHost(void * pointer) { error::checkCudaError(cudaFreeHost(pointer), "failed to free host memory"); }
             #else
+                template <typename T>
+                T * rawHost(int n) {
+                    if (n < 0) error::lengthError(n);
+
+                    if (n == 0) return nullptr;
+
+                    void * pointer = std::malloc(n * sizeof(T));
+
+                    if (!pointer) error::badAllocError();
+
+                    hostAllocations.push_back(pointer);
+
+                    return (T *)pointer;
+                }
+
                 template <typename T>
                 T * raw(int n) {
                     if (n < 0) error::lengthError(n);
@@ -113,6 +159,8 @@ namespace lambda {
                 }
 
                 void free(void * pointer) { std::free(pointer); }
+
+                void freeHost(void * pointer) { free(pointer); }
             #endif
     };
 }

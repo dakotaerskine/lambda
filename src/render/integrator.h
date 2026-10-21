@@ -74,7 +74,11 @@ namespace lambda {
 
                         SampledSpectrum spectrum = trace(ray, state);
 
-                        color += film->toXYZ(spectrum, ray.getLambdas());
+                        Vector<Float, 3> xyz = film->toXYZ(spectrum, ray.getLambdas());
+
+                        if (std::isnan(xyz[0]) || std::isnan(xyz[1]) || std::isnan(xyz[2])) xyz = Vector<Float, 3>(0, 0, 0);
+
+                        color += xyz;
                     }
 
                 film->setPixel(px, py, color / Float(sqrtSamples * sqrtSamples));
@@ -85,6 +89,8 @@ namespace lambda {
                 SampledSpectrum throughput(1);
                 SampledSpectrum unidirectionalDensity(1);
                 SampledSpectrum lightSamplingDensity;
+
+                Float etaScale = 1;
 
                 bool collapsed = false;
 
@@ -138,14 +144,14 @@ namespace lambda {
                         if (intersection.isSurface) {
                             if (!hitSurface) break;
 
-                            if (!material) r = Ray(intersection.transformedPoint, r.getDirection(), r.getLambdas(), dot(intersection.transformedNormal, r.getDirection()) > constants::EPSILON ? medium0 : medium1);
+                            if (!material) r = Ray(intersection.transformedPoint - intersection.geometricNormal * intersection.pointError, r.getDirection(), r.getLambdas(), dot(intersection.transformedNormal, r.getDirection()) >= constants::GRAZING_COS ? medium0 : medium1);
                         }
                     }
 
                     if ((!hitSurface && intersection.isSurface) || (material && material->isEmissive())) {
                         SampledSpectrum combinedDensity = unidirectionalDensity;
 
-                        if (totalPower > constants::EPSILON) {
+                        if (totalPower > 0) {
                             lightSamplingDensity *= scene->lightProbabilityDensity(instance, objectIndex, scatterPoint, r.getDirection());
 
                             combinedDensity += lightSamplingDensity;
@@ -172,7 +178,11 @@ namespace lambda {
 
                     bool previousCollapsed = collapsed;
 
-                    SampledSpectrum scatterDensity, attenuation = intersection.isSurface ? material->sample(intersection, r, medium1, scatterDensity, collapsed, state) : r.getMedium()->sample(intersection, r, scatterDensity, collapsed, state);
+                    Float radianceScale = 1;
+
+                    SampledSpectrum scatterDensity, attenuation = intersection.isSurface ? material->sample(intersection, r, medium1, scatterDensity, radianceScale, collapsed, state) : r.getMedium()->sample(intersection, r, scatterDensity, collapsed, state);
+
+                    etaScale /= radianceScale;
 
                     if (attenuation.max() <= 0 || !(scatterDensity[0] > 0)) break;
 
@@ -181,21 +191,25 @@ namespace lambda {
                         unidirectionalDensity[0] = 1;
                     }
 
-                    lightSamplingDensity = (!intersection.isSurface || (dot(intersection.transformedNormal, r.getDirection()) > constants::EPSILON && !material->isSpecular(intersection))) ? unidirectionalDensity / scatterDensity[0] : SampledSpectrum(0);
+                    lightSamplingDensity = (!intersection.isSurface || (dot(intersection.transformedNormal, r.getDirection()) > constants::GRAZING_COS && !material->isSpecular(intersection))) ? unidirectionalDensity / scatterDensity[0] : SampledSpectrum(0);
                     unidirectionalDensity *= scatterDensity / scatterDensity[0];
 
                     scatterPoint = intersection.transformedPoint;
 
                     throughput *= attenuation;
 
-                    if (r.getDirection().lengthSquared() <= constants::EPSILON) break;
+                    if (!(r.getDirection().lengthSquared() > 0)) break;
 
                     if (i >= constants::RR_START_DEPTH) {
-                        Float q = 1 - utils::clamp((throughput / unidirectionalDensity.average()).max(), Float(0.05), Float(0.95));
+                        Float beta = (throughput * etaScale / unidirectionalDensity.average()).max();
 
-                        if (utils::randomFloat(state) < q) break;
+                        if (beta < 1) {
+                            Float q = std::fmax(beta, Float(0.05));
 
-                        throughput /= 1 - q;
+                            if (utils::randomFloat(state) >= q) break;
+
+                            throughput /= q;
+                        }
                     }
                 }
 
@@ -213,7 +227,7 @@ namespace lambda {
 
                     Vector<Float, 3> lightDirection = scene->sampleLight(intersection.transformedPoint, lightDensity, lightInstance, lightObjectIndex, state);
 
-                    Ray shadowRay(intersection.transformedPoint, lightDirection, r.getLambdas(), r.getMedium());
+                    Ray shadowRay(intersection.transformedPoint + intersection.geometricNormal * intersection.pointError, lightDirection, r.getLambdas(), r.getMedium());
 
                     Intersection shadowIntersection;
 
@@ -256,7 +270,7 @@ namespace lambda {
 
                             interfaceObjectIndex = shadowIntersection.i;
 
-                            shadowRay = Ray(shadowIntersection.transformedPoint, lightDirection, r.getLambdas(), shadowIntersection.frontFacing ? interfaceInstance->getMedium1(interfaceObjectIndex) : interfaceInstance->getMedium0(interfaceObjectIndex));
+                            shadowRay = Ray(shadowIntersection.transformedPoint - shadowIntersection.geometricNormal * shadowIntersection.pointError, lightDirection, r.getLambdas(), shadowIntersection.frontFacing ? interfaceInstance->getMedium1(interfaceObjectIndex) : interfaceInstance->getMedium0(interfaceObjectIndex));
                         } while (!interfaceInstance->getMaterial(interfaceObjectIndex));
 
                         if (transmittance.max() > 0) {

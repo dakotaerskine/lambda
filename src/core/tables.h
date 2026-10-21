@@ -80,13 +80,13 @@ namespace lambda {
             }
 
             static double solveLM(ColorSpace space, const Vector<double, 3> & color, Vector<double, 3> & coefficients, const double rgbTable[3][constants::CIE_LAMBDA_BINS], const Vector<double, 3> & whitepoint, int iterations = 15) {
-                double h = constants::LM_EPSILON;
+                double h = constants::LM_JACOBIAN_STEP;
 
                 Vector<double, 3> res = residual(space, coefficients, color, rgbTable, whitepoint);
                 double cost = res.lengthSquared();
-                double lambda = constants::LM_EPSILON;
+                double lambda = constants::LM_INITIAL_DAMPING;
 
-                for (int i = 0; i < iterations && cost > constants::LM_EPSILON_SQUARED; i++) {
+                for (int i = 0; i < iterations && cost > constants::LM_COST_TOLERANCE; i++) {
                     Matrix<double, 3> jacobian;
 
                     for (int j = 0; j < 3; j++) {
@@ -114,14 +114,15 @@ namespace lambda {
 
                     bool accepted = false;
 
-                    for (int j = 0; j < 12 && !accepted; j++) {
+                    for (int j = 0; j < constants::LM_MAX_ATTEMPTS && !accepted; j++) {
                         Matrix<double, 3> M = A;
 
                         for (int k = 0; k < 3; k++)
                             for (int l = 0; l < 3; l++) M.get(k, l) += (k == l ? lambda : 0);
 
-                        if (std::fmax(std::fabs(M.get(0, 0)) + std::fabs(M.get(1, 0)) + std::fabs(M.get(2, 0)), std::fmax(std::fabs(M.get(0, 1)) + std::fabs(M.get(1, 1)) + std::fabs(M.get(2, 1)), std::fabs(M.get(0, 2)) + std::fabs(M.get(1, 2)) + std::fabs(M.get(2, 2)))) < constants::LM_EPSILON) {
-                            lambda *= 10;
+                        if (std::fmax(std::fabs(M.get(0, 0)) + std::fabs(M.get(1, 0)) + std::fabs(M.get(2, 0)), std::fmax(std::fabs(M.get(0, 1)) + std::fabs(M.get(1, 1)) + std::fabs(M.get(2, 1)), std::fabs(M.get(0, 2)) + std::fabs(M.get(1, 2)) + std::fabs(M.get(2, 2)))) < constants::LM_SINGULAR_NORM) {
+                            lambda *= constants::LM_DAMPING_GROWTH;
+
                             continue;
                         }
 
@@ -133,12 +134,13 @@ namespace lambda {
                         if (trialCost < cost) {
                             coefficients = trial;
                             cost = trialCost;
-                            lambda = std::fmax(lambda * 0.5, constants::LM_EPSILON_SQUARED);
+                            lambda = std::fmax(lambda * constants::LM_DAMPING_DECAY, constants::LM_MIN_DAMPING);
                             accepted = true;
                         }
                         else {
-                            lambda *= 10.0;
-                            if (lambda > 1e12) break;
+                            lambda *= constants::LM_DAMPING_GROWTH;
+
+                            if (lambda > constants::LM_MAX_DAMPING) break;
                         }
                     }
 

@@ -40,7 +40,7 @@ namespace lambda {
             LAMBDA_HOST_DEVICE Float lightProbabilityDensity(const Instance * instance, int objectIndex, const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 Float totalPower = getTotalPower();
 
-                if (totalPower <= constants::EPSILON) return 0;
+                if (totalPower <= 0) return 0;
 
                 if (!instance) {
                     Float density = 0;
@@ -59,7 +59,7 @@ namespace lambda {
 
                 Float totalPower = getTotalPower();
 
-                if (totalPower <= constants::EPSILON) {
+                if (totalPower <= 0) {
                     probabilityDensity = 0;
 
                     return Vector<Float, 3>(0, 1, 0);
@@ -133,7 +133,8 @@ namespace lambda {
                 bool hitObject = false;
 
                 if constexpr (occluded)
-                    if (occludedInstance) occludedInstance->intersect(occludedObjectIndex, intersection, r);
+                    if (occludedInstance)
+                        if (!occludedInstance->intersect(occludedObjectIndex, intersection, r)) return true;
 
                 while (stackSize > 0) {
                     const BVHNode<Instance> * current = stack[--stackSize];

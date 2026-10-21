@@ -80,7 +80,7 @@ namespace lambda {
                 if (yIndex > 0) marginal -= marginalCDF[yIndex - 1];
                 if (xIndex > 0) conditional -= conditionalCDF[yIndex * width + xIndex - 1];
 
-                return marginal * conditional * Float(width * height) / std::fmax(jacobian(textureCoordinate[1]), constants::EPSILON);
+                return marginal * conditional * Float(width * height) / std::fmax(jacobian(textureCoordinate[1]), 2 * constants::PI * constants::PI * constants::GRAZING_COS);
             }
 
             LAMBDA_HOST_DEVICE Vector<Float, 3> sample(Random & state) const {
@@ -103,7 +103,7 @@ namespace lambda {
 
                 Float tangentLengthSquared = intersection.tangent.lengthSquared();
 
-                if (tangentLengthSquared <= constants::EPSILON_SQUARED) intersection.tangent = Vector<Float, 3>(1, 0, 0);
+                if (tangentLengthSquared <= constants::EPSILON_RELATIVE_SQUARED) intersection.tangent = Vector<Float, 3>(1, 0, 0);
                 else intersection.tangent /= std::sqrt(tangentLengthSquared);
 
                 getTextureCoordinate(direction, intersection.textureCoordinate);
@@ -133,8 +133,8 @@ namespace lambda {
                 Float r = std::sqrt(std::fmax(1 - std::fabs(direction[1]), Float(0)));
                 Float denominator = r * std::sqrt(std::fmax(2 - r * r, Float(0)));
 
-                Float cosPhi = r > constants::EPSILON_SQUARED ? direction[0] / denominator : 1;
-                Float sinPhi = r > constants::EPSILON_SQUARED ? direction[2] / denominator : 0;
+                Float cosPhi = r > constants::GRAZING_COS_SQUARED ? direction[0] / denominator : 1;
+                Float sinPhi = r > constants::GRAZING_COS_SQUARED ? direction[2] / denominator : 0;
 
                 Float phi = std::atan2(std::fabs(sinPhi), std::fabs(cosPhi));
 
@@ -205,7 +205,7 @@ namespace lambda {
 
                 if (sum > 1) direction[1] *= -1;
 
-                if (r > constants::EPSILON) {
+                if (r > constants::GRAZING_COS_SQUARED) {
                     Float delta = std::fabs(v) - std::fabs(u);
 
                     Float phi = (constants::PI / 4) * (delta / r + 1);

@@ -52,6 +52,8 @@ namespace lambda {
                         tMax = temp;
                     }
 
+                    tMax *= 1 + 6 * constants::EPSILON_MACHINE;
+
                     t1 = std::fmax(tMin, t1);
                     t2 = std::fmin(tMax, t2);
                 }

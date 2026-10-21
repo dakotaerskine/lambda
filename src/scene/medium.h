@@ -73,7 +73,7 @@ namespace lambda {
                         Float sigmaS = homogeneous.sigmaS->get(r.getLambdas()[i]);
                         Float sigmaT = sigmaA + sigmaS;
 
-                        if (intersection.t >= constants::MAX) attenuation[i] = sigmaT > constants::EPSILON ? 0 : 1;
+                        if (intersection.t >= constants::MAX) attenuation[i] = sigmaT > 0 ? 0 : 1;
                         else attenuation[i] = std::exp(-sigmaT * intersection.t);
                     }
 
@@ -85,7 +85,7 @@ namespace lambda {
                 Float sigmaS = homogeneous.sigmaS->get(r.getLambdas()[0]);
                 Float sigmaT = sigmaA + sigmaS;
 
-                Float t = sigmaT > constants::EPSILON ? -std::log(utils::randomFloat(state)) / sigmaT : constants::MAX;
+                Float t = sigmaT > 0 ? -std::log(1 - utils::randomFloat(state)) / sigmaT : constants::MAX;
 
                 bool isSurface = t >= intersection.t;
 
@@ -116,11 +116,13 @@ namespace lambda {
             }
 
             LAMBDA_HOST_DEVICE SampledSpectrum evaluateHomogeneous(const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
-                if (std::fabs(homogeneous.g) <= constants::EPSILON) probabilityDensity = SampledSpectrum(1 / (4 * constants::PI));
+                if (std::fabs(homogeneous.g) <= constants::ISOTROPIC_G) probabilityDensity = SampledSpectrum(1 / (4 * constants::PI));
                 else {
-                    Float g2 = homogeneous.g * homogeneous.g;
+                    Float c = dot(-rIn.getDirection(), rOut.getDirection());
 
-                    probabilityDensity = SampledSpectrum(1 / (4 * constants::PI) * (1 - g2) / std::pow(1 + g2 + 2 * homogeneous.g * dot(-rIn.getDirection(), rOut.getDirection()), Float(1.5)));
+                    Float d = homogeneous.g >= 0 ? (1 - homogeneous.g) * (1 - homogeneous.g) + 2 * homogeneous.g * (1 + c) : (1 + homogeneous.g) * (1 + homogeneous.g) - 2 * homogeneous.g * (1 - c);
+
+                    probabilityDensity = SampledSpectrum((1 - homogeneous.g * homogeneous.g) / (4 * constants::PI * d * std::sqrt(d)));
                 }
 
                 SampledSpectrum attenuation;
@@ -134,7 +136,7 @@ namespace lambda {
             LAMBDA_HOST_DEVICE SampledSpectrum sampleHomogeneous(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 Float cosTheta = 0;
 
-                if (std::fabs(homogeneous.g) <= constants::EPSILON) cosTheta = 1 - 2 * utils::randomFloat(state);
+                if (std::fabs(homogeneous.g) <= constants::ISOTROPIC_G) cosTheta = 1 - 2 * utils::randomFloat(state);
                 else {
                     Float g2 = homogeneous.g * homogeneous.g;
 

@@ -24,7 +24,7 @@ namespace lambda {
 
             integrator->renderPixel(px, py, state);
 
-            atomicAdd(completed, 1);
+            atomicAdd_system(completed, 1);
         }
     #endif
 
@@ -39,7 +39,7 @@ namespace lambda {
 
                 outputProgress(program, 0, totalPixels);
 
-                int * completed = allocator.make(0);
+                int * completed = allocator.makeHost(0);
 
                 std::thread thread = render(integrator, completed);
 

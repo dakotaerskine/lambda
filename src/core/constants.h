@@ -1,5 +1,7 @@
 #pragma once
 
+#include <limits>
+
 #include "core/platform.h"
 
 namespace lambda {
@@ -9,13 +11,11 @@ namespace lambda {
         inline constexpr int BLOCK_W = 16;
         inline constexpr int BLOCK_H = 16;
 
-        inline constexpr Float EPSILON = Float(1e-4);
-        inline constexpr Float EPSILON_SQUARED = EPSILON * EPSILON;
+        inline constexpr Float EPSILON_MACHINE = std::numeric_limits<Float>::epsilon();
+        inline constexpr Float EPSILON_RELATIVE = 16 * EPSILON_MACHINE;
+        inline constexpr Float EPSILON_RELATIVE_SQUARED = EPSILON_RELATIVE * EPSILON_RELATIVE;
 
         inline constexpr Float PI = Float(3.14159265358979323846);
-
-        inline constexpr double LM_EPSILON = 1e-4;
-        inline constexpr double LM_EPSILON_SQUARED = LM_EPSILON * LM_EPSILON;
 
         inline constexpr int AREA_SUBDIVISIONS = 3;
 
@@ -26,7 +26,27 @@ namespace lambda {
 
         inline constexpr int RR_START_DEPTH = 5;
 
+        inline constexpr int POINT_ERROR_SCALE = 8;
+
         inline constexpr Float MAX = Float(1e30);
+
+        inline constexpr Float GRAZING_COS = Float(1e-4);
+        inline constexpr Float GRAZING_COS_SQUARED = GRAZING_COS * GRAZING_COS;
+        inline constexpr Float SPECULAR_ALPHA = Float(1e-3);
+        inline constexpr Float DISPERSION_DELTA = Float(1e-4);
+        inline constexpr Float ISOTROPIC_G = Float(1e-3);
+        inline constexpr Float BLACK_LEVEL = Float(1e-6);
+
+        inline constexpr int LM_MAX_ATTEMPTS = 12;
+
+        inline constexpr double LM_JACOBIAN_STEP = 1e-4;
+        inline constexpr double LM_INITIAL_DAMPING = 1e-4;
+        inline constexpr double LM_MIN_DAMPING = 1e-8;
+        inline constexpr double LM_MAX_DAMPING = 1e12;
+        inline constexpr double LM_DAMPING_GROWTH = 10.0;
+        inline constexpr double LM_DAMPING_DECAY = 0.5;
+        inline constexpr double LM_COST_TOLERANCE = 1e-6;
+        inline constexpr double LM_SINGULAR_NORM = 1e-12;
 
         inline constexpr int PERMUTATION_SIZE = 256;
 

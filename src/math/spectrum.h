@@ -146,11 +146,11 @@ namespace lambda {
             LAMBDA_HOST_DEVICE const T & operator[](int i) const { return data[i]; }
 
             LAMBDA_HOST_DEVICE T get(Float lambda) const {
-                Float index = lambda - constants::CIE_LAMBDA_MIN;
+                Float index = std::fmax(lambda - constants::CIE_LAMBDA_MIN, Float(0));
 
                 int min = int(index);
 
-                if (min == constants::CIE_LAMBDA_BINS - 1) return data[min];
+                if (min >= constants::CIE_LAMBDA_BINS - 1) return data[constants::CIE_LAMBDA_BINS - 1];
 
                 int max = min + 1;
 

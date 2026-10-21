@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <bit>
 #include <cctype>
-#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -505,7 +505,7 @@ namespace lambda {
 
                         validator.positive("height", height);
 
-                        validator.validate(width <= INT_MAX / 3 && height <= INT_MAX / (width * 3), "'width' * 'height' * 3 must not exceed " + std::to_string(INT_MAX));
+                        validator.validate(width <= std::numeric_limits<int>::max() / 3 && height <= (std::numeric_limits<int>::max() / 3) / width, "'width' * 'height' * 3 must be at most " + std::to_string(std::numeric_limits<int>::max()));
 
                         int samples = stream.next<int>("samples");
                         int sqrtSamples = int(std::lround(std::sqrt(samples)));
@@ -766,23 +766,17 @@ namespace lambda {
 
                             for (int i = 0; i < constants::CIE_LAMBDA_BINS; i++) {
                                 validator.positive("n1", (*n1)[i].real());
-                                validator.positive("n1", (*n1)[i].imag());
+                                validator.validate((*n1)[i].imag() > 0, "'n1' must have a positive imaginary component, got " + std::to_string((*n1)[i].imag()));
                             }
 
                             ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
 
-                            Float alphaXMin = alphaX->getMin();
-
-                            validator.atLeast("alphaX", alphaXMin, Float(0));
+                            validator.atLeast("alphaX", alphaX->getMin(), Float(0));
                             validator.atMost("alphaX", alphaX->getMax(), Float(1));
 
                             ScalarTexture * alphaY = parseScalarTexture(allocator, "alphaY", stream, registry, validator);
 
-                            Float alphaYMin = alphaY->getMin();
-
-                            if (alphaXMin == 0) validator.zero("alphaY", alphaYMin);
-                            else validator.greaterThan("alphaY", alphaYMin, Float(0));
-
+                            validator.atLeast("alphaY", alphaY->getMin(), Float(0));
                             validator.atMost("alphaY", alphaY->getMax(), Float(1));
 
                             material = Material::makeConductor(n0, n1, alphaX, alphaY);
@@ -798,18 +792,12 @@ namespace lambda {
 
                             ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
 
-                            Float alphaXMin = alphaX->getMin();
-
-                            validator.atLeast("alphaX", alphaXMin, Float(0));
+                            validator.atLeast("alphaX", alphaX->getMin(), Float(0));
                             validator.atMost("alphaX", alphaX->getMax(), Float(1));
 
                             ScalarTexture * alphaY = parseScalarTexture(allocator, "alphaY", stream, registry, validator);
 
-                            Float alphaYMin = alphaY->getMin();
-
-                            if (alphaXMin == 0) validator.zero("alphaY", alphaYMin);
-                            else validator.greaterThan("alphaY", alphaYMin, Float(0));
-
+                            validator.atLeast("alphaY", alphaY->getMin(), Float(0));
                             validator.atMost("alphaY", alphaY->getMax(), Float(1));
 
                             material = Material::makeDielectric(n0, n1, alphaX, alphaY);
@@ -1046,41 +1034,36 @@ namespace lambda {
 
                         if (lightNodeIterator != lightObjectsToNodes.end()) lightNode = lightNodeIterator->second;
 
-                        if (!node || !lightNode) {
-                            std::vector<Object *> objects;
-                            std::vector<Object *> lightObjects;
+                        std::vector<Object *> objects;
+                        std::vector<Object *> lightObjects;
 
-                            for (int i = 0; i < count; i++) {
-                                if (!node) objects.push_back(object + i);
+                        for (int i = 0; i < count; i++) {
+                            if (!node) objects.push_back(object + i);
 
-                                if (!lightNode) {
-                                    const Material * currentMaterial = material ? material : object[i].getMaterial();
+                            const Material * currentMaterial = material ? material : object[i].getMaterial();
 
-                                    if (currentMaterial && currentMaterial->isEmissive()) lightObjects.push_back(object + i);
-                                }
-                            }
+                            if (!lightNode && currentMaterial && currentMaterial->isEmissive()) lightObjects.push_back(object + i);
 
-                            if (!objects.empty()) {
-                                std::vector<BVHNode<Object>> nodes = Builder::buildBVH<Object, false>(allocator.allocate(objects.data(), int(std::ssize(objects))), int(std::ssize(objects)));
+                            if (scale[0] != scale[1] || scale[1] != scale[2]) validator.validate(!currentMaterial || !currentMaterial->isEmissive(), "'scale' must be uniform for emissive objects");
+                        }
 
-                                node = allocator.allocate(nodes.data(), int(std::ssize(nodes)));
+                        if (!objects.empty()) {
+                            std::vector<BVHNode<Object>> nodes = Builder::buildBVH<Object, false>(allocator.allocate(objects.data(), int(std::ssize(objects))), int(std::ssize(objects)));
 
-                                objectsToNodes[object] = node;
-                            }
+                            node = allocator.allocate(nodes.data(), int(std::ssize(nodes)));
 
-                            if (!lightObjects.empty()) {
-                                std::vector<BVHNode<Object>> nodes = Builder::buildBVH<Object, true>(allocator.allocate(lightObjects.data(), int(std::ssize(lightObjects))), int(std::ssize(lightObjects)), material != nullptr);
+                            objectsToNodes[object] = node;
+                        }
 
-                                lightNode = allocator.allocate(nodes.data(), int(std::ssize(nodes)));
+                        if (!lightObjects.empty()) {
+                            std::vector<BVHNode<Object>> nodes = Builder::buildBVH<Object, true>(allocator.allocate(lightObjects.data(), int(std::ssize(lightObjects))), int(std::ssize(lightObjects)), material != nullptr);
 
-                                lightObjectsToNodes[std::make_pair(object, material != nullptr)] = lightNode;
-                            }
+                            lightNode = allocator.allocate(nodes.data(), int(std::ssize(nodes)));
+
+                            lightObjectsToNodes[std::make_pair(object, material != nullptr)] = lightNode;
                         }
 
                         Instance instance(object, count, node, lightNode, material, medium0, medium1, translation, rotation, scale);
-
-                        if (scale[0] != scale[1] || scale[1] != scale[2])
-                            for (int i = 0; i < count; i++) validator.validate(!instance.getMaterial(i) || !instance.getMaterial(i)->isEmissive(), "'scale' must be uniform for emissive objects");
 
                         instances.push_back(allocator.make(instance));
 
@@ -1099,8 +1082,8 @@ namespace lambda {
 
                         Vector<Float, 3> rotation = stream.next<Vector<Float, 3>>("rotation");
 
-                        if (type == "octahedral" || (emission->getWidth() == 1 && emission->getHeight() == 1)) background = Background::makeOctahedral(emission, rotation);
-                        else if (type == "equirectangular") background = Background::makeEquirectangular(emission, rotation);
+                        if (type == "equirectangular") background = Background::makeEquirectangular(emission, rotation);
+                        else if (type == "octahedral") background = Background::makeOctahedral(emission, rotation);
 
                         std::vector<Float> conditionalCDF, marginalCDF;
 
@@ -1131,7 +1114,7 @@ namespace lambda {
                         Vector<Float, 3> up = stream.next<Vector<Float, 3>>("up");
 
                         validator.nonZero("up", up.length());
-                        validator.validate(cross(normalize(lookAt - position), normalize(up)).length() > constants::EPSILON_SQUARED, "'lookAt' - 'position' and 'up' must be non-parallel");
+                        validator.validate(cross(normalize(lookAt - position), normalize(up)).length() > constants::GRAZING_COS, "'lookAt' - 'position' and 'up' must be non-parallel");
 
                         if (type == "perspective") {
                             Float fov = stream.next<Float>("fov");
@@ -1312,7 +1295,7 @@ namespace lambda {
 
                 DenseSpectrum<T> * pointer = allocator.make(spectrum);
 
-                registry.add(name, pointer);
+                if (!name.empty()) registry.add(name, pointer);
 
                 return pointer;
             }
@@ -1407,12 +1390,12 @@ namespace lambda {
                     else if (utils::colorSpaceContains(ColorSpace::REC2020, rx, ry, gx, gy, bx, by, wx, wy)) space = ColorSpace::REC2020;
                     else space = ColorSpace::ACES2065;
 
-                    needsTransform = std::fabs(rx - utils::chromaticity(space, 0)) > constants::EPSILON_SQUARED || std::fabs(ry - utils::chromaticity(space, 1)) > constants::EPSILON_SQUARED || std::fabs(gx - utils::chromaticity(space, 2)) > constants::EPSILON_SQUARED || std::fabs(gy - utils::chromaticity(space, 3)) > constants::EPSILON_SQUARED || std::fabs(bx - utils::chromaticity(space, 4)) > constants::EPSILON_SQUARED || std::fabs(by - utils::chromaticity(space, 5)) > constants::EPSILON_SQUARED || std::fabs(wx - utils::chromaticity(space, 6)) > constants::EPSILON_SQUARED || std::fabs(wy - utils::chromaticity(space, 7)) > constants::EPSILON_SQUARED;
+                    needsTransform = !utils::nearlyEqual(rx, utils::chromaticity(space, 0)) || !utils::nearlyEqual(ry, utils::chromaticity(space, 1)) || !utils::nearlyEqual(gx, utils::chromaticity(space, 2)) || !utils::nearlyEqual(gy, utils::chromaticity(space, 3)) || !utils::nearlyEqual(bx, utils::chromaticity(space, 4)) || !utils::nearlyEqual(by, utils::chromaticity(space, 5)) || !utils::nearlyEqual(wx, utils::chromaticity(space, 6)) || !utils::nearlyEqual(wy, utils::chromaticity(space, 7));
 
                     if (needsTransform) colorTransform = utils::toRGBMatrix(space) * utils::bradfordAdapt(wx, wy, utils::chromaticity(space, 6), utils::chromaticity(space, 7)) * utils::toXYZMatrix(rx, ry, gx, gy, bx, by, wx, wy);
                 }
 
-                if (width > INT_MAX / 3 || height > INT_MAX / (width * 3)) error::fileError(input, "'width' * 'height' * 3 must not exceed " + std::to_string(INT_MAX));
+                if (width > std::numeric_limits<int>::max() / channels || height > (std::numeric_limits<int>::max() / channels) / width) error::fileError(input, "'width' * 'height' * 'channels' must be at most " + std::to_string(std::numeric_limits<int>::max()));
 
                 int totalElements = width * height * channels;
 
@@ -1563,15 +1546,18 @@ namespace lambda {
                             face[0] = indexMap.at(std::make_tuple(vertexIndices[0], textureIndices[0], normalIndices[0]));
 
                             for (int i = 1; i < std::ssize(vertexIndices) - N + 2; i += N - 2) {
+                                bool degenerate = false;
+
                                 for (int j = 0; j < N - 1; j++) {
                                     face[j + 1] = indexMap.at(std::make_tuple(vertexIndices[i + j], textureIndices[i + j], normalIndices[i + j]));
 
-                                    validator.validate(vertexIndices[0] != vertexIndices[i + j], "'f' must be non-degenerate");
+                                    if (vertices[vertexIndices[0]] == vertices[vertexIndices[i + j]]) degenerate = true;
 
-                                    for (int k = 0; k < j; k++) validator.validate(vertexIndices[i + k] != vertexIndices[i + j], "'f' must be non-degenerate");
+                                    for (int k = 0; k < j; k++)
+                                        if (vertices[vertexIndices[i + k]] == vertices[vertexIndices[i + j]]) degenerate = true;
                                 }
 
-                                faces.push_back(face);
+                                if (!degenerate) faces.push_back(face);
                             }
                         }
                         else continue;
@@ -1622,8 +1608,17 @@ namespace lambda {
                             elementCounts.push_back(count);
                             elementProperties.push_back(std::vector<std::tuple<std::string, bool, std::string, std::string>>());
 
-                            if (name == "vertex") meshVertices.reserve(std::ssize(meshVertices) + count);
-                            else if (name == "face") faces.reserve(std::ssize(faces) + count);
+                            if (name == "vertex") {
+                                customNormals = false;
+                                customTextureCoordinates = false;
+
+                                meshVertices.clear();
+                                meshVertices.reserve(count);
+                            }
+                            else if (name == "face") {
+                                faces.clear();
+                                faces.reserve(count);
+                            }
                         }
                         else if (tag == "property") {
                             validator.validate(!elementNames.empty(), "'property' must follow 'element'");
@@ -1638,12 +1633,14 @@ namespace lambda {
                                 if (elementNames.back() == "vertex" && (name == "nx" || name == "ny" || name == "nz")) {
                                     customNormals = true;
 
-                                    meshNormals.reserve(std::ssize(meshVertices));
+                                    meshNormals.clear();
+                                    meshNormals.reserve(elementCounts.back());
                                 }
                                 else if (elementNames.back() == "vertex" && (name == "s" || name == "t" || name == "u" || name == "v")) {
                                     customTextureCoordinates = true;
 
-                                    meshTextureCoordinates.reserve(std::ssize(meshVertices));
+                                    meshTextureCoordinates.clear();
+                                    meshTextureCoordinates.reserve(elementCounts.back());
                                 }
 
                                 elementProperties.back().push_back(std::make_tuple(name, false, type, ""));
@@ -1736,15 +1733,18 @@ namespace lambda {
                                             face[0] = vertexIndices[0];
 
                                             for (int k = 1; k < std::ssize(vertexIndices) - N + 2; k += N - 2) {
+                                                bool degenerate = false;
+
                                                 for (int l = 0; l < N - 1; l++) {
                                                     face[l + 1] = vertexIndices[k + l];
 
-                                                    validator.validate(vertexIndices[0] != vertexIndices[k + l], "'f' must be non-degenerate");
+                                                    if (meshVertices[vertexIndices[0]] == meshVertices[vertexIndices[k + l]]) degenerate = true;
 
-                                                    for (int m = 0; m < l; m++) validator.validate(vertexIndices[k + m] != vertexIndices[k + l], "'" + name + "' must be non-degenerate");
+                                                    for (int m = 0; m < l; m++)
+                                                        if (meshVertices[vertexIndices[k + m]] == meshVertices[vertexIndices[k + l]]) degenerate = true;
                                                 }
 
-                                                faces.push_back(face);
+                                                if (!degenerate) faces.push_back(face);
                                             }
                                         }
                                     }
