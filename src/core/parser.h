@@ -43,363 +43,6 @@
 #include "scene/texture.h"
 
 namespace lambda {
-    class ParserStream {
-        public:
-            ParserStream(const std::string & _input) : input(_input), lineNumber(0), columnNumber(1) {}
-
-            void load(const std::string & line) {
-                ss.clear();
-                ss.str(line);
-
-                lineNumber++;
-                columnNumber = 1;
-            }
-
-            void setSkipWhitespace(bool skip) {
-                if (skip) ss >> std::skipws;
-                else ss >> std::noskipws;
-            }
-
-            template <typename T>
-            T next(const std::string & parameter = "", bool useCustom = true) {
-                T value;
-
-                if (!attemptNext<T>(value, true, useCustom)) raiseError("'" + parameter + "' is missing or invalid");
-
-                return value;
-            }
-
-            template <typename T>
-            T peek(bool useCustom = true) {
-                T value = T();
-
-                attemptNext<T>(value, false, useCustom);
-
-                return value;
-            }
-
-            template <typename T>
-            bool hasNext(bool useCustom = true) {
-                T value;
-
-                return attemptNext<T>(value, false, useCustom);
-            }
-
-            template <typename T>
-            bool hasNext(const T & expected, bool useCustom = true) {
-                T value;
-
-                std::streampos current = ss.tellg();
-
-                bool success = attemptNext<T>(value, true, useCustom);
-
-                if (success && value != expected) {
-                    ss.clear();
-                    ss.seekg(current);
-
-                    success = false;
-                }
-
-                return success;
-            }
-
-            [[noreturn]] void raiseError(const std::string & message) const { error::fileError(input, lineNumber, columnNumber, message); }
-
-        private:
-            std::stringstream ss;
-            std::string input;
-            int lineNumber;
-            int columnNumber;
-
-            template <typename T>
-            bool tryNext(T & value, bool useCustom = true) {
-                bool success = true;
-
-                if constexpr (std::is_same_v<T, std::string>) {
-                    if (!useCustom) success = bool(ss >> value);
-                    else success = tryNextString(value);
-                }
-                else if constexpr (std::is_same_v<T, Complex>) success = tryNextComplex(value);
-                else if constexpr (std::is_same_v<T, Vector<int, 3>> || std::is_same_v<T, Vector<int, 4>> || std::is_same_v<T, Vector<Float, 2>> || std::is_same_v<T, Vector<Float, 3>>) success = tryNextVector(value);
-                else if constexpr (std::is_same_v<T, std::map<double, Float>>) success = tryNextSpectrum<Float>(value);
-                else if constexpr (std::is_same_v<T, std::map<double, Complex>>) success = tryNextSpectrum<Complex>(value);
-                else success = bool(ss >> value);
-
-                return success;
-            }
-
-            template <typename T>
-            bool attemptNext(T & value, bool consumeOnSuccess, bool useCustom = true) {
-                if (ss.flags() & std::ios_base::skipws) ss >> std::ws;
-
-                std::streampos current = ss.tellg();
-
-                bool success = tryNext<T>(value, useCustom);
-
-                if (!success || !consumeOnSuccess) {
-                    ss.clear();
-                    ss.seekg(current);
-                }
-
-                columnNumber = std::max(int(current) + 1, 1);
-
-                return success;
-            }
-
-            bool tryNextString(std::string & value) {
-                setSkipWhitespace(false);
-
-                while (true) {
-                    int i = ss.peek();
-
-                    if (i == EOF || std::isspace(i) || i == '(' || i == ')' || i == '[' || i == ']') break;
-
-                    char c;
-
-                    if (!tryNext<char>(c)) break;
-
-                    value += c;
-                }
-
-                setSkipWhitespace(true);
-
-                return !value.empty();
-            }
-
-            bool tryNextComplex(Complex & value) {
-                if (hasNext<char>('i')) value = Complex(0, 1);
-                else {
-                    Float real = 0, imaginary = 0;
-
-                    bool hasReal = hasNext<Float>();
-
-                    if (hasReal && !tryNext<Float>(real)) return false;
-
-                    setSkipWhitespace(false);
-
-                    if (hasNext<char>('i')) value = Complex(0, real);
-                    else {
-                        if (hasNext<char>('+')) imaginary = 1;
-                        else if (hasNext<char>('-')) imaginary = -1;
-                        else {
-                            setSkipWhitespace(true);
-
-                            if (hasReal) {
-                                value = Complex(real);
-
-                                return true;
-                            }
-                            else return false;
-                        }
-
-                        if (!hasNext<char>('i')) {
-                            Float factor;
-
-                            if (!tryNext<Float>(factor) || !hasNext<char>('i')) {
-                                setSkipWhitespace(true);
-
-                                return false;
-                            }
-
-                            imaginary *= factor;
-                        }
-
-                        value = Complex(real, imaginary);
-                    }
-                }
-
-                setSkipWhitespace(true);
-
-                return true;
-            }
-
-            template <typename T, int N>
-            bool tryNextVector(Vector<T, N> & value) {
-                if (!hasNext<char>('(')) return false;
-
-                for (int i = 0; i < N; i++) if (!tryNext<T>(value[i])) return false;
-
-                if (!hasNext<char>(')')) return false;
-
-                return true;
-            }
-
-            template <typename T>
-            bool tryNextSpectrum(std::map<double, T> & value) {
-                if (!hasNext<char>('(')) return false;
-
-                while (hasNext<char>()) {
-                    if (hasNext<char>(')')) return true;
-
-                    double lambda;
-
-                    if (!tryNext<double>(lambda)) return false;
-                    if (!tryNext<T>(value[lambda])) return false;
-                }
-
-                return false;
-            }
-    };
-
-    class ParserRegistry {
-        public:
-            ParserRegistry() {}
-
-            template <typename T>
-            requires (std::is_same_v<T, DenseSpectrum<Float> *> || std::is_same_v<T, DenseSpectrum<Complex> *> || std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>> || std::is_same_v<T, ScalarTexture *> || std::is_same_v<T, SpectrumTexture *> || std::is_same_v<T, Medium *> || std::is_same_v<T, Material *> || std::is_same_v<T, std::pair<Object *, int>>)
-            void add(const std::string & name, T value) {
-                if constexpr (std::is_same_v<T, DenseSpectrum<Float> *>) spectrumPointers[name] = value;
-                else if constexpr (std::is_same_v<T, DenseSpectrum<Complex> *>) complexSpectrumPointers[name] = value;
-                else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) images[name] = value;
-                else if constexpr (std::is_same_v<T, ScalarTexture *>) scalarTexturePointers[name] = value;
-                else if constexpr (std::is_same_v<T, SpectrumTexture *>) spectrumTexturePointers[name] = value;
-                else if constexpr (std::is_same_v<T, Medium *>) mediumPointers[name] = value;
-                else if constexpr (std::is_same_v<T, Material *>) materialPointers[name] = value;
-                else if constexpr (std::is_same_v<T, std::pair<Object *, int>>) objectPointers[name] = value;
-            }
-
-            template <typename T>
-            requires (std::is_same_v<T, DenseSpectrum<Float>> || std::is_same_v<T, DenseSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material> || std::is_same_v<T, Object> || std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>)
-            bool has(const std::string & name) const {
-                if constexpr (std::is_same_v<T, DenseSpectrum<Float>>) return spectrumPointers.contains(name);
-                else if constexpr (std::is_same_v<T, DenseSpectrum<Complex>>) return complexSpectrumPointers.contains(name);
-                else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) return images.contains(name);
-                else if constexpr (std::is_same_v<T, ScalarTexture>) return scalarTexturePointers.contains(name);
-                else if constexpr (std::is_same_v<T, SpectrumTexture>) return spectrumTexturePointers.contains(name);
-                else if constexpr (std::is_same_v<T, Medium>) return mediumPointers.contains(name);
-                else if constexpr (std::is_same_v<T, Material>) return materialPointers.contains(name);
-                else if constexpr (std::is_same_v<T, Object>) return objectPointers.contains(name);
-                else return false;
-            }
-
-            template <typename T, typename U>
-            requires (((std::is_same_v<T, DenseSpectrum<Float>> || std::is_same_v<T, DenseSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>> && std::is_same_v<U, T>))
-            bool has(const std::string & name, U & reference) const {
-                if constexpr (std::is_same_v<T, DenseSpectrum<Float>>) return has(name, reference, spectrumPointers);
-                else if constexpr (std::is_same_v<T, DenseSpectrum<Complex>>) return has(name, reference, complexSpectrumPointers);
-                else if constexpr (std::is_same_v<T, ScalarTexture>) return has(name, reference, scalarTexturePointers);
-                else if constexpr (std::is_same_v<T, SpectrumTexture>) return has(name, reference, spectrumTexturePointers);
-                else if constexpr (std::is_same_v<T, Medium>) return has(name, reference, mediumPointers);
-                else if constexpr (std::is_same_v<T, Material>) return has(name, reference, materialPointers);
-                else if constexpr (std::is_same_v<T, Object>) return has(name, reference, objectPointers);
-                else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) return has(name, reference, images);
-                else return false;
-            }
-
-        private:
-            std::map<std::string, DenseSpectrum<Float> *> spectrumPointers;
-            std::map<std::string, DenseSpectrum<Complex> *> complexSpectrumPointers;
-            std::map<std::string, std::tuple<Float *, ColorSpace, int, int, int>> images;
-            std::map<std::string, ScalarTexture *> scalarTexturePointers;
-            std::map<std::string, SpectrumTexture *> spectrumTexturePointers;
-            std::map<std::string, Medium *> mediumPointers;
-            std::map<std::string, Material *> materialPointers;
-            std::map<std::string, std::pair<Object *, int>> objectPointers;
-
-            template <typename T>
-            bool has(const std::string & name, T & reference, const std::map<std::string, T> & references) const {
-                auto iterator = references.find(name);
-
-                if (iterator == references.end()) return false;
-
-                reference = iterator->second;
-
-                return true;
-            }
-    };
-
-    class ParserValidator {
-        public:
-            ParserValidator(const ParserStream & s) : stream(s) {}
-
-            void validate(bool condition, const std::string & message) const { if (!condition) stream.raiseError(message); }
-
-            [[noreturn]] void valid(const std::string & parameter) const { stream.raiseError(prefix(parameter) + " is missing or invalid"); }
-
-            void valid(const std::string & parameter, bool condition) const { if (!condition) valid(parameter); }
-
-            template <typename T>
-            void positive(const std::string & parameter, T value) const { validate(value > 0, prefix(parameter) + " must be positive" + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void nonNegative(const std::string & parameter, T value) const { validate(value >= 0, prefix(parameter) + " must be non-negative" + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void zero(const std::string & parameter, T value) const { validate(value == 0, prefix(parameter) + " must be zero" + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void nonZero(const std::string & parameter, T value) const { validate(value != 0, prefix(parameter) + " must be non-zero" + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void atLeast(const std::string & parameter, T value, T min) const { validate(value >= min, prefix(parameter) + " must be at least " + std::to_string(min) + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void atMost(const std::string & parameter, T value, T max) const { validate(value <= max, prefix(parameter) + " must be at most " + std::to_string(max) + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void inRange(const std::string & parameter, T value, T min, T max) const {
-                atLeast(parameter, value, min);
-                atMost(parameter, value, max);
-            }
-
-            template <typename T>
-            void greaterThan(const std::string & parameter, T value, T min) const { validate(value > min, prefix(parameter) + " must be greater than " + std::to_string(min) + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void lessThan(const std::string & parameter, T value, T max) const { validate(value < max, prefix(parameter) + " must be less than " + std::to_string(max) + suffix(std::to_string(value))); }
-
-            template <typename T>
-            void inRangeExclusive(const std::string & parameter, T value, T min, T max) const {
-                greaterThan(parameter, value, min);
-                lessThan(parameter, value, max);
-            }
-
-            template <typename T>
-            void defined(const std::string & parameter, const ParserRegistry & registry, const std::string & name, T * & pointer) const { validate(registry.has<T>(name, pointer), prefix(parameter) + " is not defined"); }
-
-            template <typename T>
-            void notDefined(const std::string & parameter, const ParserRegistry & registry, const std::string & name) const { validate(!registry.has<T>(name), prefix(parameter) + " is already defined"); }
-
-            template <typename T>
-            void notDefined(const std::string & parameter, const ParserRegistry & registry, const std::string & name, T * & pointer) const { validate((!registry.has<T>(name, pointer)), prefix(parameter) + " is already defined"); }
-
-            void expected(const std::string & parameter, const std::string & value, const std::vector<std::string> & expectedValues) const {
-                bool found = false;
-
-                std::string comparisons = "";
-
-                for (int j = 0; j < std::ssize(expectedValues); j++) {
-                    if (expectedValues[j] == value) {
-                        found = true;
-                        break;
-                    }
-
-                    std::string comparison = "\"" + expectedValues[j] + "\"";
-
-                    if (j != 0) {
-                        if (j == int(std::ssize(expectedValues)) - 1) {
-                            if (j == 1) comparison = " or " + comparison;
-                            else comparison = ", or " + comparison;
-                        }
-                        else comparison = ", " + comparison;
-                    }
-
-                    comparisons += comparison;
-                }
-
-                validate(found, (parameter.empty() ? "expected " : prefix(parameter) + " must be ") + comparisons + suffix("\"" + value + "\""));
-            }
-
-            void unexpected(char token) const { validate(token == '\0', "unexpected token \"" + std::string(1, token) + "\""); }
-
-        private:
-            const ParserStream & stream;
-
-            static std::string prefix(const std::string & parameter) { return "'" + parameter + "'"; }
-
-            static std::string suffix(const std::string & value) { return ", got " + value; }
-    };
-
     class Parser {
         public:
             static bool hasValidExtension(const std::string & output) { return utils::hasExtension(output, ".lrd"); }
@@ -456,7 +99,7 @@ namespace lambda {
 
                 if (!inputFile.is_open()) error::failedToOpenFileError(input);
 
-                ParserRegistry registry;
+                Registry registry;
 
                 Integrator * integrator = nullptr;
 
@@ -472,8 +115,8 @@ namespace lambda {
 
                 std::string line;
 
-                ParserStream stream(input);
-                ParserValidator validator(stream);
+                Stream stream(input);
+                Validator validator(stream);
 
                 while (std::getline(inputFile, line)) {
                     stream.load(stripComments(line));
@@ -519,11 +162,11 @@ namespace lambda {
 
                         Float lambdaMin = stream.next<Float>("lambdaMin");
 
-                        validator.inRange("lambdaMin", lambdaMin, Float(constants::CIE_LAMBDA_MIN), Float(constants::CIE_LAMBDA_MAX));
+                        validator.positive("lambdaMin", lambdaMin);
 
                         Float lambdaMax = stream.next<Float>("lambdaMax");
 
-                        validator.inRange("lambdaMax", lambdaMax, Float(constants::CIE_LAMBDA_MIN), Float(constants::CIE_LAMBDA_MAX));
+                        validator.positive("lambdaMax", lambdaMax);
                         validator.validate(lambdaMin < lambdaMax, "'lambdaMin' must be less than 'lambdaMax', got " + std::to_string(lambdaMin) + " and " + std::to_string(lambdaMax));
 
                         uint64_t seed = stream.next<uint64_t>("seed");
@@ -654,8 +297,8 @@ namespace lambda {
                                 texture = SpectrumTexture::makeMix(texture1, texture2, factor);
                             }
                             else if (subtype == "checker") {
-                                DenseSpectrum<Float> * value1 = parseSpectrum<Float>(allocator, "value1", stream, registry, validator);
-                                DenseSpectrum<Float> * value2 = parseSpectrum<Float>(allocator, "value2", stream, registry, validator);
+                                LinearSpectrum<Float> * value1 = parseSpectrum<Float>(allocator, "value1", stream, registry, validator);
+                                LinearSpectrum<Float> * value2 = parseSpectrum<Float>(allocator, "value2", stream, registry, validator);
 
                                 Float uScale = stream.next<Float>("uScale");
 
@@ -720,11 +363,11 @@ namespace lambda {
                         validator.expected("type", type, {"homogeneous"});
 
                         if (type == "homogeneous") {
-                            DenseSpectrum<Float> * sigmaA = parseSpectrum<Float>(allocator, "sigmaA", stream, registry, validator);
+                            LinearSpectrum<Float> * sigmaA = parseSpectrum<Float>(allocator, "sigmaA", stream, registry, validator);
 
                             validator.nonNegative("sigmaA", sigmaA->min());
 
-                            DenseSpectrum<Float> * sigmaS = parseSpectrum<Float>(allocator, "sigmaS", stream, registry, validator);
+                            LinearSpectrum<Float> * sigmaS = parseSpectrum<Float>(allocator, "sigmaS", stream, registry, validator);
 
                             validator.nonNegative("sigmaS", sigmaS->min());
 
@@ -758,16 +401,18 @@ namespace lambda {
                             else if (type == "mirror") material = Material::makeMirror(albedo);
                         }
                         else if (type == "conductor") {
-                            DenseSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
+                            LinearSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
 
-                            for (int i = 0; i < constants::CIE_LAMBDA_BINS; i++) validator.positive("n0", (*n0)[i]);
+                            validator.positive("n0", n0->min());
+                            validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got 0");
 
-                            DenseSpectrum<Complex> * n1 = parseSpectrum<Complex>(allocator, "n1", stream, registry, validator);
+                            LinearSpectrum<Complex> * n1 = parseSpectrum<Complex>(allocator, "n1", stream, registry, validator);
 
-                            for (int i = 0; i < constants::CIE_LAMBDA_BINS; i++) {
-                                validator.positive("n1", (*n1)[i].real());
-                                validator.validate((*n1)[i].imag() > 0, "'n1' must have a positive imaginary component, got " + std::to_string((*n1)[i].imag()));
-                            }
+                            Complex n1Min = n1->min();
+
+                            validator.positive("n1", n1Min.real());
+                            validator.validate(n1Min.imag() > 0, "'n1' must have a positive imaginary component, got " + std::to_string(n1Min.imag()));
+                            validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got 0");
 
                             ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
 
@@ -782,13 +427,15 @@ namespace lambda {
                             material = Material::makeConductor(n0, n1, alphaX, alphaY);
                         }
                         else if (type == "dielectric") {
-                            DenseSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
+                            LinearSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
 
-                            for (int i = 0; i < constants::CIE_LAMBDA_BINS; i++) validator.positive("n0", (*n0)[i]);
+                            validator.positive("n0", n0->min());
+                            validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got 0");
 
-                            DenseSpectrum<Float> * n1 = parseSpectrum<Float>(allocator, "n1", stream, registry, validator);
+                            LinearSpectrum<Float> * n1 = parseSpectrum<Float>(allocator, "n1", stream, registry, validator);
 
-                            for (int i = 0; i < constants::CIE_LAMBDA_BINS; i++) validator.positive("n1", (*n1)[i]);
+                            validator.positive("n1", n1->min());
+                            validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got 0");
 
                             ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
 
@@ -803,17 +450,19 @@ namespace lambda {
                             material = Material::makeDielectric(n0, n1, alphaX, alphaY);
                         }
                         else if (type == "coated") {
-                            std::vector<DenseSpectrum<Complex> *> n = parseArray<DenseSpectrum<Complex> *>(allocator, "n", stream, registry, validator);
+                            std::vector<LinearSpectrum<Complex> *> n = parseArray<LinearSpectrum<Complex> *>(allocator, "n", stream, registry, validator);
 
                             validator.validate(std::ssize(n) >= 1, "'n' must have at least 1 entry, got " + std::to_string(std::ssize(n)));
 
-                            for (int i = 0; i < std::ssize(n); i++)
-                                for (int j = 0; j < constants::CIE_LAMBDA_BINS; j++) {
-                                    validator.positive("n", (*(n[i]))[j].real());
-                                    validator.nonNegative("n", (*(n[i]))[j].imag());
-                                }
+                            for (int i = 0; i < std::ssize(n); i++) {
+                                Complex nMin = n[i]->min();
 
-                            DenseSpectrum<Complex> ** nPointer = allocator.allocate(n.data(), int(std::ssize(n)));
+                                validator.positive("n", nMin.real());
+                                validator.validate(nMin.imag() >= 0, "'n' must have a non-negative imaginary component, got " + std::to_string(nMin.imag()));
+                                validator.validate(n[i]->contains(0) && n[i]->contains(integrator->getFilm()->getLambdaMax()), "'n' must be positive, got 0");
+                            }
+
+                            LinearSpectrum<Complex> ** nPointer = allocator.allocate(n.data(), int(std::ssize(n)));
 
                             std::vector<ScalarTexture *> d = parseArray<ScalarTexture *>(allocator, "d", stream, registry, validator);
 
@@ -836,7 +485,7 @@ namespace lambda {
                         else if (type == "emissive") {
                             SpectrumTexture * emission = parseSpectrumTexture(allocator, "emission", stream, registry, validator);
 
-                            validator.atLeast("emission", emission->getMin(), Float(0));
+                            validator.nonNegative("emission", emission->getMin());
 
                             material = Material::makeEmissive(emission);
                         }
@@ -1078,7 +727,7 @@ namespace lambda {
 
                         SpectrumTexture * emission = parseSpectrumTexture(allocator, "emission", stream, registry, validator);
 
-                        validator.atLeast("emission", emission->getMin(), Float(0));
+                        validator.nonNegative("emission", emission->getMin());
 
                         Vector<Float, 3> rotation = stream.next<Vector<Float, 3>>("rotation");
 
@@ -1144,7 +793,7 @@ namespace lambda {
                 validator.validate(integrator->getCamera(), "expected \"Camera\"");
 
                 if (backgrounds.empty()) {
-                    Background background = Background::makeEquirectangular(allocator.make(SpectrumTexture::makeConstant(allocator.make(DenseSpectrum<Float>(0)))), Vector<Float, 3>());
+                    Background background = Background::makeEquirectangular(allocator.make(SpectrumTexture::makeConstant(allocator.make(LinearSpectrum<Float>(0)))), Vector<Float, 3>());
 
                     std::vector<Float> conditionalCDF, marginalCDF;
 
@@ -1168,13 +817,370 @@ namespace lambda {
             }
 
         private:
+            class Stream {
+                public:
+                    Stream(const std::string & _input) : input(_input), lineNumber(0), columnNumber(1) {}
+
+                    void load(const std::string & line) {
+                        ss.clear();
+                        ss.str(line);
+
+                        lineNumber++;
+                        columnNumber = 1;
+                    }
+
+                    void setSkipWhitespace(bool skip) {
+                        if (skip) ss >> std::skipws;
+                        else ss >> std::noskipws;
+                    }
+
+                    template <typename T>
+                    T next(const std::string & parameter = "", bool useCustom = true) {
+                        T value;
+
+                        if (!attemptNext<T>(value, true, useCustom)) raiseError("'" + parameter + "' is missing or invalid");
+
+                        return value;
+                    }
+
+                    template <typename T>
+                    T peek(bool useCustom = true) {
+                        T value = T();
+
+                        attemptNext<T>(value, false, useCustom);
+
+                        return value;
+                    }
+
+                    template <typename T>
+                    bool hasNext(bool useCustom = true) {
+                        T value;
+
+                        return attemptNext<T>(value, false, useCustom);
+                    }
+
+                    template <typename T>
+                    bool hasNext(const T & expected, bool useCustom = true) {
+                        T value;
+
+                        std::streampos current = ss.tellg();
+
+                        bool success = attemptNext<T>(value, true, useCustom);
+
+                        if (success && value != expected) {
+                            ss.clear();
+                            ss.seekg(current);
+
+                            success = false;
+                        }
+
+                        return success;
+                    }
+
+                    [[noreturn]] void raiseError(const std::string & message) const { error::fileError(input, lineNumber, columnNumber, message); }
+
+                private:
+                    std::stringstream ss;
+                    std::string input;
+                    int lineNumber;
+                    int columnNumber;
+
+                    template <typename T>
+                    bool tryNext(T & value, bool useCustom = true) {
+                        bool success = true;
+
+                        if constexpr (std::is_same_v<T, std::string>) {
+                            if (!useCustom) success = bool(ss >> value);
+                            else success = tryNextString(value);
+                        }
+                        else if constexpr (std::is_same_v<T, Complex>) success = tryNextComplex(value);
+                        else if constexpr (std::is_same_v<T, Vector<int, 3>> || std::is_same_v<T, Vector<int, 4>> || std::is_same_v<T, Vector<Float, 2>> || std::is_same_v<T, Vector<Float, 3>>) success = tryNextVector(value);
+                        else if constexpr (std::is_same_v<T, std::map<Float, Float>>) success = tryNextSpectrum<Float>(value);
+                        else if constexpr (std::is_same_v<T, std::map<Float, Complex>>) success = tryNextSpectrum<Complex>(value);
+                        else success = bool(ss >> value);
+
+                        return success;
+                    }
+
+                    template <typename T>
+                    bool attemptNext(T & value, bool consumeOnSuccess, bool useCustom = true) {
+                        if (ss.flags() & std::ios_base::skipws) ss >> std::ws;
+
+                        std::streampos current = ss.tellg();
+
+                        bool success = tryNext<T>(value, useCustom);
+
+                        if (!success || !consumeOnSuccess) {
+                            ss.clear();
+                            ss.seekg(current);
+                        }
+
+                        columnNumber = std::max(int(current) + 1, 1);
+
+                        return success;
+                    }
+
+                    bool tryNextString(std::string & value) {
+                        setSkipWhitespace(false);
+
+                        while (true) {
+                            int i = ss.peek();
+
+                            if (i == EOF || std::isspace(i) || i == '(' || i == ')' || i == '[' || i == ']') break;
+
+                            char c;
+
+                            if (!tryNext<char>(c)) break;
+
+                            value += c;
+                        }
+
+                        setSkipWhitespace(true);
+
+                        return !value.empty();
+                    }
+
+                    bool tryNextComplex(Complex & value) {
+                        if (hasNext<char>('i')) value = Complex(0, 1);
+                        else {
+                            Float real = 0, imaginary = 0;
+
+                            bool hasReal = hasNext<Float>();
+
+                            if (hasReal && !tryNext<Float>(real)) return false;
+
+                            setSkipWhitespace(false);
+
+                            if (hasNext<char>('i')) value = Complex(0, real);
+                            else {
+                                if (hasNext<char>('+')) imaginary = 1;
+                                else if (hasNext<char>('-')) imaginary = -1;
+                                else {
+                                    setSkipWhitespace(true);
+
+                                    if (hasReal) {
+                                        value = Complex(real);
+
+                                        return true;
+                                    }
+                                    else return false;
+                                }
+
+                                if (!hasNext<char>('i')) {
+                                    Float factor;
+
+                                    if (!tryNext<Float>(factor) || !hasNext<char>('i')) {
+                                        setSkipWhitespace(true);
+
+                                        return false;
+                                    }
+
+                                    imaginary *= factor;
+                                }
+
+                                value = Complex(real, imaginary);
+                            }
+                        }
+
+                        setSkipWhitespace(true);
+
+                        return true;
+                    }
+
+                    template <typename T, int N>
+                    bool tryNextVector(Vector<T, N> & value) {
+                        if (!hasNext<char>('(')) return false;
+
+                        for (int i = 0; i < N; i++) if (!tryNext<T>(value[i])) return false;
+
+                        if (!hasNext<char>(')')) return false;
+
+                        return true;
+                    }
+
+                    template <typename T>
+                    bool tryNextSpectrum(std::map<Float, T> & value) {
+                        if (!hasNext<char>('(')) return false;
+
+                        while (hasNext<char>()) {
+                            if (hasNext<char>(')')) return true;
+
+                            Float lambda;
+
+                            if (!tryNext<Float>(lambda)) return false;
+                            if (lambda < 0 || value.contains(lambda) || !tryNext<T>(value[lambda])) return false;
+                        }
+
+                        return false;
+                    }
+            };
+
+            class Registry {
+                public:
+                    Registry() {}
+
+                    template <typename T>
+                    requires (std::is_same_v<T, LinearSpectrum<Float> *> || std::is_same_v<T, LinearSpectrum<Complex> *> || std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>> || std::is_same_v<T, ScalarTexture *> || std::is_same_v<T, SpectrumTexture *> || std::is_same_v<T, Medium *> || std::is_same_v<T, Material *> || std::is_same_v<T, std::pair<Object *, int>>)
+                    void add(const std::string & name, T value) {
+                        if constexpr (std::is_same_v<T, LinearSpectrum<Float> *>) spectrumPointers[name] = value;
+                        else if constexpr (std::is_same_v<T, LinearSpectrum<Complex> *>) complexSpectrumPointers[name] = value;
+                        else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) images[name] = value;
+                        else if constexpr (std::is_same_v<T, ScalarTexture *>) scalarTexturePointers[name] = value;
+                        else if constexpr (std::is_same_v<T, SpectrumTexture *>) spectrumTexturePointers[name] = value;
+                        else if constexpr (std::is_same_v<T, Medium *>) mediumPointers[name] = value;
+                        else if constexpr (std::is_same_v<T, Material *>) materialPointers[name] = value;
+                        else if constexpr (std::is_same_v<T, std::pair<Object *, int>>) objectPointers[name] = value;
+                    }
+
+                    template <typename T>
+                    requires (std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material> || std::is_same_v<T, Object> || std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>)
+                    bool has(const std::string & name) const {
+                        if constexpr (std::is_same_v<T, LinearSpectrum<Float>>) return spectrumPointers.contains(name);
+                        else if constexpr (std::is_same_v<T, LinearSpectrum<Complex>>) return complexSpectrumPointers.contains(name);
+                        else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) return images.contains(name);
+                        else if constexpr (std::is_same_v<T, ScalarTexture>) return scalarTexturePointers.contains(name);
+                        else if constexpr (std::is_same_v<T, SpectrumTexture>) return spectrumTexturePointers.contains(name);
+                        else if constexpr (std::is_same_v<T, Medium>) return mediumPointers.contains(name);
+                        else if constexpr (std::is_same_v<T, Material>) return materialPointers.contains(name);
+                        else if constexpr (std::is_same_v<T, Object>) return objectPointers.contains(name);
+                        else return false;
+                    }
+
+                    template <typename T, typename U>
+                    requires (((std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>> && std::is_same_v<U, T>))
+                    bool has(const std::string & name, U & reference) const {
+                        if constexpr (std::is_same_v<T, LinearSpectrum<Float>>) return has(name, reference, spectrumPointers);
+                        else if constexpr (std::is_same_v<T, LinearSpectrum<Complex>>) return has(name, reference, complexSpectrumPointers);
+                        else if constexpr (std::is_same_v<T, ScalarTexture>) return has(name, reference, scalarTexturePointers);
+                        else if constexpr (std::is_same_v<T, SpectrumTexture>) return has(name, reference, spectrumTexturePointers);
+                        else if constexpr (std::is_same_v<T, Medium>) return has(name, reference, mediumPointers);
+                        else if constexpr (std::is_same_v<T, Material>) return has(name, reference, materialPointers);
+                        else if constexpr (std::is_same_v<T, Object>) return has(name, reference, objectPointers);
+                        else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) return has(name, reference, images);
+                        else return false;
+                    }
+
+                private:
+                    std::map<std::string, LinearSpectrum<Float> *> spectrumPointers;
+                    std::map<std::string, LinearSpectrum<Complex> *> complexSpectrumPointers;
+                    std::map<std::string, std::tuple<Float *, ColorSpace, int, int, int>> images;
+                    std::map<std::string, ScalarTexture *> scalarTexturePointers;
+                    std::map<std::string, SpectrumTexture *> spectrumTexturePointers;
+                    std::map<std::string, Medium *> mediumPointers;
+                    std::map<std::string, Material *> materialPointers;
+                    std::map<std::string, std::pair<Object *, int>> objectPointers;
+
+                    template <typename T>
+                    bool has(const std::string & name, T & reference, const std::map<std::string, T> & references) const {
+                        auto iterator = references.find(name);
+
+                        if (iterator == references.end()) return false;
+
+                        reference = iterator->second;
+
+                        return true;
+                    }
+            };
+
+            class Validator {
+                public:
+                    Validator(const Stream & s) : stream(s) {}
+
+                    void validate(bool condition, const std::string & message) const { if (!condition) stream.raiseError(message); }
+
+                    [[noreturn]] void valid(const std::string & parameter) const { stream.raiseError(prefix(parameter) + " is missing or invalid"); }
+
+                    void valid(const std::string & parameter, bool condition) const { if (!condition) valid(parameter); }
+
+                    template <typename T>
+                    void positive(const std::string & parameter, T value) const { validate(value > 0, prefix(parameter) + " must be positive" + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void nonNegative(const std::string & parameter, T value) const { validate(value >= 0, prefix(parameter) + " must be non-negative" + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void zero(const std::string & parameter, T value) const { validate(value == 0, prefix(parameter) + " must be zero" + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void nonZero(const std::string & parameter, T value) const { validate(value != 0, prefix(parameter) + " must be non-zero" + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void atLeast(const std::string & parameter, T value, T min) const { validate(value >= min, prefix(parameter) + " must be at least " + std::to_string(min) + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void atMost(const std::string & parameter, T value, T max) const { validate(value <= max, prefix(parameter) + " must be at most " + std::to_string(max) + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void inRange(const std::string & parameter, T value, T min, T max) const {
+                        atLeast(parameter, value, min);
+                        atMost(parameter, value, max);
+                    }
+
+                    template <typename T>
+                    void greaterThan(const std::string & parameter, T value, T min) const { validate(value > min, prefix(parameter) + " must be greater than " + std::to_string(min) + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void lessThan(const std::string & parameter, T value, T max) const { validate(value < max, prefix(parameter) + " must be less than " + std::to_string(max) + suffix(std::to_string(value))); }
+
+                    template <typename T>
+                    void inRangeExclusive(const std::string & parameter, T value, T min, T max) const {
+                        greaterThan(parameter, value, min);
+                        lessThan(parameter, value, max);
+                    }
+
+                    template <typename T>
+                    void defined(const std::string & parameter, const Registry & registry, const std::string & name, T * & pointer) const { validate(registry.has<T>(name, pointer), prefix(parameter) + " is not defined"); }
+
+                    template <typename T>
+                    void notDefined(const std::string & parameter, const Registry & registry, const std::string & name) const { validate(!registry.has<T>(name), prefix(parameter) + " is already defined"); }
+
+                    template <typename T>
+                    void notDefined(const std::string & parameter, const Registry & registry, const std::string & name, T * & pointer) const { validate((!registry.has<T>(name, pointer)), prefix(parameter) + " is already defined"); }
+
+                    void expected(const std::string & parameter, const std::string & value, const std::vector<std::string> & expectedValues) const {
+                        bool found = false;
+
+                        std::string comparisons = "";
+
+                        for (int j = 0; j < std::ssize(expectedValues); j++) {
+                            if (expectedValues[j] == value) {
+                                found = true;
+                                break;
+                            }
+
+                            std::string comparison = "\"" + expectedValues[j] + "\"";
+
+                            if (j != 0) {
+                                if (j == int(std::ssize(expectedValues)) - 1) {
+                                    if (j == 1) comparison = " or " + comparison;
+                                    else comparison = ", or " + comparison;
+                                }
+                                else comparison = ", " + comparison;
+                            }
+
+                            comparisons += comparison;
+                        }
+
+                        validate(found, (parameter.empty() ? "expected " : prefix(parameter) + " must be ") + comparisons + suffix("\"" + value + "\""));
+                    }
+
+                    void unexpected(char token) const { validate(token == '\0', "unexpected token \"" + std::string(1, token) + "\""); }
+
+                private:
+                    const Stream & stream;
+
+                    static std::string prefix(const std::string & parameter) { return "'" + parameter + "'"; }
+
+                    static std::string suffix(const std::string & value) { return ", got " + value; }
+            };
+
             static std::string stripComments(const std::string & s) {
                 size_t commentPos = s.find('#');
 
                 return commentPos == std::string::npos ? s : s.substr(0, commentPos);
             }
 
-            static void flushObjects(Allocator & allocator, ParserRegistry & registry, std::string & name, std::vector<Object> & objects) {
+            static void flushObjects(Allocator & allocator, Registry & registry, std::string & name, std::vector<Object> & objects) {
                 if (!objects.empty()) {
                     registry.add(name, std::make_pair(allocator.allocate(objects.data(), int(std::ssize(objects))), int(std::ssize(objects))));
 
@@ -1202,7 +1208,7 @@ namespace lambda {
             }
 
             template <typename T>
-            static std::vector<T> parseArray(Allocator & allocator, const std::string & parameter, ParserStream & stream, ParserRegistry & registry, const ParserValidator & validator) {
+            static std::vector<T> parseArray(Allocator & allocator, const std::string & parameter, Stream & stream, Registry & registry, const Validator & validator) {
                 validator.valid(parameter, stream.hasNext<char>('['));
 
                 std::vector<T> values;
@@ -1210,8 +1216,8 @@ namespace lambda {
                 while (stream.hasNext<char>()) {
                     if (stream.hasNext<char>(']')) return values;
 
-                    if constexpr (std::is_same_v<T, DenseSpectrum<Float> *>) values.push_back(parseSpectrum<Float>(allocator, parameter, stream, registry, validator));
-                    else if constexpr (std::is_same_v<T, DenseSpectrum<Complex> *>) values.push_back(parseSpectrum<Complex>(allocator, parameter, stream, registry, validator));
+                    if constexpr (std::is_same_v<T, LinearSpectrum<Float> *>) values.push_back(parseSpectrum<Float>(allocator, parameter, stream, registry, validator));
+                    else if constexpr (std::is_same_v<T, LinearSpectrum<Complex> *>) values.push_back(parseSpectrum<Complex>(allocator, parameter, stream, registry, validator));
                     else if constexpr (std::is_same_v<T, ScalarTexture *>) values.push_back(parseScalarTexture(allocator, parameter, stream, registry, validator));
                     else if constexpr (std::is_same_v<T, SpectrumTexture *>) values.push_back(parseSpectrumTexture(allocator, parameter, stream, registry, validator));
                     else values.push_back(stream.next<T>(parameter));
@@ -1220,7 +1226,7 @@ namespace lambda {
                 validator.valid(parameter);
             }
 
-            static ScalarTexture * parseScalarTexture(Allocator & allocator, const std::string & parameter, ParserStream & stream, const ParserRegistry & registry, const ParserValidator & validator) {
+            static ScalarTexture * parseScalarTexture(Allocator & allocator, const std::string & parameter, Stream & stream, const Registry & registry, const Validator & validator) {
                 if (stream.hasNext<Float>()) return allocator.make(ScalarTexture::makeConstant(stream.next<Float>()));
 
                 ScalarTexture * texture;
@@ -1230,7 +1236,7 @@ namespace lambda {
                 return texture;
             }
 
-            static SpectrumTexture * parseSpectrumTexture(Allocator & allocator, const std::string & parameter, ParserStream & stream, ParserRegistry & registry, const ParserValidator & validator) {
+            static SpectrumTexture * parseSpectrumTexture(Allocator & allocator, const std::string & parameter, Stream & stream, Registry & registry, const Validator & validator) {
                 if (stream.hasNext<Float>() || stream.peek<char>() == '(' || utils::hasExtension(stream.peek<std::string>(), ".spd")) return allocator.make(SpectrumTexture::makeConstant(parseSpectrum<Float>(allocator, parameter, stream, registry, validator)));
                 else {
                     std::string name = stream.next<std::string>(parameter);
@@ -1248,52 +1254,41 @@ namespace lambda {
             }
 
             template <typename T>
-            static DenseSpectrum<T> * parseSpectrum(Allocator & allocator, const std::string & parameter, ParserStream & stream, ParserRegistry & registry, const ParserValidator & validator) {
+            static LinearSpectrum<T> * parseSpectrum(Allocator & allocator, const std::string & parameter, Stream & stream, Registry & registry, const Validator & validator) {
                 std::string name;
 
-                std::map<double, T> samples;
+                std::map<Float, T> samples;
 
                 if (utils::hasExtension(stream.peek<std::string>(), ".spd")) {
                     std::string file = stream.next<std::string>(parameter);
 
-                    DenseSpectrum<T> * pointer;
+                    LinearSpectrum<T> * pointer;
 
-                    if (registry.has<DenseSpectrum<T>>(file, pointer)) return pointer;
+                    if (registry.has<LinearSpectrum<T>>(file, pointer)) return pointer;
 
                     samples = parseSPD<T>(file);
 
                     name = file;
                 }
-                else if (stream.hasNext<T>()) return allocator.make(DenseSpectrum<T>(stream.next<T>(parameter)));
-                else samples = stream.next<std::map<double, T>>(parameter);
+                else if (stream.hasNext<T>()) {
+                    T value = stream.next<T>(parameter);
+
+                    samples[0] = value;
+                    samples[constants::MAX] = value;
+                }
+                else samples = stream.next<std::map<Float, T>>(parameter);
 
                 validator.valid("samples", !samples.empty());
 
-                DenseSpectrum<T> spectrum;
+                std::vector<Float> lambdas;
+                std::vector<T> values;
 
-                auto iterator = samples.begin();
-
-                double sampleMin = iterator->first;
-                double sampleMax = samples.rbegin()->first;
-
-                for (int i = 0; i < constants::CIE_LAMBDA_BINS; i++) {
-                    if (i <= sampleMin - constants::CIE_LAMBDA_MIN || std::ssize(samples) == 1) spectrum[i] = samples[sampleMin];
-                    else if (i >= sampleMax - constants::CIE_LAMBDA_MIN) spectrum[i] = samples[sampleMax];
-                    else {
-                        double lambda = i + constants::CIE_LAMBDA_MIN;
-
-                        while (std::next(iterator) != samples.end() && std::next(iterator)->first < lambda) iterator++;
-
-                        double min = iterator->first;
-                        double max = std::next(iterator)->first;
-
-                        Float t = Float((lambda - min) / (max - min));
-
-                        spectrum[i] = T((1 - t) * samples[min] + t * samples[max]);
-                    }
+                for (auto iterator = samples.begin(); iterator != samples.end(); iterator++) {
+                    lambdas.push_back(iterator->first);
+                    values.push_back(iterator->second);
                 }
 
-                DenseSpectrum<T> * pointer = allocator.make(spectrum);
+                LinearSpectrum<T> * pointer = allocator.make(LinearSpectrum<T>(int(std::ssize(lambdas)), allocator.allocate(lambdas.data(), int(std::ssize(lambdas))), allocator.allocate(values.data(), int(std::ssize(values)))));
 
                 if (!name.empty()) registry.add(name, pointer);
 
@@ -1443,8 +1438,8 @@ namespace lambda {
 
                 std::string line;
 
-                ParserStream stream(input);
-                ParserValidator validator(stream);
+                Stream stream(input);
+                Validator validator(stream);
 
                 if (utils::hasExtension(input, ".obj")) {
                     while (std::getline(inputFile, line)) {
@@ -1776,7 +1771,7 @@ namespace lambda {
             }
 
             template <typename T>
-            static T parsePLYValue(std::ifstream & inputFile, const std::string & input, ParserStream & stream, const std::string & formatType, const std::string & name, const std::string & type) {
+            static T parsePLYValue(std::ifstream & inputFile, const std::string & input, Stream & stream, const std::string & formatType, const std::string & name, const std::string & type) {
                 if (formatType == "ascii") {
                     if (type == "char" || type == "int8" || type == "short" || type == "int16" || type == "int" || type == "int32") return T(stream.next<int>(name));
                     else if (type == "uchar" || type == "uint8" || type == "ushort" || type == "uint16" || type == "uint" || type == "uint32") return T(stream.next<unsigned int>(name));
@@ -1800,24 +1795,27 @@ namespace lambda {
             }
 
             template <typename T>
-            static std::map<double, T> parseSPD(const std::string & input) {
+            static std::map<Float, T> parseSPD(const std::string & input) {
                 std::ifstream inputFile(input);
 
                 if (!inputFile.is_open()) error::failedToOpenFileError(input);
 
-                std::map<double, T> samples;
+                std::map<Float, T> samples;
 
                 std::string line;
 
-                ParserStream stream(input);
-                ParserValidator validator(stream);
+                Stream stream(input);
+                Validator validator(stream);
 
                 while (std::getline(inputFile, line)) {
                     stream.load(stripComments(line));
 
                     if (!stream.hasNext<char>()) continue;
 
-                    double lambda = stream.next<double>("lambda");
+                    Float lambda = stream.next<Float>("lambda");
+
+                    if (lambda < 0 || samples.contains(lambda)) stream.raiseError("'lambda' is missing or invalid");
+
                     samples[lambda] = stream.next<T>("value");
 
                     validator.unexpected(stream.peek<char>());

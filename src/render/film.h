@@ -11,9 +11,14 @@
 namespace lambda {
     class Film {
         public:
-            Film() : space(ColorSpace::SRGB), width(0), height(0), lambdaMin(0), lambdaMax(0), wavelengthCDFMin(0), wavelengthCDFMax(0), buffer(nullptr) {}
+            Film() : space(ColorSpace::SRGB), width(0), height(0), lambdaMin(0), lambdaMax(0), visibleMin(0), visibleMax(0), visibleWeight(0), wavelengthCDFMin(0), wavelengthCDFMax(0), buffer(nullptr) {}
 
-            Film(ColorSpace _space, int _width, int _height, Float _lambdaMin, Float _lambdaMax, Float * _buffer) : space(_space), width(_width), height(_height), lambdaMin(_lambdaMin), lambdaMax(_lambdaMax), wavelengthCDFMin(std::tanh(constants::WAVELENGTH_PDF_WIDTH * (_lambdaMin - constants::WAVELENGTH_PDF_CENTER))), wavelengthCDFMax(std::tanh(constants::WAVELENGTH_PDF_WIDTH * (_lambdaMax - constants::WAVELENGTH_PDF_CENTER))), buffer(_buffer) {}
+            Film(ColorSpace _space, int _width, int _height, Float _lambdaMin, Float _lambdaMax, Float * _buffer) : space(_space), width(_width), height(_height), lambdaMin(_lambdaMin), lambdaMax(_lambdaMax), visibleMin(std::fmax(_lambdaMin, Float(constants::CIE_LAMBDA_MIN))), visibleMax(std::fmin(_lambdaMax, Float(constants::CIE_LAMBDA_MAX))), buffer(_buffer) {
+                visibleWeight = std::fmax(visibleMax - visibleMin, Float(0)) / (_lambdaMax - _lambdaMin);
+
+                wavelengthCDFMin = std::tanh(constants::WAVELENGTH_PDF_WIDTH * (visibleMin - constants::WAVELENGTH_PDF_CENTER));
+                wavelengthCDFMax = std::tanh(constants::WAVELENGTH_PDF_WIDTH * (visibleMax - constants::WAVELENGTH_PDF_CENTER));
+            }
 
             LAMBDA_HOST_DEVICE void setPixel(int i, int j, const Vector<Float, 3> & value) { for (int k = 0; k < 3; k++) buffer[(j * width + i) * 3 + k] = value[k]; }
 
@@ -39,7 +44,12 @@ namespace lambda {
 
                     if (v >= 1) v -= 1;
 
-                    lambdas[i] = constants::WAVELENGTH_PDF_CENTER + std::atanh(utils::interpolate(wavelengthCDFMin, wavelengthCDFMax, v)) / constants::WAVELENGTH_PDF_WIDTH;
+                    if (v < visibleWeight) lambdas[i] = utils::clamp(constants::WAVELENGTH_PDF_CENTER + std::atanh(utils::clamp(utils::interpolate(wavelengthCDFMin, wavelengthCDFMax, v / visibleWeight), -constants::NEXT_AFTER, constants::NEXT_AFTER)) / constants::WAVELENGTH_PDF_WIDTH, std::fmax(lambdaMin, Float(constants::CIE_LAMBDA_MIN)), std::fmin(lambdaMax, Float(constants::CIE_LAMBDA_MAX)));
+                    else {
+                        lambdas[i] = utils::interpolate(lambdaMin, lambdaMax - (visibleMax - visibleMin), (v - visibleWeight) / (1 - visibleWeight));
+
+                        if (lambdas[i] >= visibleMin) lambdas[i] += visibleMax - visibleMin;
+                    }
                 }
 
                 return lambdas;
@@ -52,11 +62,16 @@ namespace lambda {
                     Float lambda = lambdas[i];
                     Float radiance = s[i];
 
-                    Float weight = std::cosh(constants::WAVELENGTH_PDF_WIDTH * (lambda - constants::WAVELENGTH_PDF_CENTER));
+                    Float probabilityDensity = 0;
 
-                    weight *= weight * (wavelengthCDFMax - wavelengthCDFMin) / (constants::WAVELENGTH_PDF_WIDTH * constants::HERO_COUNT);
+                    if (lambda >= visibleMin && lambda <= visibleMax) {
+                        probabilityDensity = 1 / std::cosh(constants::WAVELENGTH_PDF_WIDTH * (lambda - constants::WAVELENGTH_PDF_CENTER));
 
-                    xyz += Vector<Float, 3>(utils::xyz31(lambda, 0), utils::xyz31(lambda, 1), utils::xyz31(lambda, 2)) * radiance * weight;
+                        probabilityDensity *= visibleWeight * probabilityDensity * constants::WAVELENGTH_PDF_WIDTH / (wavelengthCDFMax - wavelengthCDFMin);
+                    }
+                    else probabilityDensity = (1 - visibleWeight) / ((lambdaMax - lambdaMin) - (visibleMax - visibleMin));
+
+                    xyz += Vector<Float, 3>(utils::xyz31(lambda, 0), utils::xyz31(lambda, 1), utils::xyz31(lambda, 2)) * radiance / (constants::HERO_COUNT * probabilityDensity);
                 }
 
                 return xyz / constants::CIE_Y_INTEGRAL;
@@ -65,7 +80,7 @@ namespace lambda {
         private:
             ColorSpace space;
             int width, height;
-            Float lambdaMin, lambdaMax, wavelengthCDFMin, wavelengthCDFMax;
+            Float lambdaMin, lambdaMax, visibleMin, visibleMax, visibleWeight, wavelengthCDFMin, wavelengthCDFMax;
             Float * buffer;
     };
 }

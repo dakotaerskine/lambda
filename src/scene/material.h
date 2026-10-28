@@ -38,7 +38,7 @@ namespace lambda {
                 return material;
             }
 
-            static Material makeConductor(DenseSpectrum<Float> * n0, DenseSpectrum<Complex> * n1, ScalarTexture * alphaX, ScalarTexture * alphaY) {
+            static Material makeConductor(LinearSpectrum<Float> * n0, LinearSpectrum<Complex> * n1, ScalarTexture * alphaX, ScalarTexture * alphaY) {
                 Material material;
 
                 material.type = Type::CONDUCTOR;
@@ -50,7 +50,7 @@ namespace lambda {
                 return material;
             }
 
-            static Material makeDielectric(DenseSpectrum<Float> * n0, DenseSpectrum<Float> * n1, ScalarTexture * alphaX, ScalarTexture * alphaY) {
+            static Material makeDielectric(LinearSpectrum<Float> * n0, LinearSpectrum<Float> * n1, ScalarTexture * alphaX, ScalarTexture * alphaY) {
                 Material material;
 
                 material.type = Type::DIELECTRIC;
@@ -62,7 +62,7 @@ namespace lambda {
                 return material;
             }
 
-            static Material makeCoated(int numLayers, DenseSpectrum<Complex> ** n, ScalarTexture ** d, Material * substrate) {
+            static Material makeCoated(int numLayers, LinearSpectrum<Complex> ** n, ScalarTexture ** d, Material * substrate) {
                 Material material;
 
                 material.type = Type::COATED;
@@ -182,9 +182,9 @@ namespace lambda {
             union {
                 struct { SpectrumTexture * albedo; } lambertian;
                 struct { SpectrumTexture * albedo; } mirror;
-                struct { DenseSpectrum<Float> * n0; DenseSpectrum<Complex> * n1; ScalarTexture * alphaX, * alphaY; } conductor;
-                struct { DenseSpectrum<Float> * n0, * n1; ScalarTexture * alphaX, * alphaY; } dielectric;
-                struct { int numLayers; DenseSpectrum<Complex> ** n; ScalarTexture ** d; Material * substrate; } coated;
+                struct { LinearSpectrum<Float> * n0; LinearSpectrum<Complex> * n1; ScalarTexture * alphaX, * alphaY; } conductor;
+                struct { LinearSpectrum<Float> * n0, * n1; ScalarTexture * alphaX, * alphaY; } dielectric;
+                struct { int numLayers; LinearSpectrum<Complex> ** n; ScalarTexture ** d; Material * substrate; } coated;
                 struct { SpectrumTexture * emission; } emissive;
             };
 
@@ -258,8 +258,8 @@ namespace lambda {
                     if (!collapsed || i == 0) {
                         Float lambda = rIn.getLambdas()[i];
 
-                        Float n0 = conductor.n0->get(lambda);
-                        Complex n1 = conductor.n1->get(lambda);
+                        Float n0 = (*conductor.n0)[lambda];
+                        Complex n1 = (*conductor.n1)[lambda];
 
                         fresnel(coating, intersection, n0, n1, cosTheta, lambda, reflectance[i], transmittance[i]);
                     }
@@ -302,8 +302,8 @@ namespace lambda {
                 for (int i = 0; i < constants::HERO_COUNT; i++) {
                     Float lambda = rIn.getLambdas()[i];
 
-                    Float n0 = intersection.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
-                    Float n1 = intersection.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
+                    Float n0 = intersection.frontFacing ? (*dielectric.n0)[lambda] : (*dielectric.n1)[lambda];
+                    Float n1 = intersection.frontFacing ? (*dielectric.n1)[lambda] : (*dielectric.n0)[lambda];
 
                     Float ratio = n0 / n1;
 
@@ -414,8 +414,8 @@ namespace lambda {
                         if (!collapsed || i == 0) {
                             Float lambda = r.getLambdas()[i];
 
-                            Float n0 = conductor.n0->get(lambda);
-                            Complex n1 = conductor.n1->get(lambda);
+                            Float n0 = (*conductor.n0)[lambda];
+                            Complex n1 = (*conductor.n1)[lambda];
 
                             fresnel(coating, intersection, n0, n1, cosTheta, lambda, reflectance[i], transmittance[i]);
 
@@ -438,8 +438,8 @@ namespace lambda {
 
                 Float lambda = r.getLambdas()[0];
 
-                Float n0Hero = intersection.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
-                Float n1Hero = intersection.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
+                Float n0Hero = intersection.frontFacing ? (*dielectric.n0)[lambda] : (*dielectric.n1)[lambda];
+                Float n1Hero = intersection.frontFacing ? (*dielectric.n1)[lambda] : (*dielectric.n0)[lambda];
 
                 bool collapse = false;
 
@@ -450,8 +450,8 @@ namespace lambda {
                 for (int i = 0; i < constants::HERO_COUNT; i++) {
                     lambda = r.getLambdas()[i];
 
-                    Float n0 = intersection.frontFacing ? dielectric.n0->get(lambda) : dielectric.n1->get(lambda);
-                    Float n1 = intersection.frontFacing ? dielectric.n1->get(lambda) : dielectric.n0->get(lambda);
+                    Float n0 = intersection.frontFacing ? (*dielectric.n0)[lambda] : (*dielectric.n1)[lambda];
+                    Float n1 = intersection.frontFacing ? (*dielectric.n1)[lambda] : (*dielectric.n0)[lambda];
 
                     if (!collapsed && (std::fabs(n0Hero - n0) > constants::DISPERSION_DELTA || std::fabs(n1Hero - n1) > constants::DISPERSION_DELTA)) collapse = true;
 
@@ -554,14 +554,14 @@ namespace lambda {
                 else {
                     int numLayers = coating->coated.numLayers;
 
-                    const DenseSpectrum<Complex> * const * n = coating->coated.n;
+                    const LinearSpectrum<Complex> * const * n = coating->coated.n;
                     const ScalarTexture * const * d = coating->coated.d;
 
                     int jOffset = intersection.frontFacing ? 0 : numLayers - 1;
                     int jSign = intersection.frontFacing ? 1 : -1;
 
                     Complex n0 = nI;
-                    Complex n1 = n[jOffset]->get(lambda);
+                    Complex n1 = (*n[jOffset])[lambda];
 
                     Float nSinThetaSquared = nI * nI * (1 - cosThetaI * cosThetaI);
 
@@ -574,8 +574,8 @@ namespace lambda {
                     matrices[1] = utils::interfaceMatrixP(n0, n1, cosCurrent, cosNext);
 
                     for (int i = 0; i < numLayers; i++) {
-                        n0 = n[jOffset + jSign * i]->get(lambda);
-                        n1 = i == numLayers - 1 ? nT : n[jOffset + jSign * (i + 1)]->get(lambda);
+                        n0 = (*n[jOffset + jSign * i])[lambda];
+                        n1 = i == numLayers - 1 ? nT : (*n[jOffset + jSign * (i + 1)])[lambda];
 
                         cosCurrent = cosNext;
                         sinNext = nSinThetaSquared / (n1 * n1);

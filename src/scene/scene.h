@@ -17,7 +17,7 @@ namespace lambda {
 
     class Scene {
         public:
-            Scene(BVHNode<Instance> * _node = nullptr, BVHNode<Instance> * _lightNode = nullptr, Background * _backgrounds = nullptr, int _numBackgrounds = 0) : node(_node), lightNode(_lightNode), backgrounds(_backgrounds), numBackgrounds(_numBackgrounds) {}
+            Scene(BVHNode<Instance> * _node = nullptr, BVHNode<Instance> * _lightNode = nullptr, Background * _backgrounds = nullptr, int _numBackgrounds = 0) : node(_node), lightNode(_lightNode), numBackgrounds(_numBackgrounds), backgrounds(_backgrounds) {}
 
             LAMBDA_HOST_DEVICE const Background * getBackground(int i) const { return backgrounds + i; }
 
@@ -119,8 +119,8 @@ namespace lambda {
         private:
             BVHNode<Instance> * node;
             BVHNode<Instance> * lightNode;
-            Background * backgrounds;
             int numBackgrounds;
+            Background * backgrounds;
 
             template <bool occluded>
             LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const {

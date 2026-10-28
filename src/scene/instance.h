@@ -32,7 +32,7 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE const Medium * getMedium1(int i) const { return medium1 ? medium1 : objects[i].getMedium1(); }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> minBounds() const {
+            LAMBDA_HOST_DEVICE Vector<Float, 3> getMin() const {
                 Vector<Float, 3> bounds(constants::MAX, constants::MAX, constants::MAX);
 
                 Vector<Float, 3> corner1 = node->getMin();
@@ -50,7 +50,7 @@ namespace lambda {
                 return bounds;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> maxBounds() const {
+            LAMBDA_HOST_DEVICE Vector<Float, 3> getMax() const {
                 Vector<Float, 3> bounds(-constants::MAX, -constants::MAX, -constants::MAX);
 
                 Vector<Float, 3> corner1 = node->getMin();

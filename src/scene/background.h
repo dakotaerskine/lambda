@@ -148,22 +148,6 @@ namespace lambda {
                 textureCoordinate[1] = Float(0.5) * textureCoordinate[1] + Float(0.5);
             }
 
-            LAMBDA_HOST_DEVICE int findIndex(const Float * cdf, int size, Float value) const {
-                int left = 0;
-                int right = size - 1;
-
-                while (left < right) {
-                    int mid = left + (right - left) / 2;
-
-                    if (cdf[mid] < value)
-                        left = mid + 1;
-                    else
-                        right = mid;
-                }
-
-                return left;
-            }
-
             LAMBDA_HOST_DEVICE Vector<Float, 3> sampleEquirectangular(Random & state) const {
                 int width = emission->getWidth();
                 int height = emission->getHeight();
@@ -217,6 +201,20 @@ namespace lambda {
                 }
 
                 return transform.vectorToLocal(direction);
+            }
+
+            LAMBDA_HOST_DEVICE static int findIndex(const Float * cdf, int size, Float value) {
+                int left = 0;
+                int right = size - 1;
+
+                while (left < right) {
+                    int mid = left + (right - left) / 2;
+
+                    if (cdf[mid] < value) left = mid + 1;
+                    else right = mid;
+                }
+
+                return left;
             }
     };
 }

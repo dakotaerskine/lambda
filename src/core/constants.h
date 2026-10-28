@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <limits>
 
 #include "core/platform.h"
@@ -14,6 +15,8 @@ namespace lambda {
         inline constexpr Float EPSILON_MACHINE = std::numeric_limits<Float>::epsilon();
         inline constexpr Float EPSILON_RELATIVE = 16 * EPSILON_MACHINE;
         inline constexpr Float EPSILON_RELATIVE_SQUARED = EPSILON_RELATIVE * EPSILON_RELATIVE;
+
+        inline constexpr Float NEXT_AFTER = 1 - EPSILON_MACHINE * Float(0.5);
 
         inline constexpr Float PI = Float(3.14159265358979323846);
 

@@ -104,8 +104,8 @@ namespace lambda {
                 Float totalPower = 0;
 
                 for (int i = 0; i < n; i++) {
-                    minBounds = min(minBounds, elements[i]->minBounds());
-                    maxBounds = max(maxBounds, elements[i]->maxBounds());
+                    minBounds = min(minBounds, elements[i]->getMin());
+                    maxBounds = max(maxBounds, elements[i]->getMax());
                     minCenter = min(minCenter, elements[i]->center());
                     maxCenter = max(maxCenter, elements[i]->center());
 
@@ -132,8 +132,8 @@ namespace lambda {
                             Vector<Float, 3> center = elements[j]->center();
                             int bin = std::clamp(int(constants::BVH_BIN_COUNT * (center[i] - minCenter[i]) / (maxCenter[i] - minCenter[i])), 0, constants::BVH_BIN_COUNT - 1);
 
-                            binMin[bin] = min(binMin[bin], elements[j]->minBounds());
-                            binMax[bin] = max(binMax[bin], elements[j]->maxBounds());
+                            binMin[bin] = min(binMin[bin], elements[j]->getMin());
+                            binMax[bin] = max(binMax[bin], elements[j]->getMax());
 
                             if constexpr (light) binCount[bin] += elementPower(elements[j], materialBlind);
                             else binCount[bin]++;

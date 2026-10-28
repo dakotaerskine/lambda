@@ -41,7 +41,7 @@ namespace lambda {
 
             Float x = u * (a + b) / (a + std::sqrt(interpolate(a * a, b * b, u)));
 
-            return std::fmin(x, std::nextafter(Float(1), Float(0)));
+            return std::fmin(x, constants::NEXT_AFTER);
         }
 
         LAMBDA_HOST_DEVICE inline Vector<Float, 3> randomUnitVector(Random & state) {
@@ -289,15 +289,10 @@ namespace lambda {
 
         LAMBDA_HOST_DEVICE inline Matrix<Complex, 2> propagationMatrix(const Complex & phi) { return Matrix<Complex, 2>(exp(Complex(0, -1) * phi), Complex(0), Complex(0), exp(Complex(0, 1) * phi)); }
 
-        LAMBDA_HOST_DEVICE inline double xyz31(int lambda, int i) { return constants::CIE_XYZ_1931[(lambda - constants::CIE_LAMBDA_MIN) * 3 + i]; }
+        LAMBDA_HOST_DEVICE inline double xyz31(int lambda, int i) { return (lambda >= constants::CIE_LAMBDA_MIN && lambda <= constants::CIE_LAMBDA_MAX) ? constants::CIE_XYZ_1931[(lambda - constants::CIE_LAMBDA_MIN) * 3 + i] : 0; }
 
         LAMBDA_HOST_DEVICE inline Float xyz31(Float lambda, int i) {
-            lambda = std::fmax(lambda, Float(constants::CIE_LAMBDA_MIN));
-
             int min = int(lambda);
-
-            if (min >= constants::CIE_LAMBDA_MAX) return Float(xyz31(constants::CIE_LAMBDA_MAX, i));
-
             int max = min + 1;
 
             return interpolate(Float(xyz31(min, i)), Float(xyz31(max, i)), lambda - Float(min));

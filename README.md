@@ -22,7 +22,7 @@ Lambda takes in a single `.lrd` scene file as well as an optional output file pa
 The Lambda Render Description is a plain text file format with one command per line. `#` starts a line comment. The first command must be `Render`. `none` can be used in place of media and materials.
 
 ### `Render`
-`space` is one of `srgb`, `rec2020`, or `aces2065-1`, `depth` is the maximum bounce count, `samples` must be a perfect square, and `lambdaMin` and `lambdaMax` are wavelengths within [360, 830], the range covered by the built-in CIE 1931 tables.
+`space` is one of `srgb`, `rec2020`, or `aces2065-1`, `depth` is the maximum bounce count, and `samples` must be a perfect square.
 
 ```
 Render <space> <width> <height> <samples> <depth> <lambdaMin> <lambdaMax> <seed>

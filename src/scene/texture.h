@@ -81,7 +81,7 @@ namespace lambda {
 
                 int midWidth = width1 + width2 + width3 - minWidth - maxWidth;
                 int midHeight = height1 + height2 + height3 - minHeight - maxHeight;
-                
+
                 if (width1 == 0 || width2 == 0 || width3 == 0) texture.width = 0;
                 else if (maxWidth % minWidth == 0 && maxWidth % midWidth == 0) texture.width = maxWidth;
                 else texture.width = 0;
@@ -335,14 +335,14 @@ namespace lambda {
         public:
             SpectrumTexture() : type(Type::CONSTANT) {}
 
-            static SpectrumTexture makeConstant(DenseSpectrum<Float> * v) {
+            static SpectrumTexture makeConstant(LinearSpectrum<Float> * v) {
                 SpectrumTexture texture;
 
                 texture.type = Type::CONSTANT;
                 texture.width = 1;
                 texture.height = 1;
-                texture.min = v->min();
-                texture.max = v->max();
+                texture.min = std::fmin(v->min(), Float(0));
+                texture.max = std::fmax(v->max(), Float(0));
                 texture.average = v->average();
                 texture.constant.value = v;
 
@@ -418,7 +418,7 @@ namespace lambda {
 
                 int midWidth = width1 + width2 + width3 - minWidth - maxWidth;
                 int midHeight = height1 + height2 + height3 - minHeight - maxHeight;
-                
+
                 if (width1 == 0 || width2 == 0 || width3 == 0) texture.width = 0;
                 else if (maxWidth % minWidth == 0 && maxWidth % midWidth == 0) texture.width = maxWidth;
                 else texture.width = 0;
@@ -437,14 +437,14 @@ namespace lambda {
                 return texture;
             }
 
-            static SpectrumTexture makeChecker(DenseSpectrum<Float> * v1, DenseSpectrum<Float> * v2, Float uScale, Float vScale, Float uOffset, Float vOffset) {
+            static SpectrumTexture makeChecker(LinearSpectrum<Float> * v1, LinearSpectrum<Float> * v2, Float uScale, Float vScale, Float uOffset, Float vOffset) {
                 SpectrumTexture texture;
 
                 texture.type = Type::CHECKER;
                 texture.width = 0;
                 texture.height = 0;
-                texture.min = std::fmin(v1->min(), v2->min());
-                texture.max = std::fmax(v1->max(), v2->max());
+                texture.min = std::fmin(std::fmin(v1->min(), v2->min()), Float(0));
+                texture.max = std::fmax(std::fmax(v1->max(), v2->max()), Float(0));
                 texture.average = Float(0.5) * (v1->average() + v2->average());
                 texture.checker.value1 = v1;
                 texture.checker.value2 = v2;
@@ -524,7 +524,7 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & intersection, Float lambda) const {
                 switch (type) {
-                    case Type::CONSTANT: return constant.value->get(lambda);
+                    case Type::CONSTANT: return (*constant.value)[lambda];
                     case Type::SCALAR: return scalar.texture->evaluate(intersection);
                     case Type::SCALE: return scale.texture1->evaluate(intersection, lambda) * scale.texture2->evaluate(intersection, lambda);
                     case Type::MIX: return utils::interpolate(mix.texture1->evaluate(intersection, lambda), mix.texture2->evaluate(intersection, lambda), mix.factor->evaluate(intersection));
@@ -543,11 +543,11 @@ namespace lambda {
             Float min, max, average;
 
             union {
-                struct { DenseSpectrum<Float> * value; } constant;
+                struct { LinearSpectrum<Float> * value; } constant;
                 struct { SpectrumTexture * texture1, * texture2; } scale;
                 struct { ScalarTexture * texture; } scalar;
                 struct { SpectrumTexture * texture1, * texture2; ScalarTexture * factor; } mix;
-                struct { DenseSpectrum<Float> * value1, * value2; Float uScale, vScale, uOffset, vOffset; } checker;
+                struct { LinearSpectrum<Float> * value1, * value2; Float uScale, vScale, uOffset, vOffset; } checker;
                 struct { Float * image; ColorSpace space; int width, height; Float uScale, vScale, uOffset, vOffset; } image;
             };
 
@@ -568,7 +568,7 @@ namespace lambda {
                 int x = int(std::floor(intersection.textureCoordinate[0] * checker.uScale + checker.uOffset));
                 int y = int(std::floor(intersection.textureCoordinate[1] * checker.vScale + checker.vOffset));
 
-                return abs(x + y) % 2 == 0 ? checker.value1->get(lambda) : checker.value2->get(lambda);
+                return abs(x + y) % 2 == 0 ? (*checker.value1)[lambda] : (*checker.value2)[lambda];
             }
 
             LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & intersection, Float lambda) const {

@@ -133,19 +133,19 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE Float getArea() const { return area; }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> minBounds() const {
+            LAMBDA_HOST_DEVICE Vector<Float, 3> getMin() const {
                 switch (type) {
                     case Type::SPHERE: return Vector<Float, 3>(-sphere.radius, -sphere.radius, -sphere.radius);
                     case Type::DISK: return Vector<Float, 3>(-disk.radius, -constants::EPSILON_RELATIVE * disk.radius, -disk.radius);
                     case Type::CYLINDER: return Vector<Float, 3>(-cylinder.radius, Float(-0.5) * cylinder.height, -cylinder.radius);
-                    case Type::TRI: return minBoundsTri();
-                    case Type::PATCH: return minBoundsPatch();
+                    case Type::TRI: return getMinTri();
+                    case Type::PATCH: return getMinPatch();
                 }
 
                 return Vector<Float, 3>();
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> maxBounds() const {
+            LAMBDA_HOST_DEVICE Vector<Float, 3> getMax() const {
                 switch (type) {
                     case Type::SPHERE: return Vector<Float, 3>(sphere.radius, sphere.radius, sphere.radius);
                     case Type::DISK: return Vector<Float, 3>(disk.radius, constants::EPSILON_RELATIVE * disk.radius, disk.radius);
@@ -233,7 +233,7 @@ namespace lambda {
                 struct { Mesh * mesh; int index; } patch;
             };
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> minBoundsTri() const {
+            LAMBDA_HOST_DEVICE Vector<Float, 3> getMinTri() const {
                 Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
                 Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
                 Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
@@ -245,7 +245,7 @@ namespace lambda {
                 return minCorner - Vector<Float, 3>(padding, padding, padding);
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> minBoundsPatch() const {
+            LAMBDA_HOST_DEVICE Vector<Float, 3> getMinPatch() const {
                 Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
                 Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
                 Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
@@ -851,7 +851,7 @@ namespace lambda {
                 Float inverseDeterminant = 1 / determinant;
 
                 t *= inverseDeterminant;
-                
+
                 alpha = e1 * inverseDeterminant;
                 beta = e2 * inverseDeterminant;
 

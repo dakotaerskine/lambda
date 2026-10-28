@@ -69,6 +69,10 @@ namespace lambda {
                 return Complex(r, i);
             }
 
+            LAMBDA_HOST_DEVICE friend Complex fmin(const Complex & c1, const Complex & c2) { return Complex(std::fmin(c1.re, c2.re), std::fmin(c1.im, c2.im)); }
+
+            LAMBDA_HOST_DEVICE friend Complex fmax(const Complex & c1, const Complex & c2) { return Complex(std::fmax(c1.re, c2.re), std::fmax(c1.im, c2.im)); }
+
             LAMBDA_HOST_DEVICE friend Float abs(const Complex & c) { return Float(std::sqrt(c.re * c.re + c.im * c.im)); }
 
             LAMBDA_HOST_DEVICE friend Complex exp(const Complex & c) {

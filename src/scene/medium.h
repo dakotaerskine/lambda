@@ -12,7 +12,7 @@ namespace lambda {
         public:
             Medium() : type(Type::HOMOGENEOUS) {}
 
-            static Medium makeHomogeneous(DenseSpectrum<Float> * sigmaA, DenseSpectrum<Float> * sigmaS, Float g) {
+            static Medium makeHomogeneous(LinearSpectrum<Float> * sigmaA, LinearSpectrum<Float> * sigmaS, Float g) {
                 Medium medium;
 
                 medium.type = Type::HOMOGENEOUS;
@@ -61,7 +61,7 @@ namespace lambda {
             Type type;
 
             union {
-                struct { DenseSpectrum<Float> * sigmaA, * sigmaS; Float g; } homogeneous;
+                struct { LinearSpectrum<Float> * sigmaA, * sigmaS; Float g; } homogeneous;
             };
 
             LAMBDA_HOST_DEVICE SampledSpectrum transmittanceHomogeneous(const Intersection & intersection, const Ray & r, bool collapsed) const {
@@ -69,8 +69,8 @@ namespace lambda {
 
                 for (int i = 0; i < constants::HERO_COUNT; i++)
                     if (!collapsed || i == 0) {
-                        Float sigmaA = homogeneous.sigmaA->get(r.getLambdas()[i]);
-                        Float sigmaS = homogeneous.sigmaS->get(r.getLambdas()[i]);
+                        Float sigmaA = (*homogeneous.sigmaA)[r.getLambdas()[i]];
+                        Float sigmaS = (*homogeneous.sigmaS)[r.getLambdas()[i]];
                         Float sigmaT = sigmaA + sigmaS;
 
                         if (intersection.t >= constants::MAX) attenuation[i] = sigmaT > 0 ? 0 : 1;
@@ -81,8 +81,8 @@ namespace lambda {
             }
 
             LAMBDA_HOST_DEVICE SampledSpectrum sampleDistanceHomogeneous(Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
-                Float sigmaA = homogeneous.sigmaA->get(r.getLambdas()[0]);
-                Float sigmaS = homogeneous.sigmaS->get(r.getLambdas()[0]);
+                Float sigmaA = (*homogeneous.sigmaA)[r.getLambdas()[0]];
+                Float sigmaS = (*homogeneous.sigmaS)[r.getLambdas()[0]];
                 Float sigmaT = sigmaA + sigmaS;
 
                 Float t = sigmaT > 0 ? -std::log(1 - utils::randomFloat(state)) / sigmaT : constants::MAX;
@@ -103,8 +103,8 @@ namespace lambda {
 
                 for (int i = 0; i < constants::HERO_COUNT; i++)
                     if (i == 0 || !collapsed) {
-                        sigmaA = homogeneous.sigmaA->get(r.getLambdas()[i]);
-                        sigmaS = homogeneous.sigmaS->get(r.getLambdas()[i]);
+                        sigmaA = (*homogeneous.sigmaA)[r.getLambdas()[i]];
+                        sigmaS = (*homogeneous.sigmaS)[r.getLambdas()[i]];
                         sigmaT = sigmaA + sigmaS;
 
                         probabilityDensity[i] = isSurface ? transmittance[i] : sigmaT * transmittance[i];
@@ -128,7 +128,7 @@ namespace lambda {
                 SampledSpectrum attenuation;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++)
-                    if (i == 0 || !collapsed) attenuation[i] = homogeneous.sigmaS->get(rIn.getLambdas()[i]);
+                    if (i == 0 || !collapsed) attenuation[i] = (*homogeneous.sigmaS)[rIn.getLambdas()[i]];
 
                 return attenuation * probabilityDensity;
             }
