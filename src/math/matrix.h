@@ -9,7 +9,11 @@ namespace lambda {
     requires ((std::is_arithmetic_v<T> || std::is_same_v<T, Complex>) && N > 0)
     class Matrix {
         public:
-            LAMBDA_HOST_DEVICE Matrix(T d = T(1)) { for (int i = 0; i < N * N; i++) elements[i] = i % (N + 1) == 0 ? d : T(0); }
+            LAMBDA_HOST_DEVICE Matrix() { for (int i = 0; i < N * N; i++) elements[i] = i % (N + 1) == 0 ? T(1) : T(0); }
+
+            template <typename U>
+            requires (std::is_convertible_v<U, T>)
+            LAMBDA_HOST_DEVICE Matrix(U d) { for (int i = 0; i < N * N; i++) elements[i] = i % (N + 1) == 0 ? T(d) : T(0); }
 
             template <typename... Ts>
             requires (sizeof...(Ts) == N * N && (std::is_convertible_v<Ts, T> && ...) && N > 1)
@@ -30,9 +34,13 @@ namespace lambda {
                 }
             }
 
-            LAMBDA_HOST_DEVICE Matrix(const T * d) { for (int i = 0; i < N * N; i++) elements[i] = d[i]; }
+            template <typename U>
+            requires (std::is_convertible_v<U, T>)
+            LAMBDA_HOST_DEVICE Matrix(const U * d) { for (int i = 0; i < N * N; i++) elements[i] = T(d[i]); }
 
-            LAMBDA_HOST_DEVICE Matrix(const T d[N][N]) { for (int i = 0; i < N * N; i++) elements[i] = d[i / N][i % N]; }
+            template <typename U>
+            requires (std::is_convertible_v<U, T>)
+            LAMBDA_HOST_DEVICE Matrix(const U d[N][N]) { for (int i = 0; i < N * N; i++) elements[i] = T(d[i / N][i % N]); }
 
             template <typename U>
             requires (std::is_convertible_v<U, T>)

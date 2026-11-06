@@ -15,6 +15,8 @@
 namespace lambda {
     class Builder {
         public:
+            Builder() = delete;
+
             static Float computeSceneRadius(const std::vector<Instance *> & instances) {
                 Vector<Float, 3> sceneCenter = instances.empty() ? Vector<Float, 3>() : instances[0]->center(0);
                 Float sceneRadius = instances.empty() ? 1 : instances[0]->radius(0);
@@ -130,7 +132,7 @@ namespace lambda {
 
                         for (int j = 0; j < n; j++) {
                             Vector<Float, 3> center = elements[j]->center();
-                            int bin = std::clamp(int(constants::BVH_BIN_COUNT * (center[i] - minCenter[i]) / (maxCenter[i] - minCenter[i])), 0, constants::BVH_BIN_COUNT - 1);
+                            int bin = utils::clamp(int(constants::BVH_BIN_COUNT * (center[i] - minCenter[i]) / (maxCenter[i] - minCenter[i])), 0, constants::BVH_BIN_COUNT - 1);
 
                             binMin[bin] = min(binMin[bin], elements[j]->getMin());
                             binMax[bin] = max(binMax[bin], elements[j]->getMax());

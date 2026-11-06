@@ -1,5 +1,10 @@
 #pragma once
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define TINYEXR_IMPLEMENTATION
+#define TINYEXR_USE_MINIZ 0
+#define TINYEXR_USE_STB_ZLIB 1
+
 #include <cctype>
 #include <cstring>
 #include <fstream>
@@ -21,68 +26,43 @@
 namespace lambda {
     class Writer {
         public:
-            static bool hasValidExtension(const std::string & output) { return utils::hasExtension(output, ".exr") || utils::hasExtension(output, ".pfm") || utils::hasExtension(output, ".png"); }
+            Writer() = delete;
 
             static void writeImage(const std::string & output, const Integrator * integrator, Float duration) {
                 if (utils::hasExtension(output, ".exr")) writeEXR(output, integrator, duration);
                 else if (utils::hasExtension(output, ".pfm")) writePFM(output, integrator->getFilm());
                 else if (utils::hasExtension(output, ".png")) writePNG(output, integrator->getFilm());
-                else error::fileError(output, "invalid file extension");
-            }
-
-            static void writeUpsamplingTables(const std::string & output, float * scale, const float * lut) {
-                std::ofstream outputFile(output, std::ios::binary);
-
-                if (!outputFile.is_open()) return;
-
-                outputFile.write("SPEC", 4);
-
-                uint32_t resolution = constants::UPSAMPLING_RESOLUTION;
-
-                outputFile.write(reinterpret_cast<const char *>(&resolution), sizeof(uint32_t));
-
-                outputFile.write(reinterpret_cast<const char *>(scale), sizeof(float) * resolution);
-                outputFile.write(reinterpret_cast<const char *>(lut), sizeof(float) * 3 * resolution * resolution * resolution * 3);
+                else throw FileError(output, "invalid file extension");
             }
 
         private:
             static void writePNG(const std::string & output, const Film * film) {
                 std::vector<unsigned char> pixels(film->getWidth() * film->getHeight() * 3);
 
-                Matrix<double, 3> toRGB = utils::toRGBMatrix(ColorSpace::SRGB);
-
                 Random state(0, 0);
 
                 for (int j = 0; j < film->getHeight(); j++)
                     for (int i = 0; i < film->getWidth(); i++) {
-                        Vector<Float, 3> color = toRGB * film->getPixel(i, j);
+                        Vector<Float, 3> color = ColorSpace::sRGB()->toRGB(film->getPixel(i, j));
 
-                        pixels[(j * film->getWidth() + i) * 3 + 0] = utils::quantize(utils::toneMap(color[0]), state);
-                        pixels[(j * film->getWidth() + i) * 3 + 1] = utils::quantize(utils::toneMap(color[1]), state);
-                        pixels[(j * film->getWidth() + i) * 3 + 2] = utils::quantize(utils::toneMap(color[2]), state);
+                        pixels[(j * film->getWidth() + i) * 3 + 0] = quantize(utils::sRGBEncode(utils::clamp(color[0], Float(0), Float(1))), state);
+                        pixels[(j * film->getWidth() + i) * 3 + 1] = quantize(utils::sRGBEncode(utils::clamp(color[1], Float(0), Float(1))), state);
+                        pixels[(j * film->getWidth() + i) * 3 + 2] = quantize(utils::sRGBEncode(utils::clamp(color[2], Float(0), Float(1))), state);
                     }
 
-                if (!stbi_write_png(output.c_str(), film->getWidth(), film->getHeight(), 3, pixels.data(), film->getWidth() * 3)) {
-                    const char * failureReason = stbi_failure_reason();
-
-                    std::string error = failureReason ? " (" + std::string(failureReason) + ")" : "";
-
-                    error::fileError(output, "failed to write file" + error);
-                }
+                if (!stbi_write_png(output.c_str(), film->getWidth(), film->getHeight(), 3, pixels.data(), film->getWidth() * 3)) throw FileError(output, "failed to write file");
             }
 
             static void writePFM(const std::string & output, const Film * film) {
                 std::ofstream outputFile(output, std::ios::binary);
 
-                if (!outputFile.is_open()) error::failedToOpenFileError(output);
-
-                Matrix<double, 3> toRGB = utils::toRGBMatrix(film->getSpace());
+                if (!outputFile.is_open()) throw FileError::failedToOpen(output);
 
                 outputFile << "PF\n" << film->getWidth() << " " << film->getHeight() << "\n-1.0\n";
 
                 for (int j = film->getHeight() - 1; j >= 0; j--)
                     for (int i = 0; i < film->getWidth(); i++) {
-                        Vector<float, 3> color = toRGB * film->getPixel(i, j);
+                        Vector<float, 3> color = film->getSpace()->toRGB(film->getPixel(i, j));
 
                         outputFile.write(reinterpret_cast<const char *>(&color[0]), sizeof(float));
                         outputFile.write(reinterpret_cast<const char *>(&color[1]), sizeof(float));
@@ -109,11 +89,9 @@ namespace lambda {
                 std::vector<float> channelG(image.width * image.height);
                 std::vector<float> channelR(image.width * image.height);
 
-                Matrix<double, 3> toRGB = utils::toRGBMatrix(film->getSpace());
-
                 for (int j = 0; j < image.height; j++)
                     for (int i = 0; i < image.width; i++) {
-                        Vector<float, 3> color = toRGB * film->getPixel(i, j);
+                        Vector<float, 3> color = film->getSpace()->toRGB(film->getPixel(i, j));
 
                         channelR[j * image.width + i] = std::fmin(color[0], float(65504));
                         channelG[j * image.width + i] = std::fmin(color[1], float(65504));
@@ -149,7 +127,7 @@ namespace lambda {
 
                 float chromaticities[8];
 
-                for (int i = 0; i < 8; i++) chromaticities[i] = float(utils::chromaticity(film->getSpace(), i));
+                for (int i = 0; i < 8; i++) chromaticities[i] = float(film->getSpace()->chromaticity(i));
 
                 float worldToCamera[16];
 
@@ -188,8 +166,14 @@ namespace lambda {
 
                     FreeEXRErrorMessage(error);
 
-                    error::fileError(output, "failed to open file" + errorMessage);
+                    throw FileError(output, "failed to open file" + errorMessage);
                 }
+            }
+
+            static uint8_t quantize(Float value, Random & state) {
+                Float dither = utils::randomFloat(state) - Float(0.5);
+
+                return uint8_t(utils::clamp(int(std::round(value * 255 + dither)), 0, 255));
             }
 
             template <typename T>

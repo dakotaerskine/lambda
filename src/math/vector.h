@@ -13,17 +13,21 @@ namespace lambda {
         public:
             LAMBDA_HOST_DEVICE Vector() { for (int i = 0; i < N; i++) elements[i] = T(); }
 
+            template <typename U>
+            requires (std::is_convertible_v<U, T>)
+            LAMBDA_HOST_DEVICE Vector(U d) { for (int i = 0; i < N; i++) elements[i] = T(d); }
+
             template <typename... Ts>
-            requires (sizeof...(Ts) == N && (std::is_convertible_v<Ts, T> && ...))
+            requires (sizeof...(Ts) == N && (std::is_convertible_v<Ts, T> && ...) && N > 1)
             LAMBDA_HOST_DEVICE Vector(Ts... d) {
                 int i = 0;
 
                 ((elements[i++] = T(d)), ...);
             }
 
-            template <int M>
-            requires (M >= N)
-            LAMBDA_HOST_DEVICE Vector(const Vector<T, M> & v) { for (int i = 0; i < N; i++) elements[i] = T(v[i]); }
+            template <typename U, int M>
+            requires (std::is_convertible_v<U, T> && M >= N)
+            LAMBDA_HOST_DEVICE Vector(const Vector<U, M> & v) { for (int i = 0; i < N; i++) elements[i] = T(v[i]); }
 
             template <typename... Ts, int M>
             requires (M > 0 && M < N && sizeof...(Ts) + M == N && (std::is_convertible_v<Ts, T> && ...))
@@ -41,7 +45,9 @@ namespace lambda {
                 for (int i = 0; i < N; i++) elements[i] = T(v[i]);
             }
 
-            LAMBDA_HOST_DEVICE Vector(const T * d) { for (int i = 0; i < N; i++) elements[i] = d[i]; }
+            template <typename U>
+            requires (std::is_convertible_v<U, T>)
+            LAMBDA_HOST_DEVICE Vector(const U * d) { for (int i = 0; i < N; i++) elements[i] = T(d[i]); }
 
             LAMBDA_HOST_DEVICE T & operator[](int i) { return elements[i]; }
 

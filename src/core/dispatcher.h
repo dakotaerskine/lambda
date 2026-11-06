@@ -30,7 +30,9 @@ namespace lambda {
 
     class Dispatcher {
         public:
-            static Float dispatchRender(const std::string & program, Allocator & allocator, Integrator * integrator) {
+            Dispatcher() = delete;
+
+            static Float dispatch(const std::string & program, Allocator & allocator, Integrator * integrator) {
                 auto start = std::chrono::high_resolution_clock::now();
 
                 int totalPixels = integrator->getFilm()->getWidth() * integrator->getFilm()->getHeight();
@@ -76,19 +78,19 @@ namespace lambda {
                     dim3 block(constants::BLOCK_W, constants::BLOCK_H);
                     dim3 grid((integrator->getFilm()->getWidth() + constants::BLOCK_W - 1) / constants::BLOCK_W, (integrator->getFilm()->getHeight() + constants::BLOCK_H - 1) / constants::BLOCK_H);
 
-                    error::checkCudaError(cudaDeviceSetLimit(cudaLimitStackSize, constants::STACK_SIZE), "failed to set stack size");
-                    error::checkCudaError(cudaDeviceSynchronize(), "failed to synchronize device");
+                    CudaError::check(cudaDeviceSetLimit(cudaLimitStackSize, constants::STACK_SIZE), "failed to set stack size");
+                    CudaError::check(cudaDeviceSynchronize(), "failed to synchronize device");
 
                     renderKernel<<<grid, block>>>(integrator, completed);
 
-                    error::checkCudaError(cudaGetLastError(), "failed to launch kernel");
+                    CudaError::check(cudaGetLastError(), "failed to launch kernel");
 
                     return std::thread();
                 }
 
                 static bool running() { return cudaStreamQuery(0) == cudaErrorNotReady; }
 
-                static void synchronize(std::thread &) { error::checkCudaError(cudaDeviceSynchronize(), "failed to synchronize device"); }
+                static void synchronize(std::thread &) { CudaError::check(cudaDeviceSynchronize(), "failed to synchronize device"); }
             #else
                 static std::thread render(Integrator * integrator, int * completed) { return std::thread(&Integrator::renderImage, integrator, completed); }
 

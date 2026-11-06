@@ -4,70 +4,78 @@
 #include <cerrno>
 #include <clocale>
 #include <cstring>
+#include <iostream>
 #include <new>
 #include <stdexcept>
 #include <string>
 
 namespace lambda {
-    namespace error {
-        class FileError : public std::runtime_error {
-            public:
-                using std::runtime_error::runtime_error;
-        };
+    class Error : public std::runtime_error {
+        public:
+            using std::runtime_error::runtime_error;
 
-        [[noreturn]] inline void error(const std::string & message) {
-            throw std::runtime_error(message);
-        }
+            static Error length(int length) { return Error("length " + std::to_string(length) + " is invalid"); }
 
-        [[noreturn]] inline void fileError(std::string file, int line, int column, const std::string & message) {
-            if (line > 0) file += ":" + std::to_string(line) + ":" + std::to_string(column);
+            virtual std::string format(const std::string & program) const { return program + ": " + std::runtime_error::what(); }
+    };
 
-            throw FileError(file + ": " + message);
-        }
+    class FileError : public Error {
+        public:
+            FileError(const std::string & _file, int _line, int _column, const std::string & _message) : Error(_message), file(_file), line(_line), column(_column) {}
 
-        [[noreturn]] inline void fileError(const std::string & file, const std::string & message) { fileError(file, 0, 0, message); }
+            FileError(const std::string & _file, const std::string & _message) : FileError(_file, 0, 0, _message) {}
 
-        [[noreturn]] inline void failedToOpenFileError(const std::string & file) {
-            const char * rawError = strerror_l(errno, LC_GLOBAL_LOCALE);
+            static FileError failedToOpen(const std::string & file) {
+                const char * rawError = strerror_l(errno, LC_GLOBAL_LOCALE);
 
-            std::string errorString = (rawError && rawError[0] != '\0') ? std::string(rawError) : "";
+                std::string errorString = (rawError && rawError[0] != '\0') ? std::string(rawError) : "";
 
-            if (!errorString.empty()) {
-                errorString[0] = char(std::tolower(errorString[0]));
+                if (!errorString.empty()) {
+                    errorString[0] = char(std::tolower(errorString[0]));
 
-                errorString = " (" + errorString + ")";
-            }
-
-            fileError(file, "failed to open file" + errorString);
-        }
-
-        [[noreturn]] inline void lengthError(int length) { throw std::length_error("length " + std::to_string(length) + " is invalid"); }
-
-        [[noreturn]] inline void outOfRangeError(int i) { throw std::out_of_range("index " + std::to_string(i) + " is out of range"); }
-
-        [[noreturn]] inline void badAllocError() { throw std::bad_alloc(); }
-
-        #ifdef __CUDACC__
-            inline void checkCudaError(cudaError_t err, const std::string & message) {
-                if (err != cudaSuccess) {
-                    std::string errorString = cudaGetErrorString(err);
-
-                    if (!errorString.empty()) {
-                        errorString[0] = char(std::tolower(errorString[0]));
-
-                        errorString = " (" + errorString + ")";
-                    }
-                    error(message + errorString);
+                    errorString = " (" + errorString + ")";
                 }
+
+                return FileError(file, "failed to open file" + errorString);
             }
-        #endif
 
-        inline std::string message(const std::string & program, const std::exception & e) {
-            std::string errorString = e.what();
+            std::string format(const std::string &) const override { return file + (line > 0 ? ":" + std::to_string(line) + ":" + std::to_string(column) : "") + ": " + Error::what(); }
 
-            if (!dynamic_cast<const FileError *>(&e)) errorString = program + ": " + errorString;
+        private:
+            std::string file;
+            int line;
+            int column;
+    };
 
-            return errorString;
-        }
-    }
+    #ifdef __CUDACC__
+        class CudaError : public Error {
+            public:
+                using Error::Error;
+
+                static void check(cudaError_t err, const std::string & message) {
+                    if (err != cudaSuccess) {
+                        std::string errorString = cudaGetErrorString(err);
+
+                        if (!errorString.empty()) {
+                            errorString[0] = char(std::tolower(errorString[0]));
+
+                            errorString = " (" + errorString + ")";
+                        }
+
+                        throw CudaError(message + errorString);
+                    }
+                }
+        };
+    #endif
+
+    class ErrorHandler {
+        public:
+            ErrorHandler() = delete;
+
+            static void handle(const std::string & program, const std::exception & exception) {
+                const Error * error = dynamic_cast<const Error *>(&exception);
+
+                std::cerr << (program.empty() ? exception.what() : error ? error->format(program) : program + ": " + exception.what()) << std::endl;
+            }
+    };
 }

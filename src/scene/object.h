@@ -125,15 +125,7 @@ namespace lambda {
                 return object;
             }
 
-            LAMBDA_HOST_DEVICE const Material * getMaterial() const { return material; }
-
-            LAMBDA_HOST_DEVICE const Medium * getMedium0() const { return medium0; }
-
-            LAMBDA_HOST_DEVICE const Medium * getMedium1() const { return medium1; }
-
-            LAMBDA_HOST_DEVICE Float getArea() const { return area; }
-
-            LAMBDA_HOST_DEVICE Vector<Float, 3> getMin() const {
+            Vector<Float, 3> getMin() const {
                 switch (type) {
                     case Type::SPHERE: return Vector<Float, 3>(-sphere.radius, -sphere.radius, -sphere.radius);
                     case Type::DISK: return Vector<Float, 3>(-disk.radius, -constants::EPSILON_RELATIVE * disk.radius, -disk.radius);
@@ -145,19 +137,19 @@ namespace lambda {
                 return Vector<Float, 3>();
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> getMax() const {
+            Vector<Float, 3> getMax() const {
                 switch (type) {
                     case Type::SPHERE: return Vector<Float, 3>(sphere.radius, sphere.radius, sphere.radius);
                     case Type::DISK: return Vector<Float, 3>(disk.radius, constants::EPSILON_RELATIVE * disk.radius, disk.radius);
                     case Type::CYLINDER: return Vector<Float, 3>(cylinder.radius, Float(0.5) * cylinder.height, cylinder.radius);
-                    case Type::TRI: return maxBoundsTri();
-                    case Type::PATCH: return maxBoundsPatch();
+                    case Type::TRI: return getMaxTri();
+                    case Type::PATCH: return getMaxPatch();
                 }
 
                 return Vector<Float, 3>();
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> center() const {
+            Vector<Float, 3> center() const {
                 switch (type) {
                     case Type::SPHERE: return Vector<Float, 3>(0, 0, 0);
                     case Type::DISK: return Vector<Float, 3>(0, 0, 0);
@@ -169,7 +161,7 @@ namespace lambda {
                 return Vector<Float, 3>();
             }
 
-            LAMBDA_HOST_DEVICE Float radius() const {
+            Float radius() const {
                 switch (type) {
                     case Type::SPHERE: return sphere.radius;
                     case Type::DISK: return disk.radius;
@@ -181,7 +173,15 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensity(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
+            LAMBDA_HOST_DEVICE const Material * getMaterial() const { return material; }
+
+            LAMBDA_DEVICE Float getArea() const { return area; }
+
+            LAMBDA_DEVICE const Medium * getMedium0() const { return medium0; }
+
+            LAMBDA_DEVICE const Medium * getMedium1() const { return medium1; }
+
+            LAMBDA_DEVICE Float probabilityDensity(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 switch (type) {
                     case Type::SPHERE: return probabilityDensitySphere(point, direction);
                     case Type::DISK: return probabilityDensityDisk(point, direction);
@@ -193,7 +193,7 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sample(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sample(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
                 switch (type) {
                     case Type::SPHERE: return sampleSphere(point, probabilityDensity, state);
                     case Type::DISK: return sampleDisk(point, probabilityDensity, state);
@@ -205,7 +205,7 @@ namespace lambda {
                 return Vector<Float, 3>();
             }
 
-            LAMBDA_HOST_DEVICE bool intersect(Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool intersect(Intersection & intersection, const Ray & r) const {
                 switch (type) {
                     case Type::SPHERE: return intersectSphere(intersection, r);
                     case Type::DISK: return intersectDisk(intersection, r);
@@ -233,57 +233,7 @@ namespace lambda {
                 struct { Mesh * mesh; int index; } patch;
             };
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> getMinTri() const {
-                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
-                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
-                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
-
-                Vector<Float, 3> minCorner = min(corner0, min(corner1, corner2));
-
-                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(minCorner[0]), std::fmax(std::fabs(minCorner[1]), std::fabs(minCorner[2])));
-
-                return minCorner - Vector<Float, 3>(padding, padding, padding);
-            }
-
-            LAMBDA_HOST_DEVICE Vector<Float, 3> getMinPatch() const {
-                Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
-                Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
-                Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
-                Vector<Float, 3> corner3 = patch.mesh->getVertex(patch.index, 3);
-
-                Vector<Float, 3> minCorner = min(min(corner0, corner1), min(corner2, corner3));
-
-                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(minCorner[0]), std::fmax(std::fabs(minCorner[1]), std::fabs(minCorner[2])));
-
-                return minCorner - Vector<Float, 3>(padding, padding, padding);
-            }
-
-            LAMBDA_HOST_DEVICE Vector<Float, 3> maxBoundsTri() const {
-                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
-                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
-                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
-
-                Vector<Float, 3> maxCorner = max(corner0, max(corner1, corner2));
-
-                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(maxCorner[0]), std::fmax(std::fabs(maxCorner[1]), std::fabs(maxCorner[2])));
-
-                return maxCorner + Vector<Float, 3>(padding, padding, padding);
-            }
-
-            LAMBDA_HOST_DEVICE Vector<Float, 3> maxBoundsPatch() const {
-                Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
-                Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
-                Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
-                Vector<Float, 3> corner3 = patch.mesh->getVertex(patch.index, 3);
-
-                Vector<Float, 3> maxCorner = max(max(corner0, corner1), max(corner2, corner3));
-
-                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(maxCorner[0]), std::fmax(std::fabs(maxCorner[1]), std::fabs(maxCorner[2])));
-
-                return maxCorner + Vector<Float, 3>(padding, padding, padding);
-            }
-
-            LAMBDA_HOST_DEVICE Float radiusTri() const {
+            Float radiusTri() const {
                 Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
                 Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
                 Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
@@ -297,7 +247,7 @@ namespace lambda {
                 return std::sqrt(std::fmax(distance1, std::fmax(distance2, distance3)));
             }
 
-            LAMBDA_HOST_DEVICE Float radiusPatch() const {
+            Float radiusPatch() const {
                 Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
                 Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
                 Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
@@ -313,7 +263,57 @@ namespace lambda {
                 return std::sqrt(std::fmax(distance1, std::fmax(distance2, std::fmax(distance3, distance4))));
             }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensitySphere(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
+            Vector<Float, 3> getMinTri() const {
+                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
+                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
+                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
+
+                Vector<Float, 3> minCorner = min(corner0, min(corner1, corner2));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(minCorner[0]), std::fmax(std::fabs(minCorner[1]), std::fabs(minCorner[2])));
+
+                return minCorner - Vector<Float, 3>(padding, padding, padding);
+            }
+
+            Vector<Float, 3> getMinPatch() const {
+                Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
+                Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
+                Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
+                Vector<Float, 3> corner3 = patch.mesh->getVertex(patch.index, 3);
+
+                Vector<Float, 3> minCorner = min(min(corner0, corner1), min(corner2, corner3));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(minCorner[0]), std::fmax(std::fabs(minCorner[1]), std::fabs(minCorner[2])));
+
+                return minCorner - Vector<Float, 3>(padding, padding, padding);
+            }
+
+            Vector<Float, 3> getMaxTri() const {
+                Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
+                Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
+                Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
+
+                Vector<Float, 3> maxCorner = max(corner0, max(corner1, corner2));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(maxCorner[0]), std::fmax(std::fabs(maxCorner[1]), std::fabs(maxCorner[2])));
+
+                return maxCorner + Vector<Float, 3>(padding, padding, padding);
+            }
+
+            Vector<Float, 3> getMaxPatch() const {
+                Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
+                Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
+                Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
+                Vector<Float, 3> corner3 = patch.mesh->getVertex(patch.index, 3);
+
+                Vector<Float, 3> maxCorner = max(max(corner0, corner1), max(corner2, corner3));
+
+                Float padding = constants::EPSILON_RELATIVE * std::fmax(std::fabs(maxCorner[0]), std::fmax(std::fabs(maxCorner[1]), std::fabs(maxCorner[2])));
+
+                return maxCorner + Vector<Float, 3>(padding, padding, padding);
+            }
+
+            LAMBDA_DEVICE Float probabilityDensitySphere(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 Float distanceSquared = point.lengthSquared();
                 Float radiusSquared = sphere.radius * sphere.radius;
 
@@ -327,7 +327,7 @@ namespace lambda {
                 return 1 / (2 * constants::PI * (1 - cosThetaMax));
             }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensityDisk(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
+            LAMBDA_DEVICE Float probabilityDensityDisk(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 Float t, radiusSquared;
                 Vector<Float, 3> hitPoint;
 
@@ -338,7 +338,7 @@ namespace lambda {
                 return 1 / (constants::PI * disk.radius * disk.radius) * t * t / cosTheta;
             }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensityCylinder(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
+            LAMBDA_DEVICE Float probabilityDensityCylinder(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 Float t, rho;
                 Vector<Float, 3> hitPoint;
 
@@ -353,7 +353,7 @@ namespace lambda {
                 return 1 / (2 * alpha * cylinder.radius * cylinder.height) * t * t / cosTheta;
             }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensityTri(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
+            LAMBDA_DEVICE Float probabilityDensityTri(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
                 Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
                 Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
@@ -367,7 +367,7 @@ namespace lambda {
                 return t * t / (std::fabs(cosTheta) * area);
             }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensityPatch(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
+            LAMBDA_DEVICE Float probabilityDensityPatch(const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
                 Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
                 Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
@@ -409,7 +409,7 @@ namespace lambda {
                 return sum;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleSphere(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleSphere(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
                 Float distanceSquared = point.lengthSquared();
                 Float radiusSquared = sphere.radius * sphere.radius;
 
@@ -429,7 +429,7 @@ namespace lambda {
                 return direction;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleDisk(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleDisk(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
                 Vector<Float, 3> sample = utils::randomInHemisphere(Vector<Float, 3>(0, 1, 0), state) * disk.radius;
 
                 sample[1] = 0;
@@ -453,7 +453,7 @@ namespace lambda {
                 return direction;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleCylinder(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleCylinder(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
                 Float rho = std::sqrt(point[0] * point[0] + point[2] * point[2]);
 
                 Float theta = rho <= cylinder.radius ? utils::randomFloat(state) * 2 * constants::PI : std::atan2(point[2], point[0]) + (2 * utils::randomFloat(state) - 1) * std::acos(utils::clamp(cylinder.radius / rho, Float(-1), Float(1)));
@@ -483,7 +483,7 @@ namespace lambda {
                 return direction;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleTri(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleTri(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
                 Float u = utils::randomFloat(state);
                 Float v = utils::randomFloat(state);
 
@@ -509,7 +509,7 @@ namespace lambda {
                 return direction;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> samplePatch(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> samplePatch(const Vector<Float, 3> & point, Float & probabilityDensity, Random & state) const {
                 Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
                 Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
                 Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
@@ -532,7 +532,7 @@ namespace lambda {
                 return direction;
             }
 
-            LAMBDA_HOST_DEVICE bool intersectSphere(Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool intersectSphere(Intersection & intersection, const Ray & r) const {
                 Float a = r.getDirection().lengthSquared();
                 Float b = 2 * dot(r.getDirection(), r.getOrigin());
                 Float c = r.getOrigin().lengthSquared() - sphere.radius * sphere.radius;
@@ -571,7 +571,7 @@ namespace lambda {
                 return true;
             }
 
-            LAMBDA_HOST_DEVICE bool intersectDisk(Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool intersectDisk(Intersection & intersection, const Ray & r) const {
                 Float t, radiusSquared;
                 Vector<Float, 3> point;
 
@@ -595,7 +595,7 @@ namespace lambda {
                 return true;
             }
 
-            LAMBDA_HOST_DEVICE bool intersectCylinder(Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool intersectCylinder(Intersection & intersection, const Ray & r) const {
                 Float t, rho;
                 Vector<Float, 3> point;
 
@@ -614,7 +614,7 @@ namespace lambda {
                 return true;
             }
 
-            LAMBDA_HOST_DEVICE bool intersectTri(Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool intersectTri(Intersection & intersection, const Ray & r) const {
                 Vector<Float, 3> corner0 = tri.mesh->getVertex(tri.index, 0);
                 Vector<Float, 3> corner1 = tri.mesh->getVertex(tri.index, 1);
                 Vector<Float, 3> corner2 = tri.mesh->getVertex(tri.index, 2);
@@ -673,7 +673,7 @@ namespace lambda {
                 return true;
             }
 
-            LAMBDA_HOST_DEVICE bool intersectPatch(Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool intersectPatch(Intersection & intersection, const Ray & r) const {
                 Vector<Float, 3> corner0 = patch.mesh->getVertex(patch.index, 0);
                 Vector<Float, 3> corner1 = patch.mesh->getVertex(patch.index, 1);
                 Vector<Float, 3> corner2 = patch.mesh->getVertex(patch.index, 2);
@@ -749,7 +749,7 @@ namespace lambda {
                 return true;
             }
 
-            LAMBDA_HOST_DEVICE static bool rayDisk(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, Float radius, Float tMax, Float & t, Float & radiusSquared, Vector<Float, 3> & hitPoint) {
+            LAMBDA_DEVICE static bool rayDisk(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, Float radius, Float tMax, Float & t, Float & radiusSquared, Vector<Float, 3> & hitPoint) {
                 if (std::fabs(direction[1]) == 0) return false;
 
                 t = -point[1] / direction[1];
@@ -765,7 +765,7 @@ namespace lambda {
                 return true;
             }
 
-            LAMBDA_HOST_DEVICE static bool rayCylinder(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, Float radius, Float height, Float tMax, Float & t, Float & rho, Vector<Float, 3> & hitPoint) {
+            LAMBDA_DEVICE static bool rayCylinder(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, Float radius, Float height, Float tMax, Float & t, Float & rho, Vector<Float, 3> & hitPoint) {
                 Float a = direction[0] * direction[0] + direction[2] * direction[2];
 
                 if (a <= constants::EPSILON_RELATIVE_SQUARED * direction.lengthSquared()) return false;
@@ -802,7 +802,7 @@ namespace lambda {
                 return t > 0 && t < tMax;
             }
 
-            LAMBDA_HOST_DEVICE static bool rayTri(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, const Vector<Float, 3> & corner0, const Vector<Float, 3> & corner1, const Vector<Float, 3> & corner2, Float tMax, Float & t, Float & alpha, Float & beta) {
+            LAMBDA_DEVICE static bool rayTri(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, const Vector<Float, 3> & corner0, const Vector<Float, 3> & corner1, const Vector<Float, 3> & corner2, Float tMax, Float & t, Float & alpha, Float & beta) {
                 Vector<Float, 3> p0 = corner0 - point;
                 Vector<Float, 3> p1 = corner1 - point;
                 Vector<Float, 3> p2 = corner2 - point;
@@ -858,7 +858,7 @@ namespace lambda {
                 return true;
             }
 
-            LAMBDA_HOST_DEVICE static bool rayPatch(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, const Vector<Float, 3> & corner0, const Vector<Float, 3> & corner1, const Vector<Float, 3> & corner2, const Vector<Float, 3> & corner3, Float tMax, Float & t1, Float & u1, Float & v1, Float & t2, Float & u2, Float & v2) {
+            LAMBDA_DEVICE static bool rayPatch(const Vector<Float, 3> & point, const Vector<Float, 3> & direction, const Vector<Float, 3> & corner0, const Vector<Float, 3> & corner1, const Vector<Float, 3> & corner2, const Vector<Float, 3> & corner3, Float tMax, Float & t1, Float & u1, Float & v1, Float & t2, Float & u2, Float & v2) {
                 Float a = dot(cross(corner3 - corner0, corner1 - corner2), direction);
                 Float c = dot(cross(corner0 - point, direction), corner1 - corner0);
                 Float b = dot(cross(corner3 - point, direction), corner2 - corner3) - (a + c);

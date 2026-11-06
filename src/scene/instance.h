@@ -20,19 +20,9 @@ namespace lambda {
 
             Instance(Object * o, int c, BVHNode<Object> * n, BVHNode<Object> * ln, Material * m, Medium * m0, Medium * m1, const Vector<Float, 3> & translation, const Vector<Float, 3> & rotation, const Vector<Float, 3> & scale) : objects(o), count(c), node(n), lightNode(ln), material(m), medium0(m0), medium1(m1), transform(translation, rotation, scale) {}
 
-            LAMBDA_HOST_DEVICE const Object * getObject(int i) const { return objects + i; }
+            int getCount() const { return count; }
 
-            LAMBDA_HOST_DEVICE int getCount() const { return count; }
-
-            LAMBDA_HOST_DEVICE const Material * getMaterial(int i) const { return material ? material : objects[i].getMaterial(); }
-
-            LAMBDA_HOST_DEVICE bool hasMaterial() const { return material != nullptr; }
-
-            LAMBDA_HOST_DEVICE const Medium * getMedium0(int i) const { return medium0 ? medium0 : objects[i].getMedium0(); }
-
-            LAMBDA_HOST_DEVICE const Medium * getMedium1(int i) const { return medium1 ? medium1 : objects[i].getMedium1(); }
-
-            LAMBDA_HOST_DEVICE Vector<Float, 3> getMin() const {
+            Vector<Float, 3> getMin() const {
                 Vector<Float, 3> bounds(constants::MAX, constants::MAX, constants::MAX);
 
                 Vector<Float, 3> corner1 = node->getMin();
@@ -50,7 +40,7 @@ namespace lambda {
                 return bounds;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> getMax() const {
+            Vector<Float, 3> getMax() const {
                 Vector<Float, 3> bounds(-constants::MAX, -constants::MAX, -constants::MAX);
 
                 Vector<Float, 3> corner1 = node->getMin();
@@ -68,27 +58,31 @@ namespace lambda {
                 return bounds;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> center() const { return transform.pointToWorld(Float(0.5) * (node->getMin() + node->getMax())); }
+            Vector<Float, 3> center() const { return transform.pointToWorld(Float(0.5) * (node->getMin() + node->getMax())); }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> center(int i) const { return transform.pointToWorld(objects[i].center()); }
+            Vector<Float, 3> center(int i) const { return transform.pointToWorld(objects[i].center()); }
 
-            LAMBDA_HOST_DEVICE Float radius(int i) const { return objects[i].radius() * std::fmax(transform.scale(0), std::fmax(transform.scale(1), transform.scale(2))); }
+            Float radius(int i) const { return objects[i].radius() * std::fmax(transform.scale(0), std::fmax(transform.scale(1), transform.scale(2))); }
 
-            LAMBDA_HOST_DEVICE Float area(int i) const { return objects[i].getArea() * transform.scaleSquared(0); }
+            LAMBDA_HOST_DEVICE const Material * getMaterial(int i) const { return material ? material : objects[i].getMaterial(); }
 
             LAMBDA_HOST_DEVICE Float getPower() const { return lightNode->getPower() * transform.scaleSquared(0) * (material ? material->averageEmission() : 1); }
 
-            LAMBDA_HOST_DEVICE Float getPower(int i) const {
+            LAMBDA_DEVICE const Medium * getMedium0(int i) const { return medium0 ? medium0 : objects[i].getMedium0(); }
+
+            LAMBDA_DEVICE const Medium * getMedium1(int i) const { return medium1 ? medium1 : objects[i].getMedium1(); }
+
+            LAMBDA_DEVICE Float getPower(int i) const {
                 const Material * currentMaterial = getMaterial(i);
 
                 if (!currentMaterial) return 0;
 
-                return area(i) * currentMaterial->averageEmission();
+                return objects[i].getArea() * transform.scaleSquared(0) * currentMaterial->averageEmission();
             }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensity(int i, const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const { return objects[i].probabilityDensity(transform.pointToLocal(point), normalize(transform.vectorToLocal(direction))); }
+            LAMBDA_DEVICE Float probabilityDensity(int i, const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const { return objects[i].probabilityDensity(transform.pointToLocal(point), normalize(transform.vectorToLocal(direction))); }
 
-            LAMBDA_HOST_DEVICE bool intersect(int i, Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool intersect(int i, Intersection & intersection, const Ray & r) const {
                 if (objects[i].intersect(intersection, transform.rayToLocal(r))) {
                     toWorld(intersection, r, i);
 
@@ -98,11 +92,11 @@ namespace lambda {
                 return false;
             }
 
-            LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r) const { return hit<false>(intersection, r, nullptr, -1); }
+            LAMBDA_DEVICE bool hit(Intersection & intersection, const Ray & r) const { return hit<false>(intersection, r, nullptr, -1); }
 
-            LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const { return hit<true>(intersection, r, occludedInstance, occludedObjectIndex); }
+            LAMBDA_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const { return hit<true>(intersection, r, occludedInstance, occludedObjectIndex); }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleLight(const Vector<Float, 3> & point, Float & probabilityDensity, int & objectIndex, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleLight(const Vector<Float, 3> & point, Float & probabilityDensity, int & objectIndex, Random & state) const {
                 const BVHNode<Object> * current = lightNode;
 
                 Float totalPower = current->getPower();
@@ -144,14 +138,14 @@ namespace lambda {
             Medium * medium0, * medium1;
             Transform transform;
 
-            LAMBDA_HOST_DEVICE void toWorld(Intersection & intersection, const Ray & r, int i) const {
+            LAMBDA_DEVICE void toWorld(Intersection & intersection, const Ray & r, int i) const {
                 intersection.instance = this;
                 intersection.i = i;
                 intersection.transformedPoint = transform.pointToWorld(intersection.point);
                 intersection.transformedNormal = transform.normalToWorld(intersection.normal);
                 intersection.transformedTangent = normalize(transform.vectorToWorld(intersection.tangent));
                 intersection.geometricNormal = transform.normalToWorld(intersection.geometricNormal);
-                intersection.pointError = utils::pointError(r.getOrigin(), intersection.point, intersection.transformedPoint, transform.scaleSquared());
+                intersection.pointError = pointError(r.getOrigin(), intersection.point, intersection.transformedPoint, transform.scaleSquared());
                 intersection.useTransformed = material != nullptr;
                 intersection.frontFacing = dot(r.getDirection(), intersection.transformedNormal) < 0;
                 if (!intersection.frontFacing) intersection.transformedNormal *= -1;
@@ -159,7 +153,7 @@ namespace lambda {
             }
 
             template <bool occluded>
-            LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const {
+            LAMBDA_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const {
                 const BVHNode<Object> * stack[constants::BVH_MAX_DEPTH + 1];
                 int stackSize = 0;
 
@@ -194,6 +188,20 @@ namespace lambda {
                 if (hitObject) toWorld(intersection, r, int(intersection.object - objects));
 
                 return hitObject;
+            }
+
+            LAMBDA_DEVICE static Float pointError(const Vector<Float, 3> & origin, const Vector<Float, 3> & point, const Vector<Float, 3> & transformedPoint, const Vector<Float, 3> & scaleSquared) {
+                Float maxScale = std::sqrt(std::fmax(std::fabs(scaleSquared[0]), std::fmax(std::fabs(scaleSquared[1]), std::fabs(scaleSquared[2]))));
+
+                Float magnitude = 0;
+
+                for (int i = 0; i < 3; i++) {
+                    magnitude = std::fmax(magnitude, std::fabs(origin[i]));
+                    magnitude = std::fmax(magnitude, std::fabs(transformedPoint[i]));
+                    magnitude = std::fmax(magnitude, std::fabs(point[i]) * maxScale);
+                }
+
+                return constants::POINT_ERROR_SCALE * constants::EPSILON_MACHINE * magnitude;
             }
     };
 }

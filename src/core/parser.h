@@ -1,5 +1,10 @@
 #pragma once
 
+#define STB_IMAGE_IMPLEMENTATION
+#define TINYEXR_IMPLEMENTATION
+#define TINYEXR_USE_MINIZ 0
+#define TINYEXR_USE_STB_ZLIB 1
+
 #include <algorithm>
 #include <bit>
 #include <cctype>
@@ -23,11 +28,11 @@
 
 #include "core/allocator.h"
 #include "core/builder.h"
+#include "core/color.h"
 #include "core/constants.h"
 #include "core/error.h"
 #include "core/platform.h"
 #include "core/utils.h"
-#include "core/writer.h"
 #include "math/complex.h"
 #include "math/spectrum.h"
 #include "math/vector.h"
@@ -45,21 +50,21 @@
 namespace lambda {
     class Parser {
         public:
-            static bool hasValidExtension(const std::string & output) { return utils::hasExtension(output, ".lrd"); }
+            Parser() = delete;
 
             static void parseArguments(int argc, char * argv[], std::string & program, std::string & input, std::string & output) {
                 if (argc > 0) program = argv[0];
 
-                if (argc != 2 && argc != 3) error::error("invalid number of arguments");
+                if (argc != 2 && argc != 3) throw Error("invalid number of arguments");
 
                 input = argv[1];
 
-                if (!hasValidExtension(input)) error::fileError(input, "invalid file extension");
+                if (!utils::hasExtension(input, ".lrd")) throw FileError(input, "invalid file extension");
 
                 if (argc == 3) {
                     output = argv[2];
 
-                    if (!Writer::hasValidExtension(output)) error::fileError(output, "invalid file extension");
+                    if (!utils::hasExtension(output, ".exr") && !utils::hasExtension(output, ".pfm") && !utils::hasExtension(output, ".png")) throw FileError(output, "invalid file extension");
                 } else {
                     output = input;
 
@@ -69,35 +74,10 @@ namespace lambda {
                 }
             }
 
-            static bool parseUpsamplingTables(const std::string & input, float * scale, float * lut) {
-                std::ifstream inputFile(input, std::ios::binary);
-
-                if (!inputFile) return false;
-
-                char header[4];
-
-                inputFile.read(header, 4);
-
-                if (!inputFile || std::memcmp(header, "SPEC", 4) != 0) return false;
-
-                uint32_t resolution;
-
-                inputFile.read(reinterpret_cast<char *>(&resolution), sizeof(uint32_t));
-
-                if (!inputFile || resolution != constants::UPSAMPLING_RESOLUTION) return false;
-
-                inputFile.read(reinterpret_cast<char *>(scale), sizeof(float) * resolution);
-                inputFile.read(reinterpret_cast<char *>(lut), sizeof(float) * 3 * resolution * resolution * resolution * 3);
-
-                if (!inputFile) return false;
-
-                return true;
-            }
-
             static Integrator * parseLRD(const std::string & input, Allocator & allocator) {
                 std::ifstream inputFile(input);
 
-                if (!inputFile.is_open()) error::failedToOpenFileError(input);
+                if (!inputFile.is_open()) throw FileError::failedToOpen(input);
 
                 Registry registry;
 
@@ -130,15 +110,11 @@ namespace lambda {
                     else validator.expected("", command, {"Background", "Instance", "Material", "Medium", "Object", "Texture"});
 
                     if (command == "Render") {
-                        std::string spaceString = stream.next<std::string>("space");
+                        std::string spaceName = stream.next<std::string>("space");
 
-                        validator.expected("space", spaceString, {"srgb", "rec2020", "aces2065-1"});
+                        validator.expected("space", spaceName, {"srgb", "rec2020", "aces2065-1"});
 
-                        ColorSpace space;
-
-                        if (spaceString == "srgb") space = ColorSpace::SRGB;
-                        else if (spaceString == "rec2020") space = ColorSpace::REC2020;
-                        else space = ColorSpace::ACES2065;
+                        const ColorSpace * space = ColorSpace::get(spaceName);
 
                         int width = stream.next<int>("width");
 
@@ -243,12 +219,12 @@ namespace lambda {
                             else if (subtype == "image") {
                                 std::string file = stream.next<std::string>("file");
 
-                                std::tuple<Float *, ColorSpace, int, int, int> imageData;
+                                std::tuple<Float *, const ColorSpace *, int, int, int> imageData;
 
-                                ColorSpace space;
+                                const ColorSpace * space = nullptr;
                                 int width, height;
 
-                                if (!registry.has<std::tuple<Float *, ColorSpace, int, int, int>>(file, imageData) || std::get<4>(imageData) != 1) {
+                                if (!registry.has<std::tuple<Float *, const ColorSpace *, int, int, int>>(file, imageData) || std::get<4>(imageData) != 1) {
                                     std::vector<Float> image = parseImage(file, 1, space, width, height);
 
                                     imageData = std::make_tuple(allocator.allocate(image.data(), int(std::ssize(image))), space, width, height, 1);
@@ -277,7 +253,8 @@ namespace lambda {
 
                             std::string subtype = stream.next<std::string>("subtype");
 
-                            validator.expected("subtype", subtype, {"constant", "checker", "image", "mix", "scalar", "scale"});
+                            if (ColorSpace::sRGB()->hasUpsampling() || ColorSpace::Rec2020()->hasUpsampling() || ColorSpace::ACES2065()->hasUpsampling()) validator.expected("subtype", subtype, {"constant", "checker", "image", "mix", "scalar", "scale"});
+                            else validator.expected("subtype", subtype, {"constant", "checker", "mix", "scalar", "scale"});
 
                             if (subtype == "constant") texture = SpectrumTexture::makeConstant(parseSpectrum<Float>(allocator, "value", stream, registry, validator));
                             else if (subtype == "scale") {
@@ -321,12 +298,12 @@ namespace lambda {
                             else if (subtype == "image") {
                                 std::string file = stream.next<std::string>("file");
 
-                                std::tuple<Float *, ColorSpace, int, int, int> imageData;
+                                std::tuple<Float *, const ColorSpace *, int, int, int> imageData;
 
-                                ColorSpace space;
+                                const ColorSpace * space = nullptr;
                                 int width, height;
 
-                                if (!registry.has<std::tuple<Float *, ColorSpace, int, int, int>>(file, imageData) || std::get<4>(imageData) != 3) {
+                                if (!registry.has<std::tuple<Float *, const ColorSpace *, int, int, int>>(file, imageData) || std::get<4>(imageData) != 3) {
                                     std::vector<Float> image = parseImage(file, 3, space, width, height);
 
                                     imageData = std::make_tuple(allocator.allocate(image.data(), int(std::ssize(image))), space, width, height, 3);
@@ -404,7 +381,7 @@ namespace lambda {
                             LinearSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
 
                             validator.positive("n0", n0->min());
-                            validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got 0");
+                            validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got " + std::to_string(Float(0)));
 
                             LinearSpectrum<Complex> * n1 = parseSpectrum<Complex>(allocator, "n1", stream, registry, validator);
 
@@ -412,7 +389,7 @@ namespace lambda {
 
                             validator.positive("n1", n1Min.real());
                             validator.validate(n1Min.imag() > 0, "'n1' must have a positive imaginary component, got " + std::to_string(n1Min.imag()));
-                            validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got 0");
+                            validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got " + std::to_string(Float(0)));
 
                             ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
 
@@ -430,12 +407,12 @@ namespace lambda {
                             LinearSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
 
                             validator.positive("n0", n0->min());
-                            validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got 0");
+                            validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got " + std::to_string(Float(0)));
 
                             LinearSpectrum<Float> * n1 = parseSpectrum<Float>(allocator, "n1", stream, registry, validator);
 
                             validator.positive("n1", n1->min());
-                            validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got 0");
+                            validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got " + std::to_string(Float(0)));
 
                             ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
 
@@ -459,7 +436,7 @@ namespace lambda {
 
                                 validator.positive("n", nMin.real());
                                 validator.validate(nMin.imag() >= 0, "'n' must have a non-negative imaginary component, got " + std::to_string(nMin.imag()));
-                                validator.validate(n[i]->contains(0) && n[i]->contains(integrator->getFilm()->getLambdaMax()), "'n' must be positive, got 0");
+                                validator.validate(n[i]->contains(0) && n[i]->contains(integrator->getFilm()->getLambdaMax()), "'n' must be positive, got " + std::to_string(Float(0)));
                             }
 
                             LinearSpectrum<Complex> ** nPointer = allocator.allocate(n.data(), int(std::ssize(n)));
@@ -877,7 +854,7 @@ namespace lambda {
                         return success;
                     }
 
-                    [[noreturn]] void raiseError(const std::string & message) const { error::fileError(input, lineNumber, columnNumber, message); }
+                    [[noreturn]] void raiseError(const std::string & message) const { throw FileError(input, lineNumber, columnNumber, message); }
 
                 private:
                     std::stringstream ss;
@@ -1020,11 +997,11 @@ namespace lambda {
                     Registry() {}
 
                     template <typename T>
-                    requires (std::is_same_v<T, LinearSpectrum<Float> *> || std::is_same_v<T, LinearSpectrum<Complex> *> || std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>> || std::is_same_v<T, ScalarTexture *> || std::is_same_v<T, SpectrumTexture *> || std::is_same_v<T, Medium *> || std::is_same_v<T, Material *> || std::is_same_v<T, std::pair<Object *, int>>)
+                    requires (std::is_same_v<T, LinearSpectrum<Float> *> || std::is_same_v<T, LinearSpectrum<Complex> *> || std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> || std::is_same_v<T, ScalarTexture *> || std::is_same_v<T, SpectrumTexture *> || std::is_same_v<T, Medium *> || std::is_same_v<T, Material *> || std::is_same_v<T, std::pair<Object *, int>>)
                     void add(const std::string & name, T value) {
                         if constexpr (std::is_same_v<T, LinearSpectrum<Float> *>) spectrumPointers[name] = value;
                         else if constexpr (std::is_same_v<T, LinearSpectrum<Complex> *>) complexSpectrumPointers[name] = value;
-                        else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) images[name] = value;
+                        else if constexpr (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>) images[name] = value;
                         else if constexpr (std::is_same_v<T, ScalarTexture *>) scalarTexturePointers[name] = value;
                         else if constexpr (std::is_same_v<T, SpectrumTexture *>) spectrumTexturePointers[name] = value;
                         else if constexpr (std::is_same_v<T, Medium *>) mediumPointers[name] = value;
@@ -1033,11 +1010,11 @@ namespace lambda {
                     }
 
                     template <typename T>
-                    requires (std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material> || std::is_same_v<T, Object> || std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>)
+                    requires (std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material> || std::is_same_v<T, Object> || std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>)
                     bool has(const std::string & name) const {
                         if constexpr (std::is_same_v<T, LinearSpectrum<Float>>) return spectrumPointers.contains(name);
                         else if constexpr (std::is_same_v<T, LinearSpectrum<Complex>>) return complexSpectrumPointers.contains(name);
-                        else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) return images.contains(name);
+                        else if constexpr (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>) return images.contains(name);
                         else if constexpr (std::is_same_v<T, ScalarTexture>) return scalarTexturePointers.contains(name);
                         else if constexpr (std::is_same_v<T, SpectrumTexture>) return spectrumTexturePointers.contains(name);
                         else if constexpr (std::is_same_v<T, Medium>) return mediumPointers.contains(name);
@@ -1047,7 +1024,7 @@ namespace lambda {
                     }
 
                     template <typename T, typename U>
-                    requires (((std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>> && std::is_same_v<U, T>))
+                    requires (((std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> && std::is_same_v<U, T>))
                     bool has(const std::string & name, U & reference) const {
                         if constexpr (std::is_same_v<T, LinearSpectrum<Float>>) return has(name, reference, spectrumPointers);
                         else if constexpr (std::is_same_v<T, LinearSpectrum<Complex>>) return has(name, reference, complexSpectrumPointers);
@@ -1056,14 +1033,14 @@ namespace lambda {
                         else if constexpr (std::is_same_v<T, Medium>) return has(name, reference, mediumPointers);
                         else if constexpr (std::is_same_v<T, Material>) return has(name, reference, materialPointers);
                         else if constexpr (std::is_same_v<T, Object>) return has(name, reference, objectPointers);
-                        else if constexpr (std::is_same_v<T, std::tuple<Float *, ColorSpace, int, int, int>>) return has(name, reference, images);
+                        else if constexpr (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>) return has(name, reference, images);
                         else return false;
                     }
 
                 private:
                     std::map<std::string, LinearSpectrum<Float> *> spectrumPointers;
                     std::map<std::string, LinearSpectrum<Complex> *> complexSpectrumPointers;
-                    std::map<std::string, std::tuple<Float *, ColorSpace, int, int, int>> images;
+                    std::map<std::string, std::tuple<Float *, const ColorSpace *, int, int, int>> images;
                     std::map<std::string, ScalarTexture *> scalarTexturePointers;
                     std::map<std::string, SpectrumTexture *> spectrumTexturePointers;
                     std::map<std::string, Medium *> mediumPointers;
@@ -1196,7 +1173,7 @@ namespace lambda {
 
                 inputFile.read(reinterpret_cast<char *>(&value), sizeof(T));
 
-                if (!inputFile) error::fileError(input, "'" + parameter + "' is missing or invalid");
+                if (!inputFile) throw FileError(input, "'" + parameter + "' is missing or invalid");
 
                 if ((std::endian::native == std::endian::big && littleEndian) || (std::endian::native == std::endian::little && !littleEndian)) {
                     unsigned char * pointer = reinterpret_cast<unsigned char *>(&value);
@@ -1295,7 +1272,7 @@ namespace lambda {
                 return pointer;
             }
 
-            static std::vector<Float> parseImage(const std::string & input, int channels, ColorSpace & space, int & width, int & height) {
+            static std::vector<Float> parseImage(const std::string & input, int channels, const ColorSpace * & space, int & width, int & height) {
                 bool is16Bit = stbi_is_16_bit(input.c_str());
                 bool is32Bit = stbi_is_hdr(input.c_str());
                 bool isEXR = IsEXR(input.c_str()) == TINYEXR_SUCCESS;
@@ -1311,14 +1288,7 @@ namespace lambda {
 
                 const char * errorEXR = nullptr;
 
-                Float rx = utils::chromaticity(ColorSpace::SRGB, 0);
-                Float ry = utils::chromaticity(ColorSpace::SRGB, 1);
-                Float gx = utils::chromaticity(ColorSpace::SRGB, 2);
-                Float gy = utils::chromaticity(ColorSpace::SRGB, 3);
-                Float bx = utils::chromaticity(ColorSpace::SRGB, 4);
-                Float by = utils::chromaticity(ColorSpace::SRGB, 5);
-                Float wx = utils::chromaticity(ColorSpace::SRGB, 6);
-                Float wy = utils::chromaticity(ColorSpace::SRGB, 7);
+                double chromaticities[8] = {ColorSpace::sRGB()->chromaticity(0), ColorSpace::sRGB()->chromaticity(1), ColorSpace::sRGB()->chromaticity(2), ColorSpace::sRGB()->chromaticity(3), ColorSpace::sRGB()->chromaticity(4), ColorSpace::sRGB()->chromaticity(5), ColorSpace::sRGB()->chromaticity(6), ColorSpace::sRGB()->chromaticity(7)};
 
                 if (isEXR) {
                     EXRVersion version;
@@ -1333,14 +1303,7 @@ namespace lambda {
                                 if (std::strcmp(header.custom_attributes[i].name, "chromaticities") == 0 && header.custom_attributes[i].size == sizeof(float) * 8) {
                                     const float * chromas = reinterpret_cast<const float *>(header.custom_attributes[i].value);
 
-                                    rx = Float(chromas[0]);
-                                    ry = Float(chromas[1]);
-                                    gx = Float(chromas[2]);
-                                    gy = Float(chromas[3]);
-                                    bx = Float(chromas[4]);
-                                    by = Float(chromas[5]);
-                                    wx = Float(chromas[6]);
-                                    wy = Float(chromas[7]);
+                                    for (int j = 0; j < 8; j++) chromaticities[j] = double(chromas[j]);
                                 }
                             }
                         }
@@ -1358,7 +1321,7 @@ namespace lambda {
 
                         errorEXR = nullptr;
 
-                        error::fileError(input, "failed to open file" + error);
+                        throw FileError(input, "failed to open file" + error);
                     }
                 }
                 else if (is32Bit) data32 = stbi_loadf(input.c_str(), &width, &height, &nativeChannels, channels);
@@ -1370,27 +1333,29 @@ namespace lambda {
 
                     std::string error = failureReason ? " (" + std::string(failureReason) + ")" : "";
 
-                    if (error == " (unknown image type)") error::fileError(input, "invalid file extension");
-                    else error::fileError(input, "failed to open file" + error);
+                    if (error == " (unknown image type)") throw FileError(input, "invalid file extension");
+                    else throw FileError(input, "failed to open file" + error);
                 }
 
-                space = ColorSpace::SRGB;
+                space = ColorSpace::sRGB();
 
-                Matrix<double, 3> colorTransform;
+                ColorSpace sourceSpace(chromaticities);
 
                 bool needsTransform = false;
 
                 if (channels == 3) {
-                    if (utils::colorSpaceContains(ColorSpace::SRGB, rx, ry, gx, gy, bx, by, wx, wy)) space = ColorSpace::SRGB;
-                    else if (utils::colorSpaceContains(ColorSpace::REC2020, rx, ry, gx, gy, bx, by, wx, wy)) space = ColorSpace::REC2020;
-                    else space = ColorSpace::ACES2065;
+                    if (ColorSpace::sRGB()->hasUpsampling() && ColorSpace::sRGB()->contains(sourceSpace)) space = ColorSpace::sRGB();
+                    else if (ColorSpace::Rec2020()->hasUpsampling() && ColorSpace::Rec2020()->contains(sourceSpace)) space = ColorSpace::Rec2020();
+                    else if (ColorSpace::ACES2065()->hasUpsampling() && ColorSpace::ACES2065()->contains(sourceSpace)) space = ColorSpace::ACES2065();
+                    else throw FileError(input, "unsupported color space");
 
-                    needsTransform = !utils::nearlyEqual(rx, utils::chromaticity(space, 0)) || !utils::nearlyEqual(ry, utils::chromaticity(space, 1)) || !utils::nearlyEqual(gx, utils::chromaticity(space, 2)) || !utils::nearlyEqual(gy, utils::chromaticity(space, 3)) || !utils::nearlyEqual(bx, utils::chromaticity(space, 4)) || !utils::nearlyEqual(by, utils::chromaticity(space, 5)) || !utils::nearlyEqual(wx, utils::chromaticity(space, 6)) || !utils::nearlyEqual(wy, utils::chromaticity(space, 7));
-
-                    if (needsTransform) colorTransform = utils::toRGBMatrix(space) * utils::bradfordAdapt(wx, wy, utils::chromaticity(space, 6), utils::chromaticity(space, 7)) * utils::toXYZMatrix(rx, ry, gx, gy, bx, by, wx, wy);
+                    for (int i = 0; i < 8; i++)
+                        if (std::fabs(chromaticities[i] - space->chromaticity(i)) > constants::EPSILON_RELATIVE * std::fmax(std::fabs(chromaticities[i]), std::fabs(space->chromaticity(i)))) needsTransform = true;
                 }
 
-                if (width > std::numeric_limits<int>::max() / channels || height > (std::numeric_limits<int>::max() / channels) / width) error::fileError(input, "'width' * 'height' * 'channels' must be at most " + std::to_string(std::numeric_limits<int>::max()));
+                Matrix<double, 3> bradfordAdaptation = ColorSpace::bradfordAdaptation(sourceSpace, *space);
+
+                if (width > std::numeric_limits<int>::max() / channels || height > (std::numeric_limits<int>::max() / channels) / width) throw FileError(input, "'width' * 'height' * 'channels' must be at most " + std::to_string(std::numeric_limits<int>::max()));
 
                 int totalElements = width * height * channels;
 
@@ -1402,10 +1367,10 @@ namespace lambda {
                     for (int k = 0; k < channels; k++) {
                         color[k] = isEXR ? (std::isfinite(dataEXR[j + k]) ? Float(dataEXR[j + k]) : Float(0)) : is32Bit ? (std::isfinite(data32[i + k]) ? Float(data32[i + k]) : Float(0)) : is16Bit ? Float(data16[i + k]) / Float(65535) : Float(data8[i + k]) / Float(255);
 
-                        if (sRGB) color[k] = utils::sRGBToLinear(color[k]);
+                        if (sRGB) color[k] = utils::sRGBDecode(color[k]);
                     }
 
-                    if (needsTransform && channels == 3) color = colorTransform * color;
+                    if (needsTransform && channels == 3) color = space->toRGB(bradfordAdaptation * sourceSpace.toXYZ(color));
 
                     for (int k = 0; k < channels; k++) image[i + k] = color[k];
                 }
@@ -1422,7 +1387,7 @@ namespace lambda {
             static std::vector<Vector<int, N>> parseMesh(const std::string & input, std::vector<Vector<Float, 3>> & meshVertices, std::vector<Vector<Float, 3>> & meshNormals, std::vector<Vector<Float, 2>> & meshTextureCoordinates) {
                 std::ifstream inputFile(input, std::ios::in | std::ios::binary);
 
-                if (!inputFile.is_open()) error::failedToOpenFileError(input);
+                if (!inputFile.is_open()) throw FileError::failedToOpen(input);
 
                 std::vector<Vector<Float, 3>> vertices, normals;
                 std::vector<Vector<Float, 2>> textureCoordinates;
@@ -1763,7 +1728,7 @@ namespace lambda {
                         }
                     }
                 }
-                else error::fileError(input, "invalid file extension");
+                else throw FileError(input, "invalid file extension");
 
                 inputFile.close();
 
@@ -1798,7 +1763,7 @@ namespace lambda {
             static std::map<Float, T> parseSPD(const std::string & input) {
                 std::ifstream inputFile(input);
 
-                if (!inputFile.is_open()) error::failedToOpenFileError(input);
+                if (!inputFile.is_open()) throw FileError::failedToOpen(input);
 
                 std::map<Float, T> samples;
 

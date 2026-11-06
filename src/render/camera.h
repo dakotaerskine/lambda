@@ -70,27 +70,7 @@ namespace lambda {
                 return camera;
             }
 
-            LAMBDA_HOST_DEVICE Ray getRay(Float u, Float v, const SampledSpectrum & lambdas) const {
-                switch (type) {
-                    case Type::PERSPECTIVE: return getRayPerspective(u, v, lambdas);
-                    case Type::ORTHOGRAPHIC: return getRayOrthographic(u, v, lambdas);
-                    case Type::SPHERICAL: return getRaySpherical(u, v, lambdas);
-                }
-
-                return Ray();
-            }
-
-            LAMBDA_HOST_DEVICE bool isLinear() const {
-                switch (type) {
-                    case Type::PERSPECTIVE: return true;
-                    case Type::ORTHOGRAPHIC: return true;
-                    case Type::SPHERICAL: return false;
-                }
-
-                return false;
-            }
-
-            LAMBDA_HOST_DEVICE Matrix<Float, 4> getWorldToCamera() const {
+            Matrix<Float, 4> getWorldToCamera() const {
                 switch (type) {
                     case Type::PERSPECTIVE: return getWorldToCameraLinear(perspective.horizontal, perspective.vertical);
                     case Type::ORTHOGRAPHIC: return getWorldToCameraLinear(orthographic.horizontal, orthographic.vertical);
@@ -100,7 +80,7 @@ namespace lambda {
                 return Matrix<Float, 4>();
             }
 
-            LAMBDA_HOST_DEVICE Matrix<Float, 4> getWorldToNDC() const {
+            Matrix<Float, 4> getWorldToNDC() const {
                 switch (type) {
                     case Type::PERSPECTIVE: return getWorldToNDCPerspective();
                     case Type::ORTHOGRAPHIC: return getWorldToNDCOrthographic();
@@ -108,6 +88,16 @@ namespace lambda {
                 }
 
                 return Matrix<Float, 4>();
+            }
+
+            LAMBDA_DEVICE Ray getRay(Float u, Float v, const SampledSpectrum & lambdas) const {
+                switch (type) {
+                    case Type::PERSPECTIVE: return getRayPerspective(u, v, lambdas);
+                    case Type::ORTHOGRAPHIC: return getRayOrthographic(u, v, lambdas);
+                    case Type::SPHERICAL: return getRaySpherical(u, v, lambdas);
+                }
+
+                return Ray();
             }
 
         private:
@@ -123,28 +113,7 @@ namespace lambda {
                 struct { Vector<Float, 3> forward, right, up; } spherical;
             };
 
-            LAMBDA_HOST_DEVICE Ray getRayPerspective(Float u, Float v, const SampledSpectrum & lambdas) const {
-                Vector<Float, 3> direction = normalize(perspective.corner + perspective.horizontal * u + perspective.vertical * v);
-
-                return Ray(position, direction, lambdas, medium);
-            }
-
-            LAMBDA_HOST_DEVICE Ray getRayOrthographic(Float u, Float v, const SampledSpectrum & lambdas) const {
-                Vector<Float, 3> origin = position + orthographic.corner + orthographic.horizontal * u + orthographic.vertical * v;
-
-                return Ray(origin, orthographic.forward, lambdas, medium);
-            }
-
-            LAMBDA_HOST_DEVICE Ray getRaySpherical(Float u, Float v, const SampledSpectrum & lambdas) const {
-                Float phi = u * 2 * constants::PI;
-                Float theta = v * constants::PI;
-
-                Vector<Float, 3> direction = normalize(-spherical.forward * std::sin(theta) * std::cos(phi) - spherical.right * std::sin(theta) * std::sin(phi) + spherical.up * std::cos(theta));
-
-                return Ray(position, direction, lambdas, medium);
-            }
-
-            LAMBDA_HOST_DEVICE Matrix<Float, 4> getWorldToCameraLinear(const Vector<Float, 3> & horizontal, const Vector<Float, 3> & vertical) const {
+            Matrix<Float, 4> getWorldToCameraLinear(const Vector<Float, 3> & horizontal, const Vector<Float, 3> & vertical) const {
                 Vector<Float, 3> r = normalize(horizontal);
                 Vector<Float, 3> u = normalize(-vertical);
                 Vector<Float, 3> b = normalize(cross(horizontal, vertical));
@@ -152,9 +121,9 @@ namespace lambda {
                 return Matrix<Float, 4>(r[0], r[1], r[2], -dot(r, position), u[0], u[1], u[2], -dot(u, position), b[0], b[1], b[2], -dot(b, position), 0, 0, 0, 1);
             }
 
-            LAMBDA_HOST_DEVICE Matrix<Float, 4> getWorldToCameraSpherical() const { return Matrix<Float, 4>(spherical.right[0], spherical.right[1], spherical.right[2], -dot(spherical.right, position), spherical.up[0], spherical.up[1], spherical.up[2], -dot(spherical.up, position), spherical.forward[0], spherical.forward[1], spherical.forward[2], -dot(spherical.forward, position), 0, 0, 0, 1); }
+            Matrix<Float, 4> getWorldToCameraSpherical() const { return Matrix<Float, 4>(spherical.right[0], spherical.right[1], spherical.right[2], -dot(spherical.right, position), spherical.up[0], spherical.up[1], spherical.up[2], -dot(spherical.up, position), spherical.forward[0], spherical.forward[1], spherical.forward[2], -dot(spherical.forward, position), 0, 0, 0, 1); }
 
-            LAMBDA_HOST_DEVICE Matrix<Float, 4> getWorldToNDCPerspective() const {
+            Matrix<Float, 4> getWorldToNDCPerspective() const {
                 Matrix<Float, 3> m = inverse(Matrix<Float, 3>(perspective.horizontal[0], perspective.vertical[0], perspective.corner[0], perspective.horizontal[1], perspective.vertical[1], perspective.corner[1], perspective.horizontal[2], perspective.vertical[2], perspective.corner[2]));
 
                 Vector<Float, 3> t = -(m * position);
@@ -162,12 +131,33 @@ namespace lambda {
                 return Matrix<Float, 4>(m.get(0, 0), m.get(0, 1), m.get(0, 2), t[0], m.get(1, 0), m.get(1, 1), m.get(1, 2), t[1], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2]);
             }
 
-            LAMBDA_HOST_DEVICE Matrix<Float, 4> getWorldToNDCOrthographic() const {
+            Matrix<Float, 4> getWorldToNDCOrthographic() const {
                 Matrix<Float, 3> m = inverse(Matrix<Float, 3>(orthographic.horizontal[0], orthographic.vertical[0], orthographic.forward[0], orthographic.horizontal[1], orthographic.vertical[1], orthographic.forward[1], orthographic.horizontal[2], orthographic.vertical[2], orthographic.forward[2]));
 
                 Vector<Float, 3> t = -(m * (position + orthographic.corner));
 
                 return Matrix<Float, 4>(m.get(0, 0), m.get(0, 1), m.get(0, 2), t[0], m.get(1, 0), m.get(1, 1), m.get(1, 2), t[1], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2], 0, 0, 0, 1);
+            }
+
+            LAMBDA_DEVICE Ray getRayPerspective(Float u, Float v, const SampledSpectrum & lambdas) const {
+                Vector<Float, 3> direction = normalize(perspective.corner + perspective.horizontal * u + perspective.vertical * v);
+
+                return Ray(position, direction, lambdas, medium);
+            }
+
+            LAMBDA_DEVICE Ray getRayOrthographic(Float u, Float v, const SampledSpectrum & lambdas) const {
+                Vector<Float, 3> origin = position + orthographic.corner + orthographic.horizontal * u + orthographic.vertical * v;
+
+                return Ray(origin, orthographic.forward, lambdas, medium);
+            }
+
+            LAMBDA_DEVICE Ray getRaySpherical(Float u, Float v, const SampledSpectrum & lambdas) const {
+                Float phi = u * 2 * constants::PI;
+                Float theta = v * constants::PI;
+
+                Vector<Float, 3> direction = normalize(-spherical.forward * std::sin(theta) * std::cos(phi) - spherical.right * std::sin(theta) * std::sin(phi) + spherical.up * std::cos(theta));
+
+                return Ray(position, direction, lambdas, medium);
             }
     };
 }

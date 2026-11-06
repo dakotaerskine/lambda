@@ -43,9 +43,7 @@ namespace lambda {
                 marginalCDF = m;
             }
 
-            LAMBDA_HOST_DEVICE const SpectrumTexture * getEmission() const { return emission; }
-
-            LAMBDA_HOST_DEVICE Float getPower() const { return 4 * constants::PI * radius * radius * emission->getAverage(); }
+            const SpectrumTexture * getEmission() const { return emission; }
 
             LAMBDA_HOST_DEVICE Float jacobian(Float y) const {
                 switch (type) {
@@ -56,17 +54,10 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE void getTextureCoordinate(const Vector<Float, 3> & direction, Vector<Float, 2> & textureCoordinate) const {
-                switch (type) {
-                    case Type::EQUIRECTANGULAR: textureCoordinateEquirectangular(direction, textureCoordinate); break;
-                    case Type::OCTAHEDRAL: textureCoordinateOctahedral(direction, textureCoordinate); break;
-                }
-            }
+            LAMBDA_DEVICE Float getPower() const { return 4 * constants::PI * radius * radius * emission->getAverage(); }
 
-            LAMBDA_HOST_DEVICE Float probabilityDensity(const Vector<Float, 3> & direction) const {
-                Vector<Float, 2> textureCoordinate;
-
-                getTextureCoordinate(transform.vectorToWorld(direction), textureCoordinate);
+            LAMBDA_DEVICE Float probabilityDensity(const Vector<Float, 3> & direction) const {
+                Vector<Float, 2> textureCoordinate = getTextureCoordinate(transform.vectorToWorld(direction));
 
                 int width = emission->getWidth();
                 int height = emission->getHeight();
@@ -83,7 +74,7 @@ namespace lambda {
                 return marginal * conditional * Float(width * height) / std::fmax(jacobian(textureCoordinate[1]), 2 * constants::PI * constants::PI * constants::GRAZING_COS);
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sample(Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sample(Random & state) const {
                 switch (type) {
                     case Type::EQUIRECTANGULAR: return sampleEquirectangular(state);
                     case Type::OCTAHEDRAL: return sampleOctahedral(state);
@@ -92,7 +83,7 @@ namespace lambda {
                 return Vector<Float, 3>();
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Ray & r) const {
+            LAMBDA_DEVICE SampledSpectrum evaluate(const Ray & r) const {
                 Intersection intersection;
 
                 Vector<Float, 3> direction = transform.vectorToWorld(r.getDirection());
@@ -106,7 +97,7 @@ namespace lambda {
                 if (tangentLengthSquared <= constants::EPSILON_RELATIVE_SQUARED) intersection.tangent = Vector<Float, 3>(1, 0, 0);
                 else intersection.tangent /= std::sqrt(tangentLengthSquared);
 
-                getTextureCoordinate(direction, intersection.textureCoordinate);
+                intersection.textureCoordinate = getTextureCoordinate(direction);
 
                 SampledSpectrum attenuation;
 
@@ -124,12 +115,16 @@ namespace lambda {
             Float * conditionalCDF, * marginalCDF;
             Transform transform;
 
-            LAMBDA_HOST_DEVICE void textureCoordinateEquirectangular(const Vector<Float, 3> & direction, Vector<Float, 2> & textureCoordinate) const {
-                textureCoordinate[0] = (std::atan2(direction[2], direction[0]) + constants::PI) / (2 * constants::PI);
-                textureCoordinate[1] = std::acos(utils::clamp(direction[1], Float(-1), Float(1))) / constants::PI;
+            LAMBDA_DEVICE Vector<Float, 2> getTextureCoordinate(const Vector<Float, 3> & direction) const {
+                switch (type) {
+                    case Type::EQUIRECTANGULAR: return Vector<Float, 2>((std::atan2(direction[2], direction[0]) + constants::PI) / (2 * constants::PI), std::acos(utils::clamp(direction[1], Float(-1), Float(1))) / constants::PI);
+                    case Type::OCTAHEDRAL: return getTextureCoordinateOctahedral(direction);
+                }
+
+                return Vector<Float, 2>();
             }
 
-            LAMBDA_HOST_DEVICE void textureCoordinateOctahedral(const Vector<Float, 3> & direction, Vector<Float, 2> & textureCoordinate) const {
+            LAMBDA_DEVICE Vector<Float, 2> getTextureCoordinateOctahedral(const Vector<Float, 3> & direction) const {
                 Float r = std::sqrt(std::fmax(1 - std::fabs(direction[1]), Float(0)));
                 Float denominator = r * std::sqrt(std::fmax(2 - r * r, Float(0)));
 
@@ -141,19 +136,15 @@ namespace lambda {
                 Float delta = r * (4 * phi / constants::PI - 1);
                 Float sum = (direction[1] > 0) ? r : 2 - r;
 
-                textureCoordinate[0] = std::copysign((sum - delta) / 2, cosPhi);
-                textureCoordinate[1] = std::copysign((sum + delta) / 2, sinPhi);
-
-                textureCoordinate[0] = Float(0.5) * textureCoordinate[0] + Float(0.5);
-                textureCoordinate[1] = Float(0.5) * textureCoordinate[1] + Float(0.5);
+                return Vector<Float, 2>(std::copysign((sum - delta) / 2, cosPhi), std::copysign((sum + delta) / 2, sinPhi)) * Float(0.5) + Vector<Float, 2>(Float(0.5));
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleEquirectangular(Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleEquirectangular(Random & state) const {
                 int width = emission->getWidth();
                 int height = emission->getHeight();
 
-                int y = findIndex(marginalCDF, height, utils::randomFloat(state));
-                int x = findIndex(conditionalCDF + y * width, width, utils::randomFloat(state));
+                int y = findCDFIndex(marginalCDF, height, utils::randomFloat(state));
+                int x = findCDFIndex(conditionalCDF + y * width, width, utils::randomFloat(state));
 
                 Float u = (Float(x) + utils::randomFloat(state)) / Float(width);
                 Float v = (Float(y) + utils::randomFloat(state)) / Float(height);
@@ -168,12 +159,12 @@ namespace lambda {
                 return transform.vectorToLocal(direction);
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleOctahedral(Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleOctahedral(Random & state) const {
                 int width = emission->getWidth();
                 int height = emission->getHeight();
 
-                int y = findIndex(marginalCDF, height, utils::randomFloat(state));
-                int x = findIndex(conditionalCDF + y * width, width, utils::randomFloat(state));
+                int y = findCDFIndex(marginalCDF, height, utils::randomFloat(state));
+                int x = findCDFIndex(conditionalCDF + y * width, width, utils::randomFloat(state));
 
                 Float u = (Float(x) + utils::randomFloat(state)) / Float(width);
                 Float v = (Float(y) + utils::randomFloat(state)) / Float(height);
@@ -203,7 +194,7 @@ namespace lambda {
                 return transform.vectorToLocal(direction);
             }
 
-            LAMBDA_HOST_DEVICE static int findIndex(const Float * cdf, int size, Float value) {
+            LAMBDA_DEVICE static int findCDFIndex(const Float * cdf, int size, Float value) {
                 int left = 0;
                 int right = size - 1;
 

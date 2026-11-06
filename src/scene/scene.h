@@ -19,11 +19,11 @@ namespace lambda {
         public:
             Scene(BVHNode<Instance> * _node = nullptr, BVHNode<Instance> * _lightNode = nullptr, Background * _backgrounds = nullptr, int _numBackgrounds = 0) : node(_node), lightNode(_lightNode), numBackgrounds(_numBackgrounds), backgrounds(_backgrounds) {}
 
-            LAMBDA_HOST_DEVICE const Background * getBackground(int i) const { return backgrounds + i; }
+            LAMBDA_DEVICE const Background * getBackground(int i) const { return backgrounds + i; }
 
-            LAMBDA_HOST_DEVICE int getNumBackgrounds() const { return numBackgrounds; }
+            LAMBDA_DEVICE int getNumBackgrounds() const { return numBackgrounds; }
 
-            LAMBDA_HOST_DEVICE Float getTotalPower() const {
+            LAMBDA_DEVICE Float getTotalPower() const {
                 Float totalPower = 0;
 
                 for (int i = 0; i < numBackgrounds; i++) totalPower += backgrounds[i].getPower();
@@ -33,11 +33,11 @@ namespace lambda {
                 return totalPower;
             }
 
-            LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r) const { return hit<false>(intersection, r, nullptr, -1); }
+            LAMBDA_DEVICE bool hit(Intersection & intersection, const Ray & r) const { return hit<false>(intersection, r, nullptr, -1); }
 
-            LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const { return hit<true>(intersection, r, occludedInstance, occludedObjectIndex); }
+            LAMBDA_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const { return hit<true>(intersection, r, occludedInstance, occludedObjectIndex); }
 
-            LAMBDA_HOST_DEVICE Float lightProbabilityDensity(const Instance * instance, int objectIndex, const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
+            LAMBDA_DEVICE Float lightProbabilityDensity(const Instance * instance, int objectIndex, const Vector<Float, 3> & point, const Vector<Float, 3> & direction) const {
                 Float totalPower = getTotalPower();
 
                 if (totalPower <= 0) return 0;
@@ -53,7 +53,7 @@ namespace lambda {
                 return instance->probabilityDensity(objectIndex, point, direction) * instance->getPower(objectIndex) / totalPower;
             }
 
-            LAMBDA_HOST_DEVICE Vector<Float, 3> sampleLight(const Vector<Float, 3> & point, Float & probabilityDensity, const Instance * & instance, int & objectIndex, Random & state) const {
+            LAMBDA_DEVICE Vector<Float, 3> sampleLight(const Vector<Float, 3> & point, Float & probabilityDensity, const Instance * & instance, int & objectIndex, Random & state) const {
                 instance = nullptr;
                 objectIndex = -1;
 
@@ -123,7 +123,7 @@ namespace lambda {
             Background * backgrounds;
 
             template <bool occluded>
-            LAMBDA_HOST_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const {
+            LAMBDA_DEVICE bool hit(Intersection & intersection, const Ray & r, const Instance * occludedInstance, int occludedObjectIndex) const {
                 if (!node) return false;
 
                 const BVHNode<Instance> * stack[constants::BVH_MAX_DEPTH + 1];

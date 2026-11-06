@@ -11,7 +11,7 @@ namespace lambda {
 
     class Intersection {
         public:
-            LAMBDA_HOST_DEVICE Intersection() : object(nullptr), instance(nullptr), i(-1), t(constants::MAX), pointError(0), frontFacing(true), useTransformed(false), isSurface(true) {}
+            LAMBDA_DEVICE Intersection() : object(nullptr), instance(nullptr), i(-1), t(constants::MAX), pointError(0), frontFacing(true), useTransformed(false), isSurface(true) {}
 
             const Object * object;
             const Instance * instance;

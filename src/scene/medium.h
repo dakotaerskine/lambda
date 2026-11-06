@@ -23,7 +23,7 @@ namespace lambda {
                 return medium;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum transmittance(const Intersection & intersection, const Ray & r, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum transmittance(const Intersection & intersection, const Ray & r, bool collapsed) const {
                 switch (type) {
                     case Type::HOMOGENEOUS: return transmittanceHomogeneous(intersection, r, collapsed);
                 }
@@ -31,7 +31,7 @@ namespace lambda {
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleDistance(Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sampleDistance(Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 switch (type) {
                     case Type::HOMOGENEOUS: return sampleDistanceHomogeneous(intersection, r, probabilityDensity, collapsed, state);
                 }
@@ -39,7 +39,7 @@ namespace lambda {
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum evaluate(const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 switch (type) {
                     case Type::HOMOGENEOUS: return evaluateHomogeneous(rIn, rOut, probabilityDensity, collapsed);
                 }
@@ -47,7 +47,7 @@ namespace lambda {
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 switch (type) {
                     case Type::HOMOGENEOUS: return sampleHomogeneous(intersection, r, probabilityDensity, collapsed, state);
                 }
@@ -64,7 +64,7 @@ namespace lambda {
                 struct { LinearSpectrum<Float> * sigmaA, * sigmaS; Float g; } homogeneous;
             };
 
-            LAMBDA_HOST_DEVICE SampledSpectrum transmittanceHomogeneous(const Intersection & intersection, const Ray & r, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum transmittanceHomogeneous(const Intersection & intersection, const Ray & r, bool collapsed) const {
                 SampledSpectrum attenuation;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++)
@@ -80,7 +80,7 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleDistanceHomogeneous(Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sampleDistanceHomogeneous(Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 Float sigmaA = (*homogeneous.sigmaA)[r.getLambdas()[0]];
                 Float sigmaS = (*homogeneous.sigmaS)[r.getLambdas()[0]];
                 Float sigmaT = sigmaA + sigmaS;
@@ -115,7 +115,7 @@ namespace lambda {
                 return transmittance / probabilityDensity[0];
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateHomogeneous(const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum evaluateHomogeneous(const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 if (std::fabs(homogeneous.g) <= constants::ISOTROPIC_G) probabilityDensity = SampledSpectrum(1 / (4 * constants::PI));
                 else {
                     Float c = dot(-rIn.getDirection(), rOut.getDirection());
@@ -133,7 +133,7 @@ namespace lambda {
                 return attenuation * probabilityDensity;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleHomogeneous(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sampleHomogeneous(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, bool collapsed, Random & state) const {
                 Float cosTheta = 0;
 
                 if (std::fabs(homogeneous.g) <= constants::ISOTROPIC_G) cosTheta = 1 - 2 * utils::randomFloat(state);

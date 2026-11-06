@@ -9,13 +9,11 @@
 namespace lambda {
     class Transform {
         public:
-            Transform() {}
+            LAMBDA_HOST_DEVICE Transform() {}
 
-            Transform(const Vector<Float, 3> & translation, const Vector<Float, 3> & rotation, const Vector<Float, 3> & scale) {
-                Matrix<Float, 4> rotationMatrix = utils::rotationMatrix(rotation);
-
-                transformMatrix = utils::translationMatrix(translation) * rotationMatrix * utils::scaleMatrix(scale);
-                inverseTransformMatrix = utils::scaleMatrix(Vector<Float, 3>(1 / scale[0], 1 / scale[1], 1 / scale[2])) * transpose(rotationMatrix) * utils::translationMatrix(Vector<Float, 3>(-translation));
+            LAMBDA_HOST_DEVICE Transform(const Vector<Float, 3> & translation, const Vector<Float, 3> & rotation, const Vector<Float, 3> & scale) {
+                transformMatrix = translationMatrix(translation) * rotationMatrix(rotation) * scaleMatrix(scale);
+                inverseTransformMatrix = scaleMatrix(Vector<Float, 3>(1 / scale[0], 1 / scale[1], 1 / scale[2])) * transpose(rotationMatrix(rotation)) * translationMatrix(Vector<Float, 3>(-translation));
                 normalMatrix = Matrix<Float, 3>(transpose(inverseTransformMatrix));
             }
 
@@ -42,5 +40,21 @@ namespace lambda {
         private:
             Matrix<Float, 4> transformMatrix, inverseTransformMatrix;
             Matrix<Float, 3> normalMatrix;
+
+            LAMBDA_HOST_DEVICE static Matrix<Float, 4> translationMatrix(const Vector<Float, 3> & translation) { return Matrix<Float, 4>(1, 0, 0, translation[0], 0, 1, 0, translation[1], 0, 0, 1, translation[2], 0, 0, 0, 1); }
+
+            LAMBDA_HOST_DEVICE static Matrix<Float, 4> rotationMatrix(const Vector<Float, 3> & rotation) {
+                Float sinX = std::sin(rotation[0]), cosX = std::cos(rotation[0]);
+                Float sinY = std::sin(rotation[1]), cosY = std::cos(rotation[1]);
+                Float sinZ = std::sin(rotation[2]), cosZ = std::cos(rotation[2]);
+
+                Matrix<Float, 4> rotationMatrixX = Matrix<Float, 4>(1, 0, 0, 0, 0, cosX, -sinX, 0, 0, sinX, cosX, 0, 0, 0, 0, 1);
+                Matrix<Float, 4> rotationMatrixY = Matrix<Float, 4>(cosY, 0, sinY, 0, 0, 1, 0, 0, -sinY, 0, cosY, 0, 0, 0, 0, 1);
+                Matrix<Float, 4> rotationMatrixZ = Matrix<Float, 4>(cosZ, -sinZ, 0, 0, sinZ, cosZ, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+
+                return rotationMatrixZ * rotationMatrixY * rotationMatrixX;
+            }
+
+            LAMBDA_HOST_DEVICE static Matrix<Float, 4> scaleMatrix(const Vector<Float, 3> & scale) { return Matrix<Float, 4>(scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, scale[2], 0, 0, 0, 0, 1); }
     };
 }

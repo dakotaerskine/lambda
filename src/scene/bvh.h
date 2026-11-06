@@ -25,19 +25,19 @@ namespace lambda {
 
             BVHNode(const Vector<Float, 3> & _min, const Vector<Float, 3> & _max, T ** _elements, int _count, Float _power) : min(_min), max(_max), elements(_elements), count(_count), power(_power) {}
 
-            LAMBDA_HOST_DEVICE const Vector<Float, 3> & getMin() const { return min; }
+            const Vector<Float, 3> & getMin() const { return min; }
 
-            LAMBDA_HOST_DEVICE const Vector<Float, 3> & getMax() const { return max; }
-
-            LAMBDA_HOST_DEVICE bool isLeaf() const { return elements != nullptr; }
-
-            LAMBDA_HOST_DEVICE int getCount() const { return count; }
-
-            LAMBDA_HOST_DEVICE const T * getElement(int i) const { return isLeaf() ? elements[i] : nullptr; }
+            const Vector<Float, 3> & getMax() const { return max; }
 
             LAMBDA_HOST_DEVICE Float getPower() const { return power; }
 
-            LAMBDA_HOST_DEVICE bool intersect(const Intersection & intersection, const Ray & r) const {
+            LAMBDA_DEVICE bool isLeaf() const { return elements != nullptr; }
+
+            LAMBDA_DEVICE int getCount() const { return count; }
+
+            LAMBDA_DEVICE const T * getElement(int i) const { return isLeaf() ? elements[i] : nullptr; }
+
+            LAMBDA_DEVICE bool intersect(const Intersection & intersection, const Ray & r) const {
                 Float t1 = 0, t2 = constants::MAX;
 
                 for (int i = 0; i < 3; i++) {

@@ -83,13 +83,13 @@ namespace lambda {
                 return material;
             }
 
-            LAMBDA_HOST_DEVICE bool isSpecular(const Intersection & intersection) const {
+            bool isIdealFresnel() const {
                 switch (type) {
                     case Type::LAMBERTIAN: return false;
-                    case Type::MIRROR: return true;
-                    case Type::CONDUCTOR: return conductor.alphaX->evaluate(intersection) <= constants::SPECULAR_ALPHA || conductor.alphaY->evaluate(intersection) <= constants::SPECULAR_ALPHA;
-                    case Type::DIELECTRIC: return dielectric.alphaX->evaluate(intersection) <= constants::SPECULAR_ALPHA || dielectric.alphaY->evaluate(intersection) <= constants::SPECULAR_ALPHA;
-                    case Type::COATED: return isSpecularCoated(intersection);
+                    case Type::MIRROR: return false;
+                    case Type::CONDUCTOR: return true;
+                    case Type::DIELECTRIC: return true;
+                    case Type::COATED: return false;
                     case Type::EMISSIVE: return false;
                 }
 
@@ -109,32 +109,6 @@ namespace lambda {
                 return false;
             }
 
-            LAMBDA_HOST_DEVICE bool isIdealFresnel() const {
-                switch (type) {
-                    case Type::LAMBERTIAN: return false;
-                    case Type::MIRROR: return false;
-                    case Type::CONDUCTOR: return true;
-                    case Type::DIELECTRIC: return true;
-                    case Type::COATED: return false;
-                    case Type::EMISSIVE: return false;
-                }
-
-                return false;
-            }
-
-            LAMBDA_HOST_DEVICE SampledSpectrum emission(const Intersection & intersection, const SampledSpectrum & lambdas) const {
-                switch (type) {
-                    case Type::LAMBERTIAN: return SampledSpectrum(0);
-                    case Type::MIRROR: return SampledSpectrum(0);
-                    case Type::CONDUCTOR: return SampledSpectrum(0);
-                    case Type::DIELECTRIC: return SampledSpectrum(0);
-                    case Type::COATED: return SampledSpectrum(0);
-                    case Type::EMISSIVE: return emissionEmissive(intersection, lambdas);
-                }
-
-                return SampledSpectrum(0);
-            }
-
             LAMBDA_HOST_DEVICE Float averageEmission() const {
                 switch (type) {
                     case Type::LAMBERTIAN: return 0;
@@ -148,7 +122,33 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluate(const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+            LAMBDA_DEVICE bool isSpecular(const Intersection & intersection) const {
+                switch (type) {
+                    case Type::LAMBERTIAN: return false;
+                    case Type::MIRROR: return true;
+                    case Type::CONDUCTOR: return conductor.alphaX->evaluate(intersection) <= constants::SPECULAR_ALPHA || conductor.alphaY->evaluate(intersection) <= constants::SPECULAR_ALPHA;
+                    case Type::DIELECTRIC: return dielectric.alphaX->evaluate(intersection) <= constants::SPECULAR_ALPHA || dielectric.alphaY->evaluate(intersection) <= constants::SPECULAR_ALPHA;
+                    case Type::COATED: return isSpecularCoated(intersection);
+                    case Type::EMISSIVE: return false;
+                }
+
+                return false;
+            }
+
+            LAMBDA_DEVICE SampledSpectrum emission(const Intersection & intersection, const SampledSpectrum & lambdas) const {
+                switch (type) {
+                    case Type::LAMBERTIAN: return SampledSpectrum(0);
+                    case Type::MIRROR: return SampledSpectrum(0);
+                    case Type::CONDUCTOR: return SampledSpectrum(0);
+                    case Type::DIELECTRIC: return SampledSpectrum(0);
+                    case Type::COATED: return SampledSpectrum(0);
+                    case Type::EMISSIVE: return emissionEmissive(intersection, lambdas);
+                }
+
+                return SampledSpectrum(0);
+            }
+
+            LAMBDA_DEVICE SampledSpectrum evaluate(const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 switch (type) {
                     case Type::LAMBERTIAN: return evaluateLambertian(intersection, rOut, probabilityDensity, collapsed);
                     case Type::MIRROR: return SampledSpectrum(0);
@@ -161,7 +161,7 @@ namespace lambda {
                 return SampledSpectrum(0);
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sample(const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
                 switch (type) {
                     case Type::LAMBERTIAN: return sampleLambertian(intersection, r, probabilityDensity, radianceScale, collapsed, state);
                     case Type::MIRROR: return sampleMirror(intersection, r, probabilityDensity, radianceScale, collapsed);
@@ -188,7 +188,7 @@ namespace lambda {
                 struct { SpectrumTexture * emission; } emissive;
             };
 
-            LAMBDA_HOST_DEVICE bool isSpecularCoated(const Intersection & intersection) const {
+            LAMBDA_DEVICE bool isSpecularCoated(const Intersection & intersection) const {
                 switch (coated.substrate->type) {
                     case Type::CONDUCTOR: return coated.substrate->conductor.alphaX->evaluate(intersection) <= constants::SPECULAR_ALPHA || coated.substrate->conductor.alphaY->evaluate(intersection) <= constants::SPECULAR_ALPHA;
                     case Type::DIELECTRIC: return coated.substrate->dielectric.alphaX->evaluate(intersection) <= constants::SPECULAR_ALPHA || coated.substrate->dielectric.alphaY->evaluate(intersection) <= constants::SPECULAR_ALPHA;
@@ -196,7 +196,7 @@ namespace lambda {
                 }
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum emissionEmissive(const Intersection & intersection, const SampledSpectrum & lambdas) const {
+            LAMBDA_DEVICE SampledSpectrum emissionEmissive(const Intersection & intersection, const SampledSpectrum & lambdas) const {
                 SampledSpectrum emission;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) emission[i] = emissive.emission->evaluate(intersection, lambdas[i]);
@@ -204,7 +204,7 @@ namespace lambda {
                 return emission;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateLambertian(const Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum evaluateLambertian(const Intersection & intersection, const Ray & r, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 Float cosTheta = dot(intersection.transformedNormal, r.getDirection());
 
                 probabilityDensity = cosTheta > constants::GRAZING_COS ? SampledSpectrum(cosTheta / constants::PI) : SampledSpectrum(0);
@@ -218,7 +218,7 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateConductor(const Material * coating, const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum evaluateConductor(const Material * coating, const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 Float alphaX = conductor.alphaX->evaluate(intersection);
                 Float alphaY = conductor.alphaY->evaluate(intersection);
 
@@ -264,16 +264,16 @@ namespace lambda {
                         fresnel(coating, intersection, n0, n1, cosTheta, lambda, reflectance[i], transmittance[i]);
                     }
 
-                Float D = utils::ggxD(halfVLocal, alphaX, alphaY);
-                Float G1 = utils::ggxG1(vInLocal, alphaX, alphaY);
-                Float G2 = utils::ggxG2(vInLocal, vOutLocal, alphaX, alphaY);
+                Float D = microfacetD(halfVLocal, alphaX, alphaY);
+                Float G1 = microfacetG1(vInLocal, alphaX, alphaY);
+                Float G2 = microfacetG2(vInLocal, vOutLocal, alphaX, alphaY);
 
                 probabilityDensity = SampledSpectrum(D * G1 / (4 * std::fabs(vInLocal[2])));
 
                 return reflectance * (D * G2 / (4 * vInLocal[2] * vOutLocal[2]));
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateDielectric(const Material * coating, const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum evaluateDielectric(const Material * coating, const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 Float alphaX = dielectric.alphaX->evaluate(intersection);
                 Float alphaY = dielectric.alphaY->evaluate(intersection);
 
@@ -293,7 +293,7 @@ namespace lambda {
                 Vector<Float, 3> vInLocal = Vector<Float, 3>(dot(vIn, intersection.transformedTangent), dot(vIn, bitangent), dot(vIn, intersection.transformedNormal));
                 Vector<Float, 3> vOutLocal = Vector<Float, 3>(dot(vOut, intersection.transformedTangent), dot(vOut, bitangent), dot(vOut, intersection.transformedNormal));
 
-                Float G1 = utils::ggxG1(vInLocal, alphaX, alphaY);
+                Float G1 = microfacetG1(vInLocal, alphaX, alphaY);
 
                 probabilityDensity = SampledSpectrum(0);
 
@@ -325,8 +325,8 @@ namespace lambda {
 
                                 Vector<Float, 3> vOutLocalShadow(vOutLocal[0], vOutLocal[1], std::fabs(vOutLocal[2]));
 
-                                Float D = utils::ggxD(halfVLocal, alphaX, alphaY);
-                                Float G2 = utils::ggxG2(vInLocal, vOutLocalShadow, alphaX, alphaY);
+                                Float D = microfacetD(halfVLocal, alphaX, alphaY);
+                                Float G2 = microfacetG2(vInLocal, vOutLocalShadow, alphaX, alphaY);
 
                                 if (reflect) {
                                     probabilityDensity[i] = reflectance[i] * D * G1 / (4 * std::fabs(vInLocal[2]));
@@ -346,7 +346,7 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum evaluateCoated(const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum evaluateCoated(const Intersection & intersection, const Ray & rIn, const Ray & rOut, SampledSpectrum & probabilityDensity, bool collapsed) const {
                 switch (coated.substrate->type) {
                     case Type::CONDUCTOR: return coated.substrate->evaluateConductor(this, intersection, rIn, rOut, probabilityDensity, collapsed);
                     case Type::DIELECTRIC: return coated.substrate->evaluateDielectric(this, intersection, rIn, rOut, probabilityDensity, collapsed);
@@ -354,7 +354,7 @@ namespace lambda {
                 }
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleLambertian(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sampleLambertian(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
                 r = Ray(intersection.transformedPoint + intersection.geometricNormal * intersection.pointError, utils::randomInHemisphere(intersection.transformedNormal, state), r.getLambdas(), r.getMedium());
 
                 radianceScale = 1;
@@ -366,7 +366,7 @@ namespace lambda {
                 return attenuation * dot(intersection.transformedNormal, r.getDirection()) / probabilityDensity[0];
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleMirror(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, Float & radianceScale, bool collapsed) const {
+            LAMBDA_DEVICE SampledSpectrum sampleMirror(const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, Float & radianceScale, bool collapsed) const {
                 r = Ray(intersection.transformedPoint + intersection.geometricNormal * intersection.pointError, utils::reflected(r.getDirection(), intersection.transformedNormal), r.getLambdas(), r.getMedium());
 
                 probabilityDensity = SampledSpectrum(1);
@@ -379,13 +379,13 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleConductor(const Material * coating, const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sampleConductor(const Material * coating, const Intersection & intersection, Ray & r, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
                 Vector<Float, 3> normal = intersection.transformedNormal;
 
                 Float alphaX = conductor.alphaX->evaluate(intersection);
                 Float alphaY = conductor.alphaY->evaluate(intersection);
 
-                if (alphaX > constants::SPECULAR_ALPHA && alphaY > constants::SPECULAR_ALPHA) normal = utils::ggxNormal(-r.getDirection(), normal, intersection.transformedTangent, alphaX, alphaY, state);
+                if (alphaX > constants::SPECULAR_ALPHA && alphaY > constants::SPECULAR_ALPHA) normal = microfacetNormal(-r.getDirection(), normal, intersection.transformedTangent, alphaX, alphaY, state);
 
                 Vector<Float, 3> direction = utils::reflected(r.getDirection(), normal);
 
@@ -428,13 +428,13 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleDielectric(const Material * coating, const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sampleDielectric(const Material * coating, const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
                 Vector<Float, 3> normal = intersection.transformedNormal;
 
                 Float alphaX = dielectric.alphaX->evaluate(intersection);
                 Float alphaY = dielectric.alphaY->evaluate(intersection);
 
-                if (alphaX > constants::SPECULAR_ALPHA && alphaY > constants::SPECULAR_ALPHA) normal = utils::ggxNormal(-r.getDirection(), normal, intersection.transformedTangent, alphaX, alphaY, state);
+                if (alphaX > constants::SPECULAR_ALPHA && alphaY > constants::SPECULAR_ALPHA) normal = microfacetNormal(-r.getDirection(), normal, intersection.transformedTangent, alphaX, alphaY, state);
 
                 Float lambda = r.getLambdas()[0];
 
@@ -504,7 +504,7 @@ namespace lambda {
                 return attenuation;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum sampleCoated(const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum sampleCoated(const Intersection & intersection, Ray & r, const Medium * medium1, SampledSpectrum & probabilityDensity, Float & radianceScale, bool & collapsed, Random & state) const {
                 switch (coated.substrate->type) {
                     case Type::CONDUCTOR: return coated.substrate->sampleConductor(this, intersection, r, probabilityDensity, radianceScale, collapsed, state);
                     case Type::DIELECTRIC: return coated.substrate->sampleDielectric(this, intersection, r, medium1, probabilityDensity, radianceScale, collapsed, state);
@@ -513,7 +513,7 @@ namespace lambda {
             }
 
             template <typename T>
-            LAMBDA_HOST_DEVICE static void fresnel(const Material * coating, const Intersection & intersection, Float nI, const T & nT, Float cosThetaI, Float lambda, Float & reflectance, Float & transmittance) {
+            LAMBDA_DEVICE static void fresnel(const Material * coating, const Intersection & intersection, Float nI, const T & nT, Float cosThetaI, Float lambda, Float & reflectance, Float & transmittance) {
                 using std::abs;
                 using std::fabs;
                 using std::sqrt;
@@ -570,8 +570,8 @@ namespace lambda {
                     Complex cosNext = sqrt(1 - sinNext);
 
                     Matrix<Complex, 2> matrices[2];
-                    matrices[0] = utils::interfaceMatrixS(n0, n1, cosCurrent, cosNext);
-                    matrices[1] = utils::interfaceMatrixP(n0, n1, cosCurrent, cosNext);
+                    matrices[0] = interfaceMatrixS(n0, n1, cosCurrent, cosNext);
+                    matrices[1] = interfaceMatrixP(n0, n1, cosCurrent, cosNext);
 
                     for (int i = 0; i < numLayers; i++) {
                         n0 = (*n[jOffset + jSign * i])[lambda];
@@ -581,12 +581,12 @@ namespace lambda {
                         sinNext = nSinThetaSquared / (n1 * n1);
                         cosNext = sqrt(1 - sinNext);
 
-                        Matrix<Complex, 2> interfaceS = utils::interfaceMatrixS(n0, n1, cosCurrent, cosNext);
-                        Matrix<Complex, 2> interfaceP = utils::interfaceMatrixP(n0, n1, cosCurrent, cosNext);
+                        Matrix<Complex, 2> interfaceS = interfaceMatrixS(n0, n1, cosCurrent, cosNext);
+                        Matrix<Complex, 2> interfaceP = interfaceMatrixP(n0, n1, cosCurrent, cosNext);
 
                         Complex phi = n0 * 2 * constants::PI / lambda * d[jOffset + jSign * i]->evaluate(intersection) * cosCurrent;
 
-                        Matrix<Complex, 2> propagation = utils::propagationMatrix(phi);
+                        Matrix<Complex, 2> propagation = propagationMatrix(phi);
                         matrices[0] *= propagation * interfaceS;
                         matrices[1] *= propagation * interfaceP;
                     }
@@ -612,6 +612,83 @@ namespace lambda {
                     }
                     else transmittance = 0;
                 }
+            }
+
+            LAMBDA_DEVICE static Matrix<Complex, 2> interfaceMatrixS(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
+            Complex r = (n1 * cos1 - n2 * cos2) / (n1 * cos1 + n2 * cos2);
+
+            Matrix<Complex, 2> interfaceMatrix(Complex(1), r, r, Complex(1));
+
+            interfaceMatrix /= Complex(2) * n1 * cos1 / (n1 * cos1 + n2 * cos2);
+
+            return interfaceMatrix;
+            }
+
+            LAMBDA_DEVICE static Matrix<Complex, 2> interfaceMatrixP(const Complex & n1, const Complex & n2, const Complex & cos1, const Complex & cos2) {
+            Complex r = (n2 * cos1 - n1 * cos2) / (n2 * cos1 + n1 * cos2);
+
+            Matrix<Complex, 2> interfaceMatrix(Complex(1), r, r, Complex(1));
+
+            interfaceMatrix /= Complex(2) * n1 * cos1 / (n2 * cos1 + n1 * cos2);
+
+            return interfaceMatrix;
+            }
+
+            LAMBDA_DEVICE static Matrix<Complex, 2> propagationMatrix(const Complex & phi) { return Matrix<Complex, 2>(exp(Complex(0, -1) * phi), Complex(0), Complex(0), exp(Complex(0, 1) * phi)); }
+
+            LAMBDA_DEVICE static Vector<Float, 3> microfacetNormal(const Vector<Float, 3> & v, const Vector<Float, 3> & normal, const Vector<Float, 3> & tangent, Float alphaX, Float alphaY, Random & state) {
+                Vector<Float, 3> bitangent = cross(normal, tangent);
+
+                Vector<Float, 3> vLocal = Vector<Float, 3>(dot(v, tangent), dot(v, bitangent), dot(v, normal));
+
+                Vector<Float, 3> vh = normalize(Vector<Float, 3>(alphaX * vLocal[0], alphaY * vLocal[1], vLocal[2]));
+
+                Float lengthSquared = vh[0] * vh[0] + vh[1] * vh[1];
+
+                Vector<Float, 3> t1 = lengthSquared > 0 ? Vector<Float, 3>(-vh[1], vh[0], 0) / std::sqrt(lengthSquared) : Vector<Float, 3>(1, 0, 0);
+                Vector<Float, 3> t2 = cross(vh, t1);
+
+                Float r = std::sqrt(utils::randomFloat(state));
+                Float phi = 2 * constants::PI * utils::randomFloat(state);
+
+                Float t1Disk = r * std::cos(phi);
+                Float t2Disk = r * std::sin(phi);
+
+                Float s = Float(0.5) * (1 + vh[2]);
+
+                t2Disk = (1 - s) * std::sqrt(std::fmax(1 - t1Disk * t1Disk, Float(0))) + s * t2Disk;
+
+                Vector<Float, 3> nh = t1Disk * t1 + t2Disk * t2 + std::sqrt(std::fmax(1 - t1Disk * t1Disk - t2Disk * t2Disk, Float(0))) * vh;
+
+                Vector<Float, 3> nLocal = normalize(Vector<Float, 3>(alphaX * nh[0], alphaY * nh[1], std::fmax(nh[2], Float(0))));
+
+                return nLocal[0] * tangent + nLocal[1] * bitangent + nLocal[2] * normal;
+            }
+
+            LAMBDA_DEVICE static Float microfacetD(const Vector<Float, 3> & mLocal, Float alphaX, Float alphaY) {
+                if (mLocal[2] <= constants::GRAZING_COS) return 0;
+
+                Float x2 = mLocal[0] * mLocal[0] / (alphaX * alphaX);
+                Float y2 = mLocal[1] * mLocal[1] / (alphaY * alphaY);
+                Float z2 = mLocal[2] * mLocal[2];
+
+                Float denominator = x2 + y2 + z2;
+
+                return 1 / (constants::PI * alphaX * alphaY * denominator * denominator);
+            }
+
+            LAMBDA_DEVICE static Float microfacetG1(const Vector<Float, 3> & vLocal, Float alphaX, Float alphaY) { return 1 / (1 + microfacetLambda(vLocal, alphaX, alphaY)); }
+
+            LAMBDA_DEVICE static Float microfacetG2(const Vector<Float, 3> & vInLocal, const Vector<Float, 3> & vOutLocal, Float alphaX, Float alphaY) { return 1 / (1 + microfacetLambda(vInLocal, alphaX, alphaY) + microfacetLambda(vOutLocal, alphaX, alphaY)); }
+
+            LAMBDA_DEVICE static Float microfacetLambda(const Vector<Float, 3> & vLocal, Float alphaX, Float alphaY) {
+                if (vLocal[2] <= constants::GRAZING_COS) return 0;
+
+                Float x2 = vLocal[0] * vLocal[0] * (alphaX * alphaX);
+                Float y2 = vLocal[1] * vLocal[1] * (alphaY * alphaY);
+                Float z2 = vLocal[2] * vLocal[2];
+
+                return Float(0.5) * (std::sqrt(1 + (x2 + y2) / z2) - 1);
             }
     };
 }

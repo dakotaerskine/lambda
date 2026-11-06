@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "core/color.h"
 #include "core/platform.h"
 #include "core/utils.h"
 #include "math/spectrum.h"
@@ -188,17 +189,11 @@ namespace lambda {
                 return texture;
             }
 
-            LAMBDA_HOST_DEVICE int getWidth() const { return width > 0 ? width : 1; }
+            Float getMin() const { return min; }
 
-            LAMBDA_HOST_DEVICE int getHeight() const { return height > 0 ? height : 1; }
+            Float getMax() const { return max; }
 
-            LAMBDA_HOST_DEVICE Float getMin() const { return min; }
-
-            LAMBDA_HOST_DEVICE Float getMax() const { return max; }
-
-            LAMBDA_HOST_DEVICE Float getAverage() const { return average; }
-
-            LAMBDA_HOST_DEVICE Float getAverage(int x, int y) const {
+            Float getAverage(int x, int y) const {
                 switch (type) {
                     case Type::CONSTANT: return average;
                     case Type::SCALE: return scale.texture1->getAverage(width != 0 ? x * scale.texture1->width / width : x, height != 0 ? y * scale.texture1->height / height : y) * scale.texture2->getAverage(width != 0 ? x * scale.texture2->width / width : x, height != 0 ? y * scale.texture2->height / height : y);
@@ -212,7 +207,13 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & intersection) const {
+            LAMBDA_HOST_DEVICE int getWidth() const { return width > 0 ? width : 1; }
+
+            LAMBDA_HOST_DEVICE int getHeight() const { return height > 0 ? height : 1; }
+
+            LAMBDA_HOST_DEVICE Float getAverage() const { return average; }
+
+            LAMBDA_DEVICE_NOINLINE Float evaluate(const Intersection & intersection) const {
                 switch (type) {
                     case Type::CONSTANT: return constant.value;
                     case Type::SCALE: return scale.texture1->evaluate(intersection) * scale.texture2->evaluate(intersection);
@@ -245,7 +246,7 @@ namespace lambda {
                 struct { Float * image; int width, height; Float uScale, vScale, uOffset, vOffset; } image;
             };
 
-            LAMBDA_HOST_DEVICE Float getAverageImage(int x, int y) const {
+            Float getAverageImage(int x, int y) const {
                 if (image.uScale != 1 || image.vScale != 1 || image.uOffset != 0 || image.vOffset != 0) return average;
 
                 x = ((x % image.width) + image.width) % image.width;
@@ -254,14 +255,14 @@ namespace lambda {
                 return image.image[y * image.width + x];
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & intersection) const {
+            LAMBDA_DEVICE Float evaluateChecker(const Intersection & intersection) const {
                 int x = int(std::floor(intersection.textureCoordinate[0] * checker.uScale + checker.uOffset));
                 int y = int(std::floor(intersection.textureCoordinate[1] * checker.vScale + checker.vOffset));
 
                 return abs(x + y) % 2 == 0 ? checker.value1 : checker.value2;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluatePerlin(const Intersection & intersection) const {
+            LAMBDA_DEVICE Float evaluatePerlin(const Intersection & intersection) const {
                 Float value = 0, amplitude = 1, factor = 0;
 
                 Vector<Float, 3> point = intersection.useTransformed ? intersection.transformedPoint : intersection.point;
@@ -269,7 +270,7 @@ namespace lambda {
                 point *= perlin.frequency;
 
                 for (int i = 0; i < perlin.octaves; i++) {
-                    value += utils::perlinNoise(point) * amplitude;
+                    value += utils::perlin(point) * amplitude;
                     factor += amplitude;
 
                     amplitude *= perlin.roughness;
@@ -279,7 +280,7 @@ namespace lambda {
                 return value / factor;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateWorley(const Intersection & intersection) const {
+            LAMBDA_DEVICE Float evaluateWorley(const Intersection & intersection) const {
                 Float value = 0, amplitude = 1, factor = 0;
 
                 Vector<Float, 3> point = intersection.useTransformed ? intersection.transformedPoint : intersection.point;
@@ -287,7 +288,7 @@ namespace lambda {
                 point *= worley.frequency;
 
                 for (int i = 0; i < worley.octaves; i++) {
-                    value += utils::worleyNoise(point) * amplitude;
+                    value += utils::worley(point) * amplitude;
                     factor += amplitude;
 
                     amplitude *= worley.roughness;
@@ -297,7 +298,7 @@ namespace lambda {
                 return value / factor;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & intersection) const {
+            LAMBDA_DEVICE Float evaluateImage(const Intersection & intersection) const {
                 Float u = intersection.textureCoordinate[0] * image.uScale + image.uOffset;
                 Float v = intersection.textureCoordinate[1] * image.vScale + image.vOffset;
 
@@ -456,7 +457,7 @@ namespace lambda {
                 return texture;
             }
 
-            static SpectrumTexture makeImage(Float * image, ColorSpace space, int width, int height, Float uScale, Float vScale, Float uOffset, Float vOffset) {
+            static SpectrumTexture makeImage(Float * image, const ColorSpace * space, int width, int height, Float uScale, Float vScale, Float uOffset, Float vOffset) {
                 SpectrumTexture texture;
 
                 texture.type = Type::IMAGE;
@@ -499,17 +500,11 @@ namespace lambda {
                 return texture;
             }
 
-            LAMBDA_HOST_DEVICE int getWidth() const { return width > 0 ? width : 1; }
+            Float getMin() const { return min; }
 
-            LAMBDA_HOST_DEVICE int getHeight() const { return height > 0 ? height : 1; }
+            Float getMax() const { return max; }
 
-            LAMBDA_HOST_DEVICE Float getMin() const { return min; }
-
-            LAMBDA_HOST_DEVICE Float getMax() const { return max; }
-
-            LAMBDA_HOST_DEVICE Float getAverage() const { return average; }
-
-            LAMBDA_HOST_DEVICE Float getAverage(int x, int y) const {
+            Float getAverage(int x, int y) const {
                 switch (type) {
                     case Type::CONSTANT: return average;
                     case Type::SCALAR: return scalar.texture->getAverage(x, y);
@@ -522,7 +517,13 @@ namespace lambda {
                 return 0;
             }
 
-            LAMBDA_HOST_DEVICE_NOINLINE Float evaluate(const Intersection & intersection, Float lambda) const {
+            LAMBDA_HOST_DEVICE int getWidth() const { return width > 0 ? width : 1; }
+
+            LAMBDA_HOST_DEVICE int getHeight() const { return height > 0 ? height : 1; }
+
+            LAMBDA_HOST_DEVICE Float getAverage() const { return average; }
+
+            LAMBDA_DEVICE_NOINLINE Float evaluate(const Intersection & intersection, Float lambda) const {
                 switch (type) {
                     case Type::CONSTANT: return (*constant.value)[lambda];
                     case Type::SCALAR: return scalar.texture->evaluate(intersection);
@@ -548,10 +549,10 @@ namespace lambda {
                 struct { ScalarTexture * texture; } scalar;
                 struct { SpectrumTexture * texture1, * texture2; ScalarTexture * factor; } mix;
                 struct { LinearSpectrum<Float> * value1, * value2; Float uScale, vScale, uOffset, vOffset; } checker;
-                struct { Float * image; ColorSpace space; int width, height; Float uScale, vScale, uOffset, vOffset; } image;
+                struct { Float * image; const ColorSpace * space; int width, height; Float uScale, vScale, uOffset, vOffset; } image;
             };
 
-            LAMBDA_HOST_DEVICE Float getAverageImage(int x, int y) const {
+            Float getAverageImage(int x, int y) const {
                 if (image.uScale != 1 || image.vScale != 1 || image.uOffset != 0 || image.vOffset != 0) return average;
 
                 x = ((x % image.width) + image.width) % image.width;
@@ -564,14 +565,14 @@ namespace lambda {
                 return sum / 3;
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateChecker(const Intersection & intersection, Float lambda) const {
+            LAMBDA_DEVICE Float evaluateChecker(const Intersection & intersection, Float lambda) const {
                 int x = int(std::floor(intersection.textureCoordinate[0] * checker.uScale + checker.uOffset));
                 int y = int(std::floor(intersection.textureCoordinate[1] * checker.vScale + checker.vOffset));
 
                 return abs(x + y) % 2 == 0 ? (*checker.value1)[lambda] : (*checker.value2)[lambda];
             }
 
-            LAMBDA_HOST_DEVICE Float evaluateImage(const Intersection & intersection, Float lambda) const {
+            LAMBDA_DEVICE Float evaluateImage(const Intersection & intersection, Float lambda) const {
                 Float u = intersection.textureCoordinate[0] * image.uScale + image.uOffset;
                 Float v = intersection.textureCoordinate[1] * image.vScale + image.vOffset;
 
@@ -612,7 +613,7 @@ namespace lambda {
                 if (upsamplingScale <= 1) upsamplingScale = 1;
                 else color /= upsamplingScale;
 
-                Vector<Float, 3> coefficients = utils::upsampleRGB(image.space, color);
+                Vector<Float, 3> coefficients = image.space->upsample(color);
 
                 return utils::sigmoid((coefficients[0] * lambda + coefficients[1]) * lambda + coefficients[2]) * upsamplingScale;
             }

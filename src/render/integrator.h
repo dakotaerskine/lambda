@@ -33,13 +33,13 @@ namespace lambda {
 
             void setCamera(Camera * c) { camera = c; }
 
-            LAMBDA_HOST_DEVICE int getSamples() const { return samples; }
+            int getSamples() const { return samples; }
 
-            LAMBDA_HOST_DEVICE const Camera * getCamera() const { return camera; }
+            const Camera * getCamera() const { return camera; }
 
-            LAMBDA_HOST_DEVICE const Film * getFilm() const { return film; }
+            const Film * getFilm() const { return film; }
 
-            void renderImage(int * completed) {
+            LAMBDA_DEVICE void renderImage(int * completed) {
                 #pragma omp parallel for schedule(guided)
                 for (int py = 0; py < film->getHeight(); py++)
                     for (int px = 0; px < film->getWidth(); px++) {
@@ -58,7 +58,7 @@ namespace lambda {
             Camera * camera;
             Film * film;
 
-            LAMBDA_HOST_DEVICE void renderPixel(int px, int py, Random & state) {
+            LAMBDA_DEVICE void renderPixel(int px, int py, Random & state) {
                 Vector<Float, 3> color;
 
                 Float invSqrtSamples = 1 / Float(sqrtSamples);
@@ -84,7 +84,7 @@ namespace lambda {
                 film->setPixel(px, py, color / Float(sqrtSamples * sqrtSamples));
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum trace(Ray r, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum trace(Ray r, Random & state) const {
                 SampledSpectrum radiance;
                 SampledSpectrum throughput(1);
                 SampledSpectrum unidirectionalDensity(1);
@@ -216,7 +216,7 @@ namespace lambda {
                 return radiance;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum directLighting(const Intersection & intersection, const Ray & r, const SampledSpectrum & unidirectionalDensity, bool collapsed, bool last, Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum directLighting(const Intersection & intersection, const Ray & r, const SampledSpectrum & unidirectionalDensity, bool collapsed, bool last, Random & state) const {
                 const Material * material = intersection.isSurface ? intersection.instance->getMaterial(intersection.i) : nullptr;
 
                 if ((!intersection.isSurface || (material && !material->isSpecular(intersection))) && scene->getTotalPower() > 0) {
