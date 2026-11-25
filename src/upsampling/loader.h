@@ -6,6 +6,7 @@
 #include <string>
 
 #include "core/constants.h"
+#include "core/error.h"
 
 namespace lambda {
     class Loader {
@@ -40,7 +41,7 @@ namespace lambda {
             static void saveUpsampling(const std::string & output, const float * upsamplingScale, const float (* upsamplingLUT)[constants::UPSAMPLING_RESOLUTION][constants::UPSAMPLING_RESOLUTION][constants::UPSAMPLING_RESOLUTION][3]) {
                 std::ofstream outputFile(output, std::ios::binary);
 
-                if (!outputFile.is_open()) return;
+                if (!outputFile.is_open()) throw FileError::failedToOpen(output);
 
                 outputFile.write("SPEC", 4);
 

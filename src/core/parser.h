@@ -33,19 +33,21 @@
 #include "core/error.h"
 #include "core/platform.h"
 #include "core/utils.h"
+#include "geometry/background.h"
+#include "geometry/instance.h"
+#include "geometry/mesh.h"
+#include "geometry/object.h"
 #include "math/complex.h"
+#include "math/matrix.h"
 #include "math/spectrum.h"
 #include "math/vector.h"
 #include "render/camera.h"
 #include "render/film.h"
 #include "render/integrator.h"
-#include "scene/background.h"
-#include "scene/instance.h"
-#include "scene/material.h"
-#include "scene/medium.h"
-#include "scene/mesh.h"
-#include "scene/object.h"
-#include "scene/texture.h"
+#include "shading/fluorophore.h"
+#include "shading/material.h"
+#include "shading/medium.h"
+#include "shading/texture.h"
 
 namespace lambda {
     class Parser {
@@ -124,13 +126,13 @@ namespace lambda {
 
                         validator.positive("height", height);
 
-                        validator.validate(width <= std::numeric_limits<int>::max() / 3 && height <= (std::numeric_limits<int>::max() / 3) / width, "'width' * 'height' * 3 must be at most " + std::to_string(std::numeric_limits<int>::max()));
+                        validator.validate(width <= std::numeric_limits<int>::max() / 3 && height <= (std::numeric_limits<int>::max() / 3) / width, "'width' times 'height' times 3 must be at most " + std::to_string(std::numeric_limits<int>::max()));
 
                         int samples = stream.next<int>("samples");
                         int sqrtSamples = int(std::lround(std::sqrt(samples)));
 
                         validator.atLeast("samples", samples, 1);
-                        validator.validate(samples == sqrtSamples * sqrtSamples, "'samples' must be a perfect square");
+                        validator.validate(samples == sqrtSamples * sqrtSamples, "'samples' must be a perfect square, got " + std::to_string(samples));
 
                         int depth = stream.next<int>("depth");
 
@@ -352,7 +354,9 @@ namespace lambda {
 
                             validator.inRangeExclusive("g", g, Float(-1), Float(1));
 
-                            medium = Medium::makeHomogeneous(sigmaA, sigmaS, g);
+                            Fluorophore * fluorophore = parseFluorophore(allocator, stream, registry, validator);
+
+                            medium = Medium::makeHomogeneous(sigmaA, sigmaS, g, fluorophore);
                         }
 
                         registry.add(name, allocator.make(medium));
@@ -366,21 +370,31 @@ namespace lambda {
 
                         std::string type = stream.next<std::string>("type");
 
-                        validator.expected("type", type, {"coated", "conductor", "dielectric", "emissive", "lambertian", "mirror"});
+                        validator.expected("type", type, {"coated", "diffuse", "emissive", "fresnel"});
 
-                        if (type == "lambertian" || type == "mirror") {
-                            SpectrumTexture * albedo = parseSpectrumTexture(allocator, "albedo", stream, registry, validator);
+                        if (type == "diffuse") {
+                            SpectrumTexture * reflectance = parseSpectrumTexture(allocator, "reflectance", stream, registry, validator);
 
-                            validator.atLeast("albedo", albedo->getMin(), Float(0));
-                            validator.atMost("albedo", albedo->getMax(), Float(1));
+                            validator.atLeast("reflectance", reflectance->getMin(), Float(0));
+                            validator.atMost("reflectance", reflectance->getMax(), Float(1));
 
-                            if (type == "lambertian") material = Material::makeLambertian(albedo);
-                            else if (type == "mirror") material = Material::makeMirror(albedo);
+                            Fluorophore * fluorophore = parseFluorophore(allocator, stream, registry, validator);
+
+                            if (fluorophore) {
+                                Float maxTransfer = reflectance->getMax() + fluorophore->getMaxOutShift();
+
+                                validator.validate(maxTransfer <= 1, "'reflectance' plus fluorescence must not exceed " + std::to_string(Float(1)) + ", got " + std::to_string(maxTransfer));
+                            }
+
+                            material = Material::makeDiffuse(reflectance, fluorophore);
                         }
-                        else if (type == "conductor") {
-                            LinearSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
+                        else if (type == "fresnel") {
+                            LinearSpectrum<Complex> * n0 = parseSpectrum<Complex>(allocator, "n0", stream, registry, validator);
 
-                            validator.positive("n0", n0->min());
+                            Complex n0Min = n0->min();
+
+                            validator.positive("n0", n0Min.real());
+                            validator.validate(n0Min.imag() >= 0, "'n0' must have a non-negative imaginary component, got " + std::to_string(n0Min.imag()));
                             validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got " + std::to_string(Float(0)));
 
                             LinearSpectrum<Complex> * n1 = parseSpectrum<Complex>(allocator, "n1", stream, registry, validator);
@@ -388,7 +402,7 @@ namespace lambda {
                             Complex n1Min = n1->min();
 
                             validator.positive("n1", n1Min.real());
-                            validator.validate(n1Min.imag() > 0, "'n1' must have a positive imaginary component, got " + std::to_string(n1Min.imag()));
+                            validator.validate(n1Min.imag() >= 0, "'n1' must have a non-negative imaginary component, got " + std::to_string(n1Min.imag()));
                             validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got " + std::to_string(Float(0)));
 
                             ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
@@ -401,37 +415,16 @@ namespace lambda {
                             validator.atLeast("alphaY", alphaY->getMin(), Float(0));
                             validator.atMost("alphaY", alphaY->getMax(), Float(1));
 
-                            material = Material::makeConductor(n0, n1, alphaX, alphaY);
-                        }
-                        else if (type == "dielectric") {
-                            LinearSpectrum<Float> * n0 = parseSpectrum<Float>(allocator, "n0", stream, registry, validator);
-
-                            validator.positive("n0", n0->min());
-                            validator.validate(n0->contains(0) && n0->contains(integrator->getFilm()->getLambdaMax()), "'n0' must be positive, got " + std::to_string(Float(0)));
-
-                            LinearSpectrum<Float> * n1 = parseSpectrum<Float>(allocator, "n1", stream, registry, validator);
-
-                            validator.positive("n1", n1->min());
-                            validator.validate(n1->contains(0) && n1->contains(integrator->getFilm()->getLambdaMax()), "'n1' must be positive, got " + std::to_string(Float(0)));
-
-                            ScalarTexture * alphaX = parseScalarTexture(allocator, "alphaX", stream, registry, validator);
-
-                            validator.atLeast("alphaX", alphaX->getMin(), Float(0));
-                            validator.atMost("alphaX", alphaX->getMax(), Float(1));
-
-                            ScalarTexture * alphaY = parseScalarTexture(allocator, "alphaY", stream, registry, validator);
-
-                            validator.atLeast("alphaY", alphaY->getMin(), Float(0));
-                            validator.atMost("alphaY", alphaY->getMax(), Float(1));
-
-                            material = Material::makeDielectric(n0, n1, alphaX, alphaY);
+                            material = Material::makeFresnel(n0, n1, alphaX, alphaY);
                         }
                         else if (type == "coated") {
                             std::vector<LinearSpectrum<Complex> *> n = parseArray<LinearSpectrum<Complex> *>(allocator, "n", stream, registry, validator);
 
-                            validator.validate(std::ssize(n) >= 1, "'n' must have at least 1 entry, got " + std::to_string(std::ssize(n)));
+                            int numLayers = int(std::ssize(n));
 
-                            for (int i = 0; i < std::ssize(n); i++) {
+                            validator.validate(numLayers >= 1, "'n' must have at least 1 entry, got " + std::to_string(numLayers));
+
+                            for (int i = 0; i < numLayers; i++) {
                                 Complex nMin = n[i]->min();
 
                                 validator.positive("n", nMin.real());
@@ -439,15 +432,11 @@ namespace lambda {
                                 validator.validate(n[i]->contains(0) && n[i]->contains(integrator->getFilm()->getLambdaMax()), "'n' must be positive, got " + std::to_string(Float(0)));
                             }
 
-                            LinearSpectrum<Complex> ** nPointer = allocator.allocate(n.data(), int(std::ssize(n)));
-
                             std::vector<ScalarTexture *> d = parseArray<ScalarTexture *>(allocator, "d", stream, registry, validator);
 
-                            validator.validate(std::ssize(d) == std::ssize(n), "'d' must have " + std::to_string(std::ssize(n)) + " entries, got " + std::to_string(std::ssize(d)));
+                            validator.entries("d", d, numLayers);
 
-                            for (int i = 0; i < std::ssize(d); i++) validator.positive("d", d[i]->getMin());
-
-                            ScalarTexture ** dPointer = allocator.allocate(d.data(), int(std::ssize(d)));
+                            for (int i = 0; i < numLayers; i++) validator.positive("d", d[i]->getMin());
 
                             std::string substrateName = stream.next<std::string>("substrate");
 
@@ -455,9 +444,9 @@ namespace lambda {
 
                             validator.defined<Material>("substrate", registry, substrateName, substrate);
 
-                            validator.validate(substrate->isIdealFresnel(), "'substrate' must be \"conductor\" or \"dielectric\"");
+                            validator.validate(substrate->isIdealFresnel(), "'substrate' must be \"fresnel\"");
 
-                            material = Material::makeCoated(int(std::ssize(n)), nPointer, dPointer, substrate);
+                            material = Material::makeCoated(numLayers, allocator.allocate(n.data(), numLayers), allocator.allocate(d.data(), numLayers), substrate);
                         }
                         else if (type == "emissive") {
                             SpectrumTexture * emission = parseSpectrumTexture(allocator, "emission", stream, registry, validator);
@@ -474,9 +463,9 @@ namespace lambda {
 
                         std::string name = stream.next<std::string>("name");
 
-                        validator.validate(!registry.has<Object>(name) || name == currentObjectName, "'name' is already defined");
-
                         if (name != currentObjectName) {
+                            validator.notDefined<Object>("name", registry, name);
+
                             if (!currentObjectName.empty()) flushObjects(allocator, registry, currentObjectName, currentObjects);
 
                             currentObjectName = name;
@@ -541,31 +530,29 @@ namespace lambda {
                             }
                             else {
                                 vertices = parseArray<Vector<Float, 3>>(allocator, "vertices", stream, registry, validator);
+
+                                int numVertices = int(std::ssize(vertices));
+
                                 normals = parseArray<Vector<Float, 3>>(allocator, "normals", stream, registry, validator);
 
-                                validator.validate(std::ssize(normals) == 0 || std::ssize(normals) == std::ssize(vertices), "'normals' must have " + std::to_string(std::ssize(vertices)) + " entries, got " + std::to_string(std::ssize(normals)));
+                                if (std::ssize(normals) > 0) validator.entries("normals", normals, numVertices);
 
                                 textureCoordinates = parseArray<Vector<Float, 2>>(allocator, "textureCoordinates", stream, registry, validator);
 
-                                validator.validate(std::ssize(textureCoordinates) == 0 || std::ssize(textureCoordinates) == std::ssize(vertices), "'textureCoordinates' must have " + std::to_string(std::ssize(vertices)) + " entries, got " + std::to_string(std::ssize(textureCoordinates)));
+                                if (std::ssize(textureCoordinates) > 0) validator.entries("textureCoordinates", textureCoordinates, numVertices);
 
                                 faces = parseArray<Vector<int, 3>>(allocator, "faces", stream, registry, validator);
 
                                 for (const Vector<int, 3> & face : faces) {
-                                    validator.inRange("faces", face[0], 0, int(std::ssize(vertices)) - 1);
-                                    validator.inRange("faces", face[1], 0, int(std::ssize(vertices)) - 1);
-                                    validator.inRange("faces", face[2], 0, int(std::ssize(vertices)) - 1);
+                                    validator.inRange("faces", face[0], 0, numVertices - 1);
+                                    validator.inRange("faces", face[1], 0, numVertices - 1);
+                                    validator.inRange("faces", face[2], 0, numVertices - 1);
 
                                     validator.validate(face[0] != face[1] && face[1] != face[2] && face[2] != face[0], "'faces' must be non-degenerate");
                                 }
                             }
 
-                            Vector<Float, 3> * verticesPointer = allocator.allocate(vertices.data(), int(std::ssize(vertices)));
-                            Vector<Float, 3> * normalsPointer = std::ssize(normals) > 0 ? allocator.allocate(normals.data(), int(std::ssize(normals))) : nullptr;
-                            Vector<Float, 2> * textureCoordinatesPointer = std::ssize(textureCoordinates) > 0 ? allocator.allocate(textureCoordinates.data(), int(std::ssize(textureCoordinates))) : nullptr;
-                            Vector<int, 3> * facesPointer = allocator.allocate(faces.data(), int(std::ssize(faces)));
-
-                            Mesh * mesh = allocator.make(Mesh::makeTri(verticesPointer, normalsPointer, textureCoordinatesPointer, facesPointer));
+                            Mesh * mesh = allocator.make(Mesh::makeTri(allocator.allocate(vertices.data(), int(std::ssize(vertices))), std::ssize(normals) > 0 ? allocator.allocate(normals.data(), int(std::ssize(normals))) : nullptr, std::ssize(textureCoordinates) > 0 ? allocator.allocate(textureCoordinates.data(), int(std::ssize(textureCoordinates))) : nullptr, allocator.allocate(faces.data(), int(std::ssize(faces)))));
 
                             for (int i = 0; i < std::ssize(faces); i++) currentObjects.push_back(Object::makeTri(material, medium0, medium1, mesh, i));
                         }
@@ -581,32 +568,30 @@ namespace lambda {
                             }
                             else {
                                 vertices = parseArray<Vector<Float, 3>>(allocator, "vertices", stream, registry, validator);
+
+                                int numVertices = int(std::ssize(vertices));
+
                                 normals = parseArray<Vector<Float, 3>>(allocator, "normals", stream, registry, validator);
 
-                                validator.validate(std::ssize(normals) == 0 || std::ssize(normals) == std::ssize(vertices), "'normals' must have " + std::to_string(std::ssize(vertices)) + " entries, got " + std::to_string(std::ssize(normals)));
+                                if (std::ssize(normals) > 0) validator.entries("normals", normals, numVertices);
 
                                 textureCoordinates = parseArray<Vector<Float, 2>>(allocator, "textureCoordinates", stream, registry, validator);
 
-                                validator.validate(std::ssize(textureCoordinates) == 0 || std::ssize(textureCoordinates) == std::ssize(vertices), "'textureCoordinates' must have " + std::to_string(std::ssize(vertices)) + " entries, got " + std::to_string(std::ssize(textureCoordinates)));
+                                if (std::ssize(textureCoordinates) > 0) validator.entries("textureCoordinates", textureCoordinates, numVertices);
 
                                 faces = parseArray<Vector<int, 4>>(allocator, "faces", stream, registry, validator);
 
                                 for (const Vector<int, 4> & face : faces) {
-                                    validator.inRange("faces", face[0], 0, int(std::ssize(vertices)) - 1);
-                                    validator.inRange("faces", face[1], 0, int(std::ssize(vertices)) - 1);
-                                    validator.inRange("faces", face[2], 0, int(std::ssize(vertices)) - 1);
-                                    validator.inRange("faces", face[3], 0, int(std::ssize(vertices)) - 1);
+                                    validator.inRange("faces", face[0], 0, numVertices - 1);
+                                    validator.inRange("faces", face[1], 0, numVertices - 1);
+                                    validator.inRange("faces", face[2], 0, numVertices - 1);
+                                    validator.inRange("faces", face[3], 0, numVertices - 1);
 
                                     validator.validate(face[0] != face[1] && face[0] != face[2] && face[0] != face[3] && face[1] != face[2] && face[1] != face[3] && face[2] != face[3], "'faces' must be non-degenerate");
                                 }
                             }
 
-                            Vector<Float, 3> * verticesPointer = allocator.allocate(vertices.data(), int(std::ssize(vertices)));
-                            Vector<Float, 3> * normalsPointer = std::ssize(normals) > 0 ? allocator.allocate(normals.data(), int(std::ssize(normals))) : nullptr;
-                            Vector<Float, 2> * textureCoordinatesPointer = std::ssize(textureCoordinates) > 0 ? allocator.allocate(textureCoordinates.data(), int(std::ssize(textureCoordinates))) : nullptr;
-                            Vector<int, 4> * facesPointer = allocator.allocate(faces.data(), int(std::ssize(faces)));
-
-                            Mesh * mesh = allocator.make(Mesh::makeQuad(verticesPointer, normalsPointer, textureCoordinatesPointer, facesPointer));
+                            Mesh * mesh = allocator.make(Mesh::makeQuad(allocator.allocate(vertices.data(), int(std::ssize(vertices))), std::ssize(normals) > 0 ? allocator.allocate(normals.data(), int(std::ssize(normals))) : nullptr, std::ssize(textureCoordinates) > 0 ? allocator.allocate(textureCoordinates.data(), int(std::ssize(textureCoordinates))) : nullptr, allocator.allocate(faces.data(), int(std::ssize(faces)))));
 
                             for (int i = 0; i < std::ssize(faces); i++) currentObjects.push_back(Object::makePatch(material, medium0, medium1, mesh, i));
                         }
@@ -618,7 +603,7 @@ namespace lambda {
 
                         std::pair<Object *, int> objectData;
 
-                        validator.validate(registry.has<Object>(objectName, objectData), "'object' is not defined");
+                        validator.defined<Object>("object", registry, objectName, objectData);
 
                         Object * object = objectData.first;
                         int count = objectData.second;
@@ -670,7 +655,7 @@ namespace lambda {
 
                             if (!lightNode && currentMaterial && currentMaterial->isEmissive()) lightObjects.push_back(object + i);
 
-                            if (scale[0] != scale[1] || scale[1] != scale[2]) validator.validate(!currentMaterial || !currentMaterial->isEmissive(), "'scale' must be uniform for emissive objects");
+                            if (currentMaterial && (scale[0] != scale[1] || scale[1] != scale[2])) validator.validate(!currentMaterial->isEmissive(), "'scale' must be uniform for emissive objects, got (" + std::to_string(scale[0]) + ", " + std::to_string(scale[1]) + ", " + std::to_string(scale[2]) + ")");
                         }
 
                         if (!objects.empty()) {
@@ -740,7 +725,7 @@ namespace lambda {
                         Vector<Float, 3> up = stream.next<Vector<Float, 3>>("up");
 
                         validator.nonZero("up", up.length());
-                        validator.validate(cross(normalize(lookAt - position), normalize(up)).length() > constants::GRAZING_COS, "'lookAt' - 'position' and 'up' must be non-parallel");
+                        validator.validate(cross(normalize(lookAt - position), normalize(up)).length() > constants::GRAZING_COS, "'lookAt' minus 'position' and 'up' must be non-parallel");
 
                         if (type == "perspective") {
                             Float fov = stream.next<Float>("fov");
@@ -871,7 +856,7 @@ namespace lambda {
                             else success = tryNextString(value);
                         }
                         else if constexpr (std::is_same_v<T, Complex>) success = tryNextComplex(value);
-                        else if constexpr (std::is_same_v<T, Vector<int, 3>> || std::is_same_v<T, Vector<int, 4>> || std::is_same_v<T, Vector<Float, 2>> || std::is_same_v<T, Vector<Float, 3>>) success = tryNextVector(value);
+                        else if constexpr (std::is_same_v<T, Vector<int, 3>> || std::is_same_v<T, Vector<int, 4>> || std::is_same_v<T, Vector<Float, 2>> || std::is_same_v<T, Vector<Float, 3>> || std::is_same_v<T, Vector<Float, 4>>) success = tryNextVector(value);
                         else if constexpr (std::is_same_v<T, std::map<Float, Float>>) success = tryNextSpectrum<Float>(value);
                         else if constexpr (std::is_same_v<T, std::map<Float, Complex>>) success = tryNextSpectrum<Complex>(value);
                         else success = bool(ss >> value);
@@ -997,26 +982,28 @@ namespace lambda {
                     Registry() {}
 
                     template <typename T>
-                    requires (std::is_same_v<T, LinearSpectrum<Float> *> || std::is_same_v<T, LinearSpectrum<Complex> *> || std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> || std::is_same_v<T, ScalarTexture *> || std::is_same_v<T, SpectrumTexture *> || std::is_same_v<T, Medium *> || std::is_same_v<T, Material *> || std::is_same_v<T, std::pair<Object *, int>>)
+                    requires (std::is_same_v<T, LinearSpectrum<Float> *> || std::is_same_v<T, LinearSpectrum<Complex> *> || std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> || std::is_same_v<T, ScalarTexture *> || std::is_same_v<T, SpectrumTexture *> || std::is_same_v<T, Fluorophore *> || std::is_same_v<T, Medium *> || std::is_same_v<T, Material *> || std::is_same_v<T, std::pair<Object *, int>>)
                     void add(const std::string & name, T value) {
                         if constexpr (std::is_same_v<T, LinearSpectrum<Float> *>) spectrumPointers[name] = value;
                         else if constexpr (std::is_same_v<T, LinearSpectrum<Complex> *>) complexSpectrumPointers[name] = value;
                         else if constexpr (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>) images[name] = value;
                         else if constexpr (std::is_same_v<T, ScalarTexture *>) scalarTexturePointers[name] = value;
                         else if constexpr (std::is_same_v<T, SpectrumTexture *>) spectrumTexturePointers[name] = value;
+                        else if constexpr (std::is_same_v<T, Fluorophore *>) fluorophorePointers[name] = value;
                         else if constexpr (std::is_same_v<T, Medium *>) mediumPointers[name] = value;
                         else if constexpr (std::is_same_v<T, Material *>) materialPointers[name] = value;
                         else if constexpr (std::is_same_v<T, std::pair<Object *, int>>) objectPointers[name] = value;
                     }
 
                     template <typename T>
-                    requires (std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material> || std::is_same_v<T, Object> || std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>)
+                    requires (std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Fluorophore> || std::is_same_v<T, Medium> || std::is_same_v<T, Material> || std::is_same_v<T, Object> || std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>)
                     bool has(const std::string & name) const {
                         if constexpr (std::is_same_v<T, LinearSpectrum<Float>>) return spectrumPointers.contains(name);
                         else if constexpr (std::is_same_v<T, LinearSpectrum<Complex>>) return complexSpectrumPointers.contains(name);
                         else if constexpr (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>) return images.contains(name);
                         else if constexpr (std::is_same_v<T, ScalarTexture>) return scalarTexturePointers.contains(name);
                         else if constexpr (std::is_same_v<T, SpectrumTexture>) return spectrumTexturePointers.contains(name);
+                        else if constexpr (std::is_same_v<T, Fluorophore>) return fluorophorePointers.contains(name);
                         else if constexpr (std::is_same_v<T, Medium>) return mediumPointers.contains(name);
                         else if constexpr (std::is_same_v<T, Material>) return materialPointers.contains(name);
                         else if constexpr (std::is_same_v<T, Object>) return objectPointers.contains(name);
@@ -1024,12 +1011,13 @@ namespace lambda {
                     }
 
                     template <typename T, typename U>
-                    requires (((std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> && std::is_same_v<U, T>))
+                    requires (((std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Fluorophore> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> && std::is_same_v<U, T>))
                     bool has(const std::string & name, U & reference) const {
                         if constexpr (std::is_same_v<T, LinearSpectrum<Float>>) return has(name, reference, spectrumPointers);
                         else if constexpr (std::is_same_v<T, LinearSpectrum<Complex>>) return has(name, reference, complexSpectrumPointers);
                         else if constexpr (std::is_same_v<T, ScalarTexture>) return has(name, reference, scalarTexturePointers);
                         else if constexpr (std::is_same_v<T, SpectrumTexture>) return has(name, reference, spectrumTexturePointers);
+                        else if constexpr (std::is_same_v<T, Fluorophore>) return has(name, reference, fluorophorePointers);
                         else if constexpr (std::is_same_v<T, Medium>) return has(name, reference, mediumPointers);
                         else if constexpr (std::is_same_v<T, Material>) return has(name, reference, materialPointers);
                         else if constexpr (std::is_same_v<T, Object>) return has(name, reference, objectPointers);
@@ -1043,6 +1031,7 @@ namespace lambda {
                     std::map<std::string, std::tuple<Float *, const ColorSpace *, int, int, int>> images;
                     std::map<std::string, ScalarTexture *> scalarTexturePointers;
                     std::map<std::string, SpectrumTexture *> spectrumTexturePointers;
+                    std::map<std::string, Fluorophore *> fluorophorePointers;
                     std::map<std::string, Medium *> mediumPointers;
                     std::map<std::string, Material *> materialPointers;
                     std::map<std::string, std::pair<Object *, int>> objectPointers;
@@ -1065,54 +1054,63 @@ namespace lambda {
 
                     void validate(bool condition, const std::string & message) const { if (!condition) stream.raiseError(message); }
 
-                    [[noreturn]] void valid(const std::string & parameter) const { stream.raiseError(prefix(parameter) + " is missing or invalid"); }
+                    [[noreturn]] void invalid(const std::string & parameter) const { stream.raiseError(prefix(parameter) + " is missing or invalid"); }
 
-                    void valid(const std::string & parameter, bool condition) const { if (!condition) valid(parameter); }
+                    void valid(const std::string & parameter, bool condition) const { if (!condition) invalid(parameter); }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void positive(const std::string & parameter, T value) const { validate(value > 0, prefix(parameter) + " must be positive" + suffix(std::to_string(value))); }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void nonNegative(const std::string & parameter, T value) const { validate(value >= 0, prefix(parameter) + " must be non-negative" + suffix(std::to_string(value))); }
 
                     template <typename T>
-                    void zero(const std::string & parameter, T value) const { validate(value == 0, prefix(parameter) + " must be zero" + suffix(std::to_string(value))); }
-
-                    template <typename T>
+                    requires (std::is_arithmetic_v<T> || std::is_same_v<T, Complex>)
                     void nonZero(const std::string & parameter, T value) const { validate(value != 0, prefix(parameter) + " must be non-zero" + suffix(std::to_string(value))); }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void atLeast(const std::string & parameter, T value, T min) const { validate(value >= min, prefix(parameter) + " must be at least " + std::to_string(min) + suffix(std::to_string(value))); }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void atMost(const std::string & parameter, T value, T max) const { validate(value <= max, prefix(parameter) + " must be at most " + std::to_string(max) + suffix(std::to_string(value))); }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void inRange(const std::string & parameter, T value, T min, T max) const {
                         atLeast(parameter, value, min);
                         atMost(parameter, value, max);
                     }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void greaterThan(const std::string & parameter, T value, T min) const { validate(value > min, prefix(parameter) + " must be greater than " + std::to_string(min) + suffix(std::to_string(value))); }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void lessThan(const std::string & parameter, T value, T max) const { validate(value < max, prefix(parameter) + " must be less than " + std::to_string(max) + suffix(std::to_string(value))); }
 
                     template <typename T>
+                    requires (std::is_arithmetic_v<T>)
                     void inRangeExclusive(const std::string & parameter, T value, T min, T max) const {
                         greaterThan(parameter, value, min);
                         lessThan(parameter, value, max);
                     }
 
-                    template <typename T>
-                    void defined(const std::string & parameter, const Registry & registry, const std::string & name, T * & pointer) const { validate(registry.has<T>(name, pointer), prefix(parameter) + " is not defined"); }
+                    template <typename T, typename U>
+                    requires (((std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Fluorophore> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> && std::is_same_v<U, T>))
+                    void defined(const std::string & parameter, const Registry & registry, const std::string & name, U & reference) const { validate(registry.has<T>(name, reference), prefix(parameter) + " is not defined"); }
 
                     template <typename T>
+                    requires (std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Fluorophore> || std::is_same_v<T, Medium> || std::is_same_v<T, Material> || std::is_same_v<T, Object> || std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>>)
                     void notDefined(const std::string & parameter, const Registry & registry, const std::string & name) const { validate(!registry.has<T>(name), prefix(parameter) + " is already defined"); }
 
-                    template <typename T>
-                    void notDefined(const std::string & parameter, const Registry & registry, const std::string & name, T * & pointer) const { validate((!registry.has<T>(name, pointer)), prefix(parameter) + " is already defined"); }
+                    template <typename T, typename U>
+                    requires (((std::is_same_v<T, LinearSpectrum<Float>> || std::is_same_v<T, LinearSpectrum<Complex>> || std::is_same_v<T, ScalarTexture> || std::is_same_v<T, SpectrumTexture> || std::is_same_v<T, Fluorophore> || std::is_same_v<T, Medium> || std::is_same_v<T, Material>) && std::is_same_v<U, T *>) || (std::is_same_v<T, Object> && std::is_same_v<U, std::pair<Object *, int>>) || (std::is_same_v<T, std::tuple<Float *, const ColorSpace *, int, int, int>> && std::is_same_v<U, T>))
+                    void notDefined(const std::string & parameter, const Registry & registry, const std::string & name, U & reference) const { validate((!registry.has<T>(name, reference)), prefix(parameter) + " is already defined"); }
 
                     void expected(const std::string & parameter, const std::string & value, const std::vector<std::string> & expectedValues) const {
                         bool found = false;
@@ -1142,6 +1140,9 @@ namespace lambda {
                     }
 
                     void unexpected(char token) const { validate(token == '\0', "unexpected token \"" + std::string(1, token) + "\""); }
+
+                    template <typename T>
+                    void entries(const std::string & parameter, const std::vector<T> & value, int expectedEntries) const { validate(int(std::ssize(value)) == expectedEntries, prefix(parameter) + " must have " + std::to_string(expectedEntries) + (expectedEntries == 1 ? " entry" : " entries") + suffix(std::to_string(int(std::ssize(value))))); }
 
                 private:
                     const Stream & stream;
@@ -1200,7 +1201,84 @@ namespace lambda {
                     else values.push_back(stream.next<T>(parameter));
                 }
 
-                validator.valid(parameter);
+                validator.invalid(parameter);
+            }
+
+            static Fluorophore * parseFluorophore(Allocator & allocator, Stream & stream, Registry & registry, const Validator & validator) {
+                std::vector<Float> lambdasExcitation = parseArray<Float>(allocator, "lambdasExcitation", stream, registry, validator);
+
+                int numFluorophores = int(std::ssize(lambdasExcitation));
+
+                for (int i = 0; i < numFluorophores; i++) validator.positive("lambdasExcitation", lambdasExcitation[i]);
+
+                std::vector<Float> stokesShifts = parseArray<Float>(allocator, "stokesShifts", stream, registry, validator);
+
+                validator.entries("stokesShifts", stokesShifts, numFluorophores);
+
+                for (int i = 0; i < numFluorophores; i++) validator.positive("stokesShifts", stokesShifts[i]);
+
+                std::vector<Float> widthsExcitation = parseArray<Float>(allocator, "widthsExcitation", stream, registry, validator);
+
+                validator.entries("widthsExcitation", widthsExcitation, numFluorophores);
+
+                for (int i = 0; i < numFluorophores; i++) validator.positive("widthsExcitation", widthsExcitation[i]);
+
+                std::vector<Float> widthsEmission = parseArray<Float>(allocator, "widthsEmission", stream, registry, validator);
+
+                validator.entries("widthsEmission", widthsEmission, numFluorophores);
+
+                for (int i = 0; i < numFluorophores; i++) validator.positive("widthsEmission", widthsEmission[i]);
+
+                std::vector<Float> redEdgeSlopes = parseArray<Float>(allocator, "redEdgeSlopes", stream, registry, validator);
+
+                validator.entries("redEdgeSlopes", redEdgeSlopes, numFluorophores);
+
+                for (int i = 0; i < numFluorophores; i++) {
+                    Float maxSlope = widthsEmission[i] / widthsExcitation[i];
+
+                    validator.inRangeExclusive("redEdgeSlopes", redEdgeSlopes[i], -maxSlope, maxSlope);
+                }
+
+                std::vector<Float> efficiencies = parseArray<Float>(allocator, "efficiencies", stream, registry, validator);
+
+                validator.entries("efficiencies", efficiencies, numFluorophores);
+
+                for (int i = 0; i < numFluorophores; i++) validator.inRange("efficiencies", efficiencies[i], Float(0), Float(1));
+
+                if (std::ssize(lambdasExcitation) == 0) return nullptr;
+
+                Float scale = 0;
+
+                std::vector<Float> lambdasEmission = lambdasExcitation;
+
+                std::vector<Float> variancesExcitation, variancesEmission, covariances, weights;
+
+                for (int i = 0; i < numFluorophores; i++) {
+                    lambdasEmission[i] += stokesShifts[i];
+
+                    Float slopeRatio = redEdgeSlopes[i] * widthsExcitation[i] / widthsEmission[i];
+
+                    variancesExcitation.push_back(widthsExcitation[i] * widthsExcitation[i] / (Float(8 * std::log(2)) * (1 - slopeRatio * slopeRatio)));
+                    variancesEmission.push_back(widthsEmission[i] * widthsEmission[i] / (Float(8 * std::log(2)) * (1 - slopeRatio * slopeRatio)));
+                    covariances.push_back(redEdgeSlopes[i] * variancesExcitation[i]);
+                    weights.push_back(efficiencies[i] * std::sqrt(2 * constants::PI * variancesExcitation[i]));
+
+                    scale += weights[i];
+                }
+
+                if (scale > 0) {
+                    Float normalization = 0;
+
+                    for (int i = 0; i < numFluorophores; i++) {
+                        weights[i] /= scale;
+
+                        normalization += weights[i] * Float(0.5) * std::erfc(-stokesShifts[i] / Float(std::sqrt(2 * (variancesExcitation[i] + variancesEmission[i] - 2 * covariances[i]))));
+                    }
+
+                    scale /= normalization;
+                }
+
+                return allocator.make(Fluorophore(scale, numFluorophores, allocator.allocate(lambdasExcitation.data(), numFluorophores), allocator.allocate(lambdasEmission.data(), numFluorophores), allocator.allocate(variancesExcitation.data(), numFluorophores), allocator.allocate(variancesEmission.data(), numFluorophores), allocator.allocate(covariances.data(), numFluorophores), allocator.allocate(weights.data(), numFluorophores)));
             }
 
             static ScalarTexture * parseScalarTexture(Allocator & allocator, const std::string & parameter, Stream & stream, const Registry & registry, const Validator & validator) {
@@ -1224,7 +1302,7 @@ namespace lambda {
 
                     ScalarTexture * scalarTexture;
 
-                    validator.defined(parameter, registry, name, scalarTexture);
+                    validator.defined<ScalarTexture>(parameter, registry, name, scalarTexture);
 
                     return allocator.make(SpectrumTexture::makeScalar(scalarTexture));
                 }
@@ -1486,8 +1564,8 @@ namespace lambda {
                                 normalIndices.push_back(normalIndex);
                             }
 
-                            validator.validate(std::ssize(vertexIndices) >= N, "'f' must have at least " + std::to_string(N) + " vertices");
-                            validator.validate(std::ssize(vertexIndices) % (N - 2) == 0, "'f' must have a multiple of " + std::to_string(N - 2) + " vertices");
+                            validator.validate(std::ssize(vertexIndices) >= N, "'f' must have at least " + std::to_string(N) + " vertices, got " + std::to_string(std::ssize(vertexIndices)));
+                            validator.validate(std::ssize(vertexIndices) % (N - 2) == 0, "'f' must have a multiple of " + std::to_string(N - 2) + " vertices, got " + std::to_string(std::ssize(vertexIndices)));
 
                             for (int i = 0; i < std::ssize(vertexIndices); i++) {
                                 auto iterator = indexMap.find(std::make_tuple(vertexIndices[i], textureIndices[i], normalIndices[i]));
@@ -1683,8 +1761,8 @@ namespace lambda {
                                         for (int k = 0; k < count; k++) vertexIndices.push_back(parsePLYValue<int>(inputFile, input, stream, formatType, name, valueType));
 
                                         if (name == "vertex_index" || name == "vertex_indices") {
-                                            validator.validate(count >= N, "'" + name + "' must have at least " + std::to_string(N) + " entries");
-                                            validator.validate(count % (N - 2) == 0, "'" + name + "' must have a multiple of " + std::to_string(N - 2) + " entries");
+                                            validator.validate(count >= N, "'" + name + "' must have at least " + std::to_string(N) + " entries, got " + std::to_string(count));
+                                            validator.validate(count % (N - 2) == 0, "'" + name + "' must have a multiple of " + std::to_string(N - 2) + " entries, got " + std::to_string(count));
 
                                             for (int k = 0; k < std::ssize(vertexIndices); k++) validator.inRange(name, vertexIndices[k], 0, int(std::ssize(meshVertices)) - 1);
 

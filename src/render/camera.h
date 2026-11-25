@@ -90,7 +90,7 @@ namespace lambda {
                 return Matrix<Float, 4>();
             }
 
-            LAMBDA_DEVICE Ray getRay(Float u, Float v, const SampledSpectrum & lambdas) const {
+            LAMBDA_DEVICE Ray getRay(Float u, Float v, const SampledSpectrum<Float> & lambdas) const {
                 switch (type) {
                     case Type::PERSPECTIVE: return getRayPerspective(u, v, lambdas);
                     case Type::ORTHOGRAPHIC: return getRayOrthographic(u, v, lambdas);
@@ -128,7 +128,7 @@ namespace lambda {
 
                 Vector<Float, 3> t = -(m * position);
 
-                return Matrix<Float, 4>(m.get(0, 0), m.get(0, 1), m.get(0, 2), t[0], m.get(1, 0), m.get(1, 1), m.get(1, 2), t[1], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2]);
+                return Matrix<Float, 4>(m(0, 0), m(0, 1), m(0, 2), t[0], m(1, 0), m(1, 1), m(1, 2), t[1], m(2, 0), m(2, 1), m(2, 2), t[2], m(2, 0), m(2, 1), m(2, 2), t[2]);
             }
 
             Matrix<Float, 4> getWorldToNDCOrthographic() const {
@@ -136,22 +136,22 @@ namespace lambda {
 
                 Vector<Float, 3> t = -(m * (position + orthographic.corner));
 
-                return Matrix<Float, 4>(m.get(0, 0), m.get(0, 1), m.get(0, 2), t[0], m.get(1, 0), m.get(1, 1), m.get(1, 2), t[1], m.get(2, 0), m.get(2, 1), m.get(2, 2), t[2], 0, 0, 0, 1);
+                return Matrix<Float, 4>(m(0, 0), m(0, 1), m(0, 2), t[0], m(1, 0), m(1, 1), m(1, 2), t[1], m(2, 0), m(2, 1), m(2, 2), t[2], 0, 0, 0, 1);
             }
 
-            LAMBDA_DEVICE Ray getRayPerspective(Float u, Float v, const SampledSpectrum & lambdas) const {
+            LAMBDA_DEVICE Ray getRayPerspective(Float u, Float v, const SampledSpectrum<Float> & lambdas) const {
                 Vector<Float, 3> direction = normalize(perspective.corner + perspective.horizontal * u + perspective.vertical * v);
 
                 return Ray(position, direction, lambdas, medium);
             }
 
-            LAMBDA_DEVICE Ray getRayOrthographic(Float u, Float v, const SampledSpectrum & lambdas) const {
+            LAMBDA_DEVICE Ray getRayOrthographic(Float u, Float v, const SampledSpectrum<Float> & lambdas) const {
                 Vector<Float, 3> origin = position + orthographic.corner + orthographic.horizontal * u + orthographic.vertical * v;
 
                 return Ray(origin, orthographic.forward, lambdas, medium);
             }
 
-            LAMBDA_DEVICE Ray getRaySpherical(Float u, Float v, const SampledSpectrum & lambdas) const {
+            LAMBDA_DEVICE Ray getRaySpherical(Float u, Float v, const SampledSpectrum<Float> & lambdas) const {
                 Float phi = u * 2 * constants::PI;
                 Float theta = v * constants::PI;
 

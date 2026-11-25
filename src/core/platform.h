@@ -13,17 +13,17 @@
 #endif
 
 #ifdef __CUDACC__
+    #define LAMBDA_GLOBAL __global__
+    #define LAMBDA_CONSTANT __constant__
     #define LAMBDA_HOST_DEVICE __host__ __device__
     #define LAMBDA_DEVICE __device__
     #define LAMBDA_DEVICE_NOINLINE LAMBDA_DEVICE __noinline__
-    #define LAMBDA_GLOBAL __global__
-    #define LAMBDA_CONSTANT __constant__
 #else
+    #define LAMBDA_GLOBAL
+    #define LAMBDA_CONSTANT constexpr
     #define LAMBDA_HOST_DEVICE
     #define LAMBDA_DEVICE
     #define LAMBDA_DEVICE_NOINLINE
-    #define LAMBDA_GLOBAL
-    #define LAMBDA_CONSTANT
 #endif
 
 namespace lambda {

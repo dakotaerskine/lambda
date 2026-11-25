@@ -13,6 +13,7 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE T operator[](Float lambda) const {
                 if (numSamples <= 0 || !lambdas || !values || lambda < lambdas[0] || lambda > lambdas[numSamples - 1]) return T(0);
+                else if (numSamples == 1) return values[0];
 
                 int min = 0, max = numSamples - 1;
 
@@ -73,13 +74,15 @@ namespace lambda {
             T * values;
     };
 
+    template <typename T>
+    requires (std::is_same_v<T, Float> || std::is_same_v<T, Complex>)
     class SampledSpectrum {
         public:
-            LAMBDA_HOST_DEVICE SampledSpectrum(Float d = 0) { for (int i = 0; i < constants::HERO_COUNT; i++) data[i] = d; }
+            LAMBDA_HOST_DEVICE SampledSpectrum(T d = 0) { for (int i = 0; i < constants::HERO_COUNT; i++) data[i] = d; }
 
-            LAMBDA_HOST_DEVICE Float & operator[](int i) { return data[i]; }
+            LAMBDA_HOST_DEVICE T & operator[](int i) { return data[i]; }
 
-            LAMBDA_HOST_DEVICE const Float & operator[](int i) const { return data[i]; }
+            LAMBDA_HOST_DEVICE const T & operator[](int i) const { return data[i]; }
 
             LAMBDA_HOST_DEVICE bool operator==(const SampledSpectrum & s) const {
                 for (int i = 0; i < constants::HERO_COUNT; i++) if (data[i] != s.data[i]) return false;
@@ -105,7 +108,7 @@ namespace lambda {
                 return *this;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum & operator*=(Float d) {
+            LAMBDA_HOST_DEVICE SampledSpectrum & operator*=(T d) {
                 for (int i = 0; i < constants::HERO_COUNT; i++) data[i] *= d;
 
                 return *this;
@@ -117,7 +120,7 @@ namespace lambda {
                 return *this;
             }
 
-            LAMBDA_HOST_DEVICE SampledSpectrum & operator/=(Float d) {
+            LAMBDA_HOST_DEVICE SampledSpectrum & operator/=(T d) {
                 for (int i = 0; i < constants::HERO_COUNT; i++) data[i] /= d;
 
                 return *this;
@@ -129,82 +132,86 @@ namespace lambda {
                 return *this;
             }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator+(const SampledSpectrum & s1, const SampledSpectrum & s2) {
-                SampledSpectrum s3;
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator+(const SampledSpectrum<T> & s1, const SampledSpectrum<T> & s2) {
+                SampledSpectrum<T> s3;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) s3.data[i] = s1.data[i] + s2.data[i];
 
                 return s3;
             }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator-(const SampledSpectrum & s1) {
-                SampledSpectrum s2;
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator-(const SampledSpectrum<T> & s1) {
+                SampledSpectrum<T> s2;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) s2.data[i] = -s1.data[i];
 
                 return s2;
             }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator-(const SampledSpectrum & s1, const SampledSpectrum & s2) {
-                SampledSpectrum s3;
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator-(const SampledSpectrum<T> & s1, const SampledSpectrum<T> & s2) {
+                SampledSpectrum<T> s3;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) s3.data[i] = s1.data[i] - s2.data[i];
 
                 return s3;
             }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator*(const SampledSpectrum & s1, Float d) {
-                SampledSpectrum s2;
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator*(const SampledSpectrum<T> & s1, T d) {
+                SampledSpectrum<T> s2;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) s2.data[i] = s1.data[i] * d;
 
                 return s2;
             }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator*(Float d, const SampledSpectrum & s1) { return s1 * d; }
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator*(T d, const SampledSpectrum<T> & s1) { return s1 * d; }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator*(const SampledSpectrum & s1, const SampledSpectrum & s2) {
-                SampledSpectrum s3;
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator*(const SampledSpectrum<T> & s1, const SampledSpectrum<T> & s2) {
+                SampledSpectrum<T> s3;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) s3.data[i] = s1.data[i] * s2.data[i];
 
                 return s3;
             }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator/(const SampledSpectrum & s1, Float d) {
-                SampledSpectrum s2;
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator/(const SampledSpectrum<T> & s1, T d) {
+                SampledSpectrum<T> s2;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) s2.data[i] = s1.data[i] / d;
 
                 return s2;
             }
 
-            LAMBDA_HOST_DEVICE friend SampledSpectrum operator/(const SampledSpectrum & s1, const SampledSpectrum & s2) {
-                SampledSpectrum s3;
+            LAMBDA_HOST_DEVICE friend SampledSpectrum<T> operator/(const SampledSpectrum<T> & s1, const SampledSpectrum<T> & s2) {
+                SampledSpectrum<T> s3;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) s3.data[i] = s1.data[i] / s2.data[i];
 
                 return s3;
             }
 
-            LAMBDA_HOST_DEVICE Float min() const {
-                Float minimum = data[0];
+            LAMBDA_HOST_DEVICE T min() const {
+                using std::fmin;
 
-                for (int i = 1; i < constants::HERO_COUNT; i++) minimum = std::fmin(minimum, data[i]);
+                T minimum = data[0];
+
+                for (int i = 1; i < constants::HERO_COUNT; i++) minimum = fmin(minimum, data[i]);
 
                 return minimum;
             }
 
-            LAMBDA_HOST_DEVICE Float max() const {
-                Float maximum = data[0];
+            LAMBDA_HOST_DEVICE T max() const {
+                using std::fmax;
 
-                for (int i = 1; i < constants::HERO_COUNT; i++) maximum = std::fmax(maximum, data[i]);
+                T maximum = data[0];
+
+                for (int i = 1; i < constants::HERO_COUNT; i++) maximum = fmax(maximum, data[i]);
 
                 return maximum;
             }
 
-            LAMBDA_HOST_DEVICE Float average() const {
-                Float sum = 0;
+            LAMBDA_HOST_DEVICE T average() const {
+                T sum = 0;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) sum += data[i];
 
@@ -212,6 +219,6 @@ namespace lambda {
             }
 
         private:
-            Float data[constants::HERO_COUNT];
+            T data[constants::HERO_COUNT];
     };
 }

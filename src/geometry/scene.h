@@ -2,13 +2,13 @@
 
 #include "core/constants.h"
 #include "core/platform.h"
+#include "geometry/background.h"
+#include "geometry/bvh.h"
+#include "geometry/instance.h"
+#include "geometry/intersection.h"
+#include "geometry/object.h"
 #include "math/ray.h"
 #include "math/spectrum.h"
-#include "scene/background.h"
-#include "scene/bvh.h"
-#include "scene/instance.h"
-#include "scene/intersection.h"
-#include "scene/object.h"
 
 namespace lambda {
     class Material;

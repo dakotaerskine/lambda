@@ -31,6 +31,9 @@ namespace lambda {
             else return std::pow((r + Float(0.055)) / Float(1.055), Float(2.4));
         }
 
+        template <typename T, typename U>
+        LAMBDA_HOST_DEVICE inline T interpolate(T a, T b, U t) { return T((1 - t) * a + t * b); }
+
         template <typename T>
         LAMBDA_HOST_DEVICE inline T clamp(T x, T minValue, T maxValue) {
             if (!(x >= minValue)) return minValue;
@@ -40,10 +43,12 @@ namespace lambda {
         }
 
         template <typename T>
-        LAMBDA_HOST_DEVICE inline T interpolate(T a, T b, Float t) { return (1 - t) * a + t * b; }
+        requires (std::is_floating_point_v<T>)
+        LAMBDA_HOST_DEVICE inline T smoothStep(T x) { return x * x * (3 - 2 * x); }
 
         template <typename T>
-        LAMBDA_HOST_DEVICE inline T smoothStep(T x) { return x * x * (3 - 2 * x); }
+        requires (std::is_floating_point_v<T>)
+        LAMBDA_HOST_DEVICE inline T sigmoid(T x) { return T(0.5) + T(0.5) * x / std::sqrt(1 + x * x); }
 
         LAMBDA_HOST_DEVICE inline Float randomFloat(Random & state) { return state.next(); }
 
@@ -116,8 +121,6 @@ namespace lambda {
 
             return root < 0 ? v - 2 * vn * n : ratio * v - (ratio * vn + std::sqrt(root)) * n;
         }
-
-        LAMBDA_HOST_DEVICE inline Float sigmoid(Float x) { return Float(0.5) + Float(0.5) * x / std::sqrt(1 + x * x); }
 
         LAMBDA_DEVICE inline Float fade(Float t) { return t * t * t * (t * (6 * t - 15) + 10); }
 

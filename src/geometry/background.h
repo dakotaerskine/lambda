@@ -2,12 +2,12 @@
 
 #include "core/constants.h"
 #include "core/platform.h"
+#include "geometry/intersection.h"
 #include "math/ray.h"
 #include "math/spectrum.h"
 #include "math/transform.h"
 #include "math/vector.h"
-#include "scene/intersection.h"
-#include "scene/texture.h"
+#include "shading/texture.h"
 
 namespace lambda {
     class Background {
@@ -83,7 +83,7 @@ namespace lambda {
                 return Vector<Float, 3>();
             }
 
-            LAMBDA_DEVICE SampledSpectrum evaluate(const Ray & r) const {
+            LAMBDA_DEVICE SampledSpectrum<Float> evaluate(const Ray & r) const {
                 Intersection intersection;
 
                 Vector<Float, 3> direction = transform.vectorToWorld(r.getDirection());
@@ -99,7 +99,7 @@ namespace lambda {
 
                 intersection.textureCoordinate = getTextureCoordinate(direction);
 
-                SampledSpectrum attenuation;
+                SampledSpectrum<Float> attenuation;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) attenuation[i] = emission->evaluate(intersection, r.getLambdas()[i]);
 

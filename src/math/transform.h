@@ -17,9 +17,9 @@ namespace lambda {
                 normalMatrix = Matrix<Float, 3>(transpose(inverseTransformMatrix));
             }
 
-            LAMBDA_HOST_DEVICE Float scale(int i) const { return Vector<Float, 3>(transformMatrix.get(0, i), transformMatrix.get(1, i), transformMatrix.get(2, i)).length(); }
+            LAMBDA_HOST_DEVICE Float scale(int i) const { return Vector<Float, 3>(transformMatrix(0, i), transformMatrix(1, i), transformMatrix(2, i)).length(); }
 
-            LAMBDA_HOST_DEVICE Float scaleSquared(int i) const { return Vector<Float, 3>(transformMatrix.get(0, i), transformMatrix.get(1, i), transformMatrix.get(2, i)).lengthSquared();}
+            LAMBDA_HOST_DEVICE Float scaleSquared(int i) const { return Vector<Float, 3>(transformMatrix(0, i), transformMatrix(1, i), transformMatrix(2, i)).lengthSquared();}
 
             LAMBDA_HOST_DEVICE Vector<Float, 3> scale() const { return Vector<Float, 3>(scale(0), scale(1), scale(2)); }
 

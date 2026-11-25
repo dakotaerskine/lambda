@@ -4,7 +4,7 @@ A physically-based spectral path tracer implemented in C++ and CUDA built around
 <p align="center"><img src="https://dakotaerskine.github.io/images/lambda.png" alt="Lambda" width="350" height="350"></p>
 
 ## Building
-Lambda requires CMake 3.24 or later, a C++20 compiler, and OpenMP. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DCPU=ON`.
+Lambda requires CMake 3.24 or later, a C++20 compiler, and OpenMP. CUDA is optional and auto-detected: if `nvcc` isn't found, the build falls back to the CPU implementation. To force a CPU build manually, run CMake with `-DLAMBDA_CPU=ON`. To enable unit tests, run CMake with `-DLAMBDA_TEST=ON`.
 
 ```sh
 cmake -S . -B build
@@ -29,7 +29,7 @@ Render <space> <width> <height> <samples> <depth> <lambdaMin> <lambdaMax> <seed>
 ```
 
 ### `Texture`
-`scalar` textures are used to define material properties like film thickness and `spectrum` textures are used to define per-wavelength material properties like albedo and emission. `name` is a unique identifier used to map textures to materials.
+`scalar` textures are used to define material properties like film thickness and `spectrum` textures are used to define per-wavelength material properties like reflectance and emission. `name` is a unique identifier used to map textures to materials.
 
 ```
 Texture <name> scalar constant <value>
@@ -51,17 +51,15 @@ Texture <name> spectrum image <file> <uScale> <vScale> <uOffset> <vOffset>
 `name` is a unique identifier used to map media to objects.
 
 ```
-Medium <name> homogeneous (sigmaA) (sigmaS) <g>
+Medium <name> homogeneous (sigmaA) (sigmaS) <g> [<lambdasExcitation>] [<stokesShifts>] [<widthsExcitation>] [<widthsEmission>] [<redEdgeSlopes>] [<efficiencies>]
 ```
 
 ### `Material`
 Most material properties are described by the names of previously defined textures, with the notable exception of refractive indices. Alternatively, a constant value can be used. `name` is a unique identifier used to map materials to objects.
 
 ```
-Material <name> lambertian <albedo>
-Material <name> mirror <albedo>
-Material <name> conductor (n0) (n1) <alphaX> <alphaY>
-Material <name> dielectric (n0) (n1) <alphaX> <alphaY>
+Material <name> diffuse <reflectance> [<lambdasExcitation>] [<stokesShifts>] [<widthsExcitation>] [<widthsEmission>] [<redEdgeSlopes>] [<efficiencies>]
+Material <name> fresnel (n0) (n1) <alphaX> <alphaY>
 Material <name> coated [(n)] [<d>] <substrate>
 Material <name> emissive <emission>
 ```
@@ -73,10 +71,10 @@ The same `name` can be used for consecutive object declarations. `material` is t
 Object <name> sphere <material> <medium0> <medium1> <radius>
 Object <name> disk <material> <medium0> <medium1> <radius>
 Object <name> cylinder <material> <medium0> <medium1> <radius> <height>
-Object <name> tri <material> <medium0> <medium1> <file>
 Object <name> tri <material> <medium0> <medium1> [(vertices)] [(normals)] [(textureCoordinates)] [(faces)]
-Object <name> patch <material> <medium0> <medium1> <file>
+Object <name> tri <material> <medium0> <medium1> <file>
 Object <name> patch <material> <medium0> <medium1> [(vertices)] [(normals)] [(textureCoordinates)] [(faces)]
+Object <name> patch <material> <medium0> <medium1> <file>
 ```
 
 ### `Instance`

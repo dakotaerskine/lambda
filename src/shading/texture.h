@@ -5,8 +5,8 @@
 #include "core/color.h"
 #include "core/platform.h"
 #include "core/utils.h"
+#include "geometry/intersection.h"
 #include "math/spectrum.h"
-#include "scene/intersection.h"
 
 namespace lambda {
     class ScalarTexture {

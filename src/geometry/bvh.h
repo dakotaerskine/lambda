@@ -7,9 +7,9 @@
 
 #include "core/constants.h"
 #include "core/platform.h"
+#include "geometry/intersection.h"
 #include "math/ray.h"
 #include "math/vector.h"
-#include "scene/intersection.h"
 
 namespace lambda {
     class Instance;

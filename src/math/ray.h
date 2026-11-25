@@ -12,13 +12,13 @@ namespace lambda {
         public:
             LAMBDA_HOST_DEVICE Ray() : direction(0, 1, 0), medium(nullptr) {}
 
-            LAMBDA_HOST_DEVICE Ray(const Vector<Float, 3> & o, const Vector<Float, 3> & d, const SampledSpectrum & l, const Medium * m) : origin(o), direction(d), lambdas(l), medium(m) {}
+            LAMBDA_HOST_DEVICE Ray(const Vector<Float, 3> & o, const Vector<Float, 3> & d, const SampledSpectrum<Float> & l, const Medium * m) : origin(o), direction(d), lambdas(l), medium(m) {}
 
             LAMBDA_HOST_DEVICE const Vector<Float, 3> & getOrigin() const { return origin; }
 
             LAMBDA_HOST_DEVICE const Vector<Float, 3> & getDirection() const { return direction; }
 
-            LAMBDA_HOST_DEVICE const SampledSpectrum & getLambdas() const { return lambdas; }
+            LAMBDA_HOST_DEVICE const SampledSpectrum<Float> & getLambdas() const { return lambdas; }
 
             LAMBDA_HOST_DEVICE const Medium * getMedium() const { return medium; }
 
@@ -26,7 +26,7 @@ namespace lambda {
 
         private:
             Vector<Float, 3> origin, direction;
-            SampledSpectrum lambdas;
+            SampledSpectrum<Float> lambdas;
             const Medium * medium;
     };
 }

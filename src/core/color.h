@@ -4,11 +4,11 @@
 
 #include "core/allocator.h"
 #include "core/constants.h"
-#include "core/loader.h"
 #include "core/platform.h"
 #include "core/utils.h"
 #include "math/matrix.h"
 #include "math/vector.h"
+#include "upsampling/loader.h"
 
 namespace lambda {
     class ColorSpace {
@@ -32,6 +32,8 @@ namespace lambda {
             static const ColorSpace * Rec2020() { return rec2020; }
 
             static const ColorSpace * ACES2065() { return aces2065; }
+
+            ColorSpace() : illum(nullptr), upsamplingScale(nullptr), upsamplingLUT(nullptr) { for (int i = 0; i < 8; i++) chromaticities[i] = 0; }
 
             ColorSpace(const double _chromaticities[8], const double * _illum = nullptr, float * _upsamplingScale = nullptr, float (* _upsamplingLUT)[constants::UPSAMPLING_RESOLUTION][constants::UPSAMPLING_RESOLUTION][constants::UPSAMPLING_RESOLUTION][3] = nullptr) : illum(_illum), upsamplingScale(_upsamplingScale), upsamplingLUT(_upsamplingLUT) {
                 for (int i = 0; i < 8; i++) chromaticities[i] = _chromaticities[i];

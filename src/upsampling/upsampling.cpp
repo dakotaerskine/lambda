@@ -5,9 +5,9 @@
 #include "core/color.h"
 #include "core/constants.h"
 #include "core/error.h"
-#include "core/loader.h"
 #include "core/platform.h"
-#include "core/solver.h"
+#include "upsampling/loader.h"
+#include "upsampling/solver.h"
 
 using namespace lambda;
 

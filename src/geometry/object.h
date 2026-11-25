@@ -4,12 +4,12 @@
 
 #include "core/platform.h"
 #include "core/utils.h"
+#include "geometry/intersection.h"
+#include "geometry/mesh.h"
 #include "math/matrix.h"
 #include "math/random.h"
 #include "math/ray.h"
 #include "math/vector.h"
-#include "scene/intersection.h"
-#include "scene/mesh.h"
 
 namespace lambda {
     class Material;
@@ -653,7 +653,7 @@ namespace lambda {
 
                 Matrix<Float, 2> invDelta = inverse(Matrix<Float, 2>(textureCoordinate1[0] - textureCoordinate0[0], textureCoordinate2[0] - textureCoordinate0[0], textureCoordinate1[1] - textureCoordinate0[1], textureCoordinate2[1] - textureCoordinate0[1]));
 
-                Vector<Float, 3> rawTangent = invDelta.get(0, 0) * horizontal + invDelta.get(1, 0) * vertical;
+                Vector<Float, 3> rawTangent = invDelta(0, 0) * horizontal + invDelta(1, 0) * vertical;
                 Vector<Float, 3> tangent = rawTangent - normal * dot(normal, rawTangent);
 
                 Float tangentLengthSquared = tangent.lengthSquared();
@@ -698,7 +698,7 @@ namespace lambda {
                 Vector<Float, 3> dpdu = utils::interpolate(corner3 - corner0, corner2 - corner1, v);
                 Vector<Float, 3> dpdv = utils::interpolate(corner1 - corner0, corner2 - corner3, u);
 
-                Vector<Float, 3> flatNormal = normalize(cross(dpdu, dpdv));
+                Vector<Float, 3> flatNormal = normalize(cross(dpdv, dpdu));
 
                 Vector<Float, 3> normal0 = patch.mesh->getNormal(patch.index, 0);
                 Vector<Float, 3> normal1 = patch.mesh->getNormal(patch.index, 1);
@@ -729,7 +729,7 @@ namespace lambda {
 
                 Matrix<Float, 2> invDelta = inverse(Matrix<Float, 2>(utils::interpolate(textureCoordinate3[0] - textureCoordinate0[0], textureCoordinate2[0] - textureCoordinate1[0], v), utils::interpolate(textureCoordinate3[1] - textureCoordinate0[1], textureCoordinate2[1] - textureCoordinate1[1], v), utils::interpolate(textureCoordinate1[0] - textureCoordinate0[0], textureCoordinate2[0] - textureCoordinate3[0], u), utils::interpolate(textureCoordinate1[1] - textureCoordinate0[1], textureCoordinate2[1] - textureCoordinate3[1], u)));
 
-                Vector<Float, 3> rawTangent = invDelta.get(0, 0) * (corner1 - corner0) + invDelta.get(1, 0) * (corner3 - corner0);
+                Vector<Float, 3> rawTangent = invDelta(0, 0) * (corner1 - corner0) + invDelta(1, 0) * (corner3 - corner0);
                 Vector<Float, 3> tangent = rawTangent - normal * dot(normal, rawTangent);
 
                 Float tangentLengthSquared = tangent.lengthSquared();

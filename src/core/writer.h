@@ -133,13 +133,15 @@ namespace lambda {
 
                 Matrix<Float, 4> worldToCameraMatrix = integrator->getCamera()->getWorldToCamera();
 
-                for (int i = 0; i < 16; i++) worldToCamera[i] = float(worldToCameraMatrix.get(i % 4, i / 4));
+                for (int i = 0; i < 4; i++)
+                    for (int j = 0; j < 4; j++) worldToCamera[i * 4 + j] = float(worldToCameraMatrix(j, i));
 
                 float worldToNDC[16];
 
                 Matrix<Float, 4> worldToNDCMatrix = integrator->getCamera()->getWorldToNDC();
 
-                for (int i = 0; i < 16; i++) worldToNDC[i] = float(worldToNDCMatrix.get(i % 4, i / 4));
+                for (int i = 0; i < 4; i++)
+                    for (int j = 0; j < 4; j++) worldToNDC[i * 4 + j] = float(worldToNDCMatrix(j, i));
 
                 int samplesPerPixel = integrator->getSamples();
                 float renderTimeSeconds = float(duration);

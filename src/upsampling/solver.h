@@ -104,9 +104,8 @@ namespace lambda {
                 for (int i = 0; i < constants::CIE_LAMBDA_BINS; i++) {
                     double lambda = i * inverseRange;
                     double x = (coefficients[0] * lambda + coefficients[1]) * lambda + coefficients[2];
-                    double s = 0.5 + 0.5 * x / std::sqrt(1 + x * x);
 
-                    out += response[i] * s;
+                    out += response[i] * utils::sigmoid(x);
                 }
 
                 out = space->toLab(out, whitepoint);
@@ -140,7 +139,7 @@ namespace lambda {
 
                         Vector<double, 3> perturbedRes = residual(space, color, whitepoint, perturbed, response);
 
-                        for (int k = 0; k < 3; k++) jacobian.get(k, j) = (perturbedRes[k] - res[k]) / h;
+                        for (int k = 0; k < 3; k++) jacobian(k, j) = (perturbedRes[k] - res[k]) / h;
                     }
 
                     Matrix<double, 3> A;
@@ -150,11 +149,11 @@ namespace lambda {
                         for (int k = 0; k < 3; k++) {
                             double sum = 0;
 
-                            for (int l = 0; l < 3; l++) sum += jacobian.get(l, j) * jacobian.get(l, k);
+                            for (int l = 0; l < 3; l++) sum += jacobian(l, j) * jacobian(l, k);
 
-                            A.get(j, k) = sum;
+                            A(j, k) = sum;
 
-                            g[j] += jacobian.get(k, j) * res[k];
+                            g[j] += jacobian(k, j) * res[k];
                         }
 
                     bool accepted = false;
@@ -163,9 +162,9 @@ namespace lambda {
                         Matrix<double, 3> M = A;
 
                         for (int k = 0; k < 3; k++)
-                            for (int l = 0; l < 3; l++) M.get(k, l) += (k == l ? lambda : 0);
+                            for (int l = 0; l < 3; l++) M(k, l) += (k == l ? lambda : 0);
 
-                        if (std::fmax(std::fabs(M.get(0, 0)) + std::fabs(M.get(1, 0)) + std::fabs(M.get(2, 0)), std::fmax(std::fabs(M.get(0, 1)) + std::fabs(M.get(1, 1)) + std::fabs(M.get(2, 1)), std::fabs(M.get(0, 2)) + std::fabs(M.get(1, 2)) + std::fabs(M.get(2, 2)))) < constants::LM_SINGULAR_NORM) {
+                        if (std::fmax(std::fabs(M(0, 0)) + std::fabs(M(1, 0)) + std::fabs(M(2, 0)), std::fmax(std::fabs(M(0, 1)) + std::fabs(M(1, 1)) + std::fabs(M(2, 1)), std::fabs(M(0, 2)) + std::fabs(M(1, 2)) + std::fabs(M(2, 2)))) < constants::LM_SINGULAR_NORM) {
                             lambda *= constants::LM_DAMPING_GROWTH;
 
                             continue;

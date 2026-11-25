@@ -30,14 +30,18 @@ namespace lambda {
 
         inline constexpr int POINT_ERROR_SCALE = 8;
 
+        inline constexpr int FLUOROPHORE_MAX_SAMPLES = 32;
+
         inline constexpr Float MAX = Float(1e30);
 
         inline constexpr Float GRAZING_COS = Float(1e-4);
         inline constexpr Float GRAZING_COS_SQUARED = GRAZING_COS * GRAZING_COS;
         inline constexpr Float SPECULAR_ALPHA = Float(1e-3);
-        inline constexpr Float DISPERSION_DELTA = Float(1e-4);
+        inline constexpr Float ABSORPTIVE_EXTINCTION = Float(1e-4);
+        inline constexpr Float DISPERSIVE_DELTA = Float(1e-4);
         inline constexpr Float ISOTROPIC_G = Float(1e-3);
         inline constexpr Float BLACK_LEVEL = Float(1e-6);
+        inline constexpr Float TEST_TOLERANCE = Float(1e-5);
 
         inline constexpr int LM_ITERATIONS = 16;
         inline constexpr int LM_MAX_ATTEMPTS = 12;

@@ -14,7 +14,7 @@ namespace lambda {
         public:
             Film() : space(ColorSpace::sRGB()), width(0), height(0), lambdaMin(0), lambdaMax(0), visibleMin(0), visibleMax(0), visibleWeight(0), wavelengthCDFMin(0), wavelengthCDFMax(0), buffer(nullptr) {}
 
-            Film(const ColorSpace * _space, int _width, int _height, Float _lambdaMin, Float _lambdaMax, Float * _buffer) : space(_space), width(_width), height(_height), lambdaMin(_lambdaMin), lambdaMax(_lambdaMax), visibleMin(std::fmax(_lambdaMin, Float(constants::CIE_LAMBDA_MIN))), visibleMax(std::fmin(_lambdaMax, Float(constants::CIE_LAMBDA_MAX))), buffer(_buffer) {
+            Film(const ColorSpace * _space, int _width, int _height, Float _lambdaMin, Float _lambdaMax, Float * _buffer) : space(_space), width(_width), height(_height), lambdaMin(_lambdaMin), lambdaMax(_lambdaMax), visibleMin(std::fmax(_lambdaMin, Float(constants::CIE_LAMBDA_MIN))), visibleMax(std::fmax(std::fmin(_lambdaMax, Float(constants::CIE_LAMBDA_MAX)), std::fmax(_lambdaMin, Float(constants::CIE_LAMBDA_MIN)))), buffer(_buffer) {
                 visibleWeight = std::fmax(visibleMax - visibleMin, Float(0)) / (_lambdaMax - _lambdaMin);
 
                 wavelengthCDFMin = std::tanh(constants::WAVELENGTH_PDF_WIDTH * (visibleMin - constants::WAVELENGTH_PDF_CENTER));
@@ -33,12 +33,10 @@ namespace lambda {
 
             LAMBDA_HOST_DEVICE int getHeight() const { return height; }
 
-            LAMBDA_DEVICE void setPixel(int i, int j, const Vector<Float, 3> & value) { for (int k = 0; k < 3; k++) buffer[(j * width + i) * 3 + k] = value[k]; }
-
-            LAMBDA_DEVICE SampledSpectrum sampleLambdas(Random & state) const {
+            LAMBDA_DEVICE SampledSpectrum<Float> sampleLambdas(Random & state) const {
                 Float u = utils::randomFloat(state);
 
-                SampledSpectrum lambdas;
+                SampledSpectrum<Float> lambdas;
 
                 for (int i = 0; i < constants::HERO_COUNT; i++) {
                     Float v = u + Float(i) / constants::HERO_COUNT;
@@ -56,32 +54,36 @@ namespace lambda {
                 return lambdas;
             }
 
-            LAMBDA_DEVICE Vector<Float, 3> toXYZ(const SampledSpectrum & s, const SampledSpectrum & lambdas) const {
+            LAMBDA_DEVICE void addSample(int i, int j, const SampledSpectrum<Float> & radiance, const SampledSpectrum<Float> & lambdas) {
                 Vector<Float, 3> xyz;
 
-                for (int i = 0; i < constants::HERO_COUNT; i++) {
-                    Float lambda = lambdas[i];
-                    Float radiance = s[i];
-
+                for (int k = 0; k < constants::HERO_COUNT; k++) {
                     Float probabilityDensity = 0;
 
-                    if (lambda >= visibleMin && lambda <= visibleMax) {
-                        probabilityDensity = 1 / std::cosh(constants::WAVELENGTH_PDF_WIDTH * (lambda - constants::WAVELENGTH_PDF_CENTER));
+                    if (visibleWeight > 0 && lambdas[k] >= visibleMin && lambdas[k] <= visibleMax) {
+                        probabilityDensity = 1 / std::cosh(constants::WAVELENGTH_PDF_WIDTH * (lambdas[k] - constants::WAVELENGTH_PDF_CENTER));
 
                         probabilityDensity *= visibleWeight * probabilityDensity * constants::WAVELENGTH_PDF_WIDTH / (wavelengthCDFMax - wavelengthCDFMin);
                     }
                     else probabilityDensity = (1 - visibleWeight) / ((lambdaMax - lambdaMin) - (visibleMax - visibleMin));
 
-                    int minLambda = int(lambda);
+                    int minLambda = int(lambdas[k]);
                     int maxLambda = minLambda + 1;
 
                     Vector<Float, 3> minXYZ = (minLambda >= constants::CIE_LAMBDA_MIN && minLambda <= constants::CIE_LAMBDA_MAX) ? Vector<Float, 3>(constants::CIE_XYZ_1931[minLambda - constants::CIE_LAMBDA_MIN]) : Vector<Float, 3>();
                     Vector<Float, 3> maxXYZ = (maxLambda >= constants::CIE_LAMBDA_MIN && maxLambda <= constants::CIE_LAMBDA_MAX) ? Vector<Float, 3>(constants::CIE_XYZ_1931[maxLambda - constants::CIE_LAMBDA_MIN]) : Vector<Float, 3>();
 
-                    xyz += utils::interpolate(minXYZ, maxXYZ, lambda - Float(minLambda)) * radiance / (constants::HERO_COUNT * probabilityDensity);
+                    xyz += utils::interpolate(minXYZ, maxXYZ, lambdas[k] - Float(minLambda)) * radiance[k] / (constants::HERO_COUNT * probabilityDensity);
                 }
 
-                return xyz / constants::CIE_Y_INTEGRAL;
+                xyz /= constants::CIE_Y_INTEGRAL;
+
+                for (int k = 0; k < 3; k++) buffer[(j * width + i) * 3 + k] += xyz[k];
+            }
+
+            LAMBDA_DEVICE void normalizePixel(int i, int j, int n) {
+                if (n > 0)
+                    for (int k = 0; k < 3; k++) buffer[(j * width + i) * 3 + k] /= Float(n);
             }
 
         private:

@@ -3,19 +3,27 @@
 #include <cmath>
 
 #include "core/platform.h"
+#include "geometry/bvh.h"
+#include "geometry/background.h"
+#include "geometry/instance.h"
+#include "geometry/object.h"
+#include "geometry/scene.h"
 #include "math/vector.h"
-#include "scene/bvh.h"
-#include "scene/background.h"
-#include "scene/instance.h"
-#include "scene/material.h"
-#include "scene/object.h"
-#include "scene/scene.h"
-#include "scene/texture.h"
+#include "shading/material.h"
+#include "shading/texture.h"
 
 namespace lambda {
     class Builder {
         public:
             Builder() = delete;
+
+            template <typename T, bool light>
+            requires (std::is_same_v<T, Object> || std::is_same_v<T, Instance>)
+            static std::vector<BVHNode<T>> buildBVH(T ** elements, int n, bool materialBlind = false) {
+                if (n <= 0) return std::vector<BVHNode<T>>();
+
+                return buildBVH<T, light>(elements, n, 1, materialBlind);
+            }
 
             static Float computeSceneRadius(const std::vector<Instance *> & instances) {
                 Vector<Float, 3> sceneCenter = instances.empty() ? Vector<Float, 3>() : instances[0]->center(0);
@@ -76,20 +84,10 @@ namespace lambda {
                     marginalCDF[y] = totalWeight;
                 }
 
-                if (totalWeight > 0) {
+                if (totalWeight > 0)
                     for (int y = 0; y < height; y++) marginalCDF[y] /= totalWeight;
-                }
-                else {
+                else
                     for (int y = 0; y < height; y++) marginalCDF[y] = (Float(y) + Float(1)) / Float(height);
-                }
-            }
-
-            template <typename T, bool light>
-            requires (std::is_same_v<T, Object> || std::is_same_v<T, Instance>)
-            static std::vector<BVHNode<T>> buildBVH(T ** elements, int n, bool materialBlind = false) {
-                if (n <= 0) return std::vector<BVHNode<T>>();
-
-                return buildBVH<T, light>(elements, n, 1, materialBlind);
             }
 
         private:

@@ -2,14 +2,14 @@
 
 #include "core/platform.h"
 #include "core/utils.h"
+#include "geometry/bvh.h"
+#include "geometry/object.h"
 #include "math/matrix.h"
 #include "math/random.h"
 #include "math/ray.h"
 #include "math/transform.h"
 #include "math/vector.h"
-#include "scene/bvh.h"
-#include "scene/material.h"
-#include "scene/object.h"
+#include "shading/material.h"
 
 namespace lambda {
     class Medium;
